@@ -14,12 +14,15 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSuppliersRouteImport } from './routes/_authenticated/suppliers'
 import { Route as AuthenticatedSitesRouteImport } from './routes/_authenticated/sites'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedPartsRouteImport } from './routes/_authenticated/parts'
 import { Route as AuthenticatedInstallationsRouteImport } from './routes/_authenticated/installations'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
 import { Route as AuthenticatedQuotesIndexRouteImport } from './routes/_authenticated/quotes.index'
+import { Route as AuthenticatedQuotesNewRouteImport } from './routes/_authenticated/quotes.new'
+import { Route as AuthenticatedQuotesQuoteIdRouteImport } from './routes/_authenticated/quotes.$quoteId'
 import { Route as AuthenticatedClientsClientIdRouteImport } from './routes/_authenticated/clients.$clientId'
 
 const AuthRoute = AuthRouteImport.update({
@@ -44,6 +47,11 @@ const AuthenticatedSuppliersRoute = AuthenticatedSuppliersRouteImport.update({
 const AuthenticatedSitesRoute = AuthenticatedSitesRouteImport.update({
   id: '/sites',
   path: '/sites',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedPartsRoute = AuthenticatedPartsRouteImport.update({
@@ -78,6 +86,17 @@ const AuthenticatedQuotesIndexRoute =
     path: '/quotes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedQuotesNewRoute = AuthenticatedQuotesNewRouteImport.update({
+  id: '/quotes/new',
+  path: '/quotes/new',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedQuotesQuoteIdRoute =
+  AuthenticatedQuotesQuoteIdRouteImport.update({
+    id: '/quotes/$quoteId',
+    path: '/quotes/$quoteId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedClientsClientIdRoute =
   AuthenticatedClientsClientIdRouteImport.update({
     id: '/$clientId',
@@ -93,9 +112,12 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installations': typeof AuthenticatedInstallationsRoute
   '/parts': typeof AuthenticatedPartsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
+  '/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/quotes/': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -106,9 +128,12 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installations': typeof AuthenticatedInstallationsRoute
   '/parts': typeof AuthenticatedPartsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
+  '/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/quotes': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRoutesById {
@@ -121,9 +146,12 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installations': typeof AuthenticatedInstallationsRoute
   '/_authenticated/parts': typeof AuthenticatedPartsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRoute
   '/_authenticated/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/_authenticated/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
+  '/_authenticated/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/_authenticated/quotes/': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRouteTypes {
@@ -136,9 +164,12 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/installations'
     | '/parts'
+    | '/settings'
     | '/sites'
     | '/suppliers'
     | '/clients/$clientId'
+    | '/quotes/$quoteId'
+    | '/quotes/new'
     | '/quotes/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -149,9 +180,12 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/installations'
     | '/parts'
+    | '/settings'
     | '/sites'
     | '/suppliers'
     | '/clients/$clientId'
+    | '/quotes/$quoteId'
+    | '/quotes/new'
     | '/quotes'
   id:
     | '__root__'
@@ -163,9 +197,12 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/installations'
     | '/_authenticated/parts'
+    | '/_authenticated/settings'
     | '/_authenticated/sites'
     | '/_authenticated/suppliers'
     | '/_authenticated/clients/$clientId'
+    | '/_authenticated/quotes/$quoteId'
+    | '/_authenticated/quotes/new'
     | '/_authenticated/quotes/'
   fileRoutesById: FileRoutesById
 }
@@ -212,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSitesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/parts': {
       id: '/_authenticated/parts'
       path: '/parts'
@@ -254,6 +298,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedQuotesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/quotes/new': {
+      id: '/_authenticated/quotes/new'
+      path: '/quotes/new'
+      fullPath: '/quotes/new'
+      preLoaderRoute: typeof AuthenticatedQuotesNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/quotes/$quoteId': {
+      id: '/_authenticated/quotes/$quoteId'
+      path: '/quotes/$quoteId'
+      fullPath: '/quotes/$quoteId'
+      preLoaderRoute: typeof AuthenticatedQuotesQuoteIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/clients/$clientId': {
       id: '/_authenticated/clients/$clientId'
       path: '/$clientId'
@@ -281,8 +339,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRoute
   AuthenticatedPartsRoute: typeof AuthenticatedPartsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRoute
+  AuthenticatedQuotesQuoteIdRoute: typeof AuthenticatedQuotesQuoteIdRoute
+  AuthenticatedQuotesNewRoute: typeof AuthenticatedQuotesNewRoute
   AuthenticatedQuotesIndexRoute: typeof AuthenticatedQuotesIndexRoute
 }
 
@@ -292,8 +353,11 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallationsRoute: AuthenticatedInstallationsRoute,
   AuthenticatedPartsRoute: AuthenticatedPartsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSitesRoute: AuthenticatedSitesRoute,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRoute,
+  AuthenticatedQuotesQuoteIdRoute: AuthenticatedQuotesQuoteIdRoute,
+  AuthenticatedQuotesNewRoute: AuthenticatedQuotesNewRoute,
   AuthenticatedQuotesIndexRoute: AuthenticatedQuotesIndexRoute,
 }
 
