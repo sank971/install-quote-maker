@@ -44,7 +44,7 @@ export function useOne<T = any>(table: TableName, id: string | undefined) {
     queryKey: [table, id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await supabase.from(table).select("*").eq("id", id!).maybeSingle();
+      const { data, error } = await (supabase.from(table) as any).select("*").eq("id", id!).maybeSingle();
       if (error) throw error;
       return data as T | null;
     },
@@ -63,12 +63,13 @@ export function useUpsert(table: TableName, invalidate: QueryKey[] = [[table]]) 
     mutationFn: async (row: any) => {
       const owner_id = await getOwnerId();
       const payload = { ...row, owner_id };
+      const client = supabase.from(table) as any;
       if (row.id) {
-        const { data, error } = await supabase.from(table).update(payload).eq("id", row.id).select().single();
+        const { data, error } = await client.update(payload).eq("id", row.id).select().single();
         if (error) throw error;
         return data;
       }
-      const { data, error } = await supabase.from(table).insert(payload).select().single();
+      const { data, error } = await client.insert(payload).select().single();
       if (error) throw error;
       return data;
     },
@@ -84,7 +85,7 @@ export function useRemove(table: TableName, invalidate: QueryKey[] = [[table]]) 
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from(table).delete().eq("id", id);
+      const { error } = await (supabase.from(table) as any).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
