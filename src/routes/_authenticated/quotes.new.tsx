@@ -30,6 +30,8 @@ function NewQuote() {
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
+  const { data: models = [] } = useList<any>("models");
+  const { data: types = [] } = useList<any>("installation_types");
   const { data: modelCompat = [] } = useList<any>("part_model_compat");
   const { data: typeCompat = [] } = useList<any>("part_type_compat");
   const { data: installationParts = [] } = useList<any>("installation_parts");
@@ -72,17 +74,29 @@ function NewQuote() {
     [installationParts, installationId],
   );
 
+  const normalizeName = (value: unknown) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+
   const compatibleParts = useMemo(() => {
     if (!installation?.model_id && !installation?.type_id) return parts;
     const ids = new Set<string>();
+    const installationModel = models.find((m: any) => m.id === installation?.model_id);
+    const effectiveTypeId = installation?.type_id || installationModel?.type_id;
+    const installationType = types.find((t: any) => t.id === effectiveTypeId);
+    const componentTypes = new Set(
+      (installationType?.component_types ?? []).map((name: string) => normalizeName(name)),
+    );
+
     if (installation.model_id) {
       modelCompat
         .filter((x: any) => x.model_id === installation.model_id)
         .forEach((x: any) => ids.add(x.part_id));
     }
-    if (installation.type_id) {
+    if (effectiveTypeId) {
       typeCompat
-        .filter((x: any) => x.type_id === installation.type_id)
+        .filter((x: any) => x.type_id === effectiveTypeId)
         .forEach((x: any) => ids.add(x.part_id));
     }
     installationParts
@@ -90,11 +104,22 @@ function NewQuote() {
       .forEach((x: any) => ids.add(x.part_id));
 
     return parts
-      .filter((p: any) => ids.has(p.id))
+      .filter(
+        (p: any) => ids.has(p.id) || (p.category && componentTypes.has(normalizeName(p.category))),
+      )
       .sort(
         (a: any, b: any) => Number(presentPartIds.has(b.id)) - Number(presentPartIds.has(a.id)),
       );
-  }, [parts, modelCompat, typeCompat, installationParts, installation, presentPartIds]);
+  }, [
+    parts,
+    models,
+    types,
+    modelCompat,
+    typeCompat,
+    installationParts,
+    installation,
+    presentPartIds,
+  ]);
 
   const cheapestCost = (partId: string) => {
     const offers = sp.filter((x: any) => x.part_id === partId);
