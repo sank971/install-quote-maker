@@ -21,8 +21,10 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
 import { Route as AuthenticatedQuotesIndexRouteImport } from './routes/_authenticated/quotes.index'
+import { Route as AuthenticatedSitesSiteIdRouteImport } from './routes/_authenticated/sites.$siteId'
 import { Route as AuthenticatedQuotesNewRouteImport } from './routes/_authenticated/quotes.new'
 import { Route as AuthenticatedQuotesQuoteIdRouteImport } from './routes/_authenticated/quotes.$quoteId'
+import { Route as AuthenticatedInstallationsInstallationIdRouteImport } from './routes/_authenticated/installations.$installationId'
 import { Route as AuthenticatedClientsClientIdRouteImport } from './routes/_authenticated/clients.$clientId'
 
 const AuthRoute = AuthRouteImport.update({
@@ -86,6 +88,12 @@ const AuthenticatedQuotesIndexRoute =
     path: '/quotes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedSitesSiteIdRoute =
+  AuthenticatedSitesSiteIdRouteImport.update({
+    id: '/$siteId',
+    path: '/$siteId',
+    getParentRoute: () => AuthenticatedSitesRoute,
+  } as any)
 const AuthenticatedQuotesNewRoute = AuthenticatedQuotesNewRouteImport.update({
   id: '/quotes/new',
   path: '/quotes/new',
@@ -96,6 +104,12 @@ const AuthenticatedQuotesQuoteIdRoute =
     id: '/quotes/$quoteId',
     path: '/quotes/$quoteId',
     getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedInstallationsInstallationIdRoute =
+  AuthenticatedInstallationsInstallationIdRouteImport.update({
+    id: '/$installationId',
+    path: '/$installationId',
+    getParentRoute: () => AuthenticatedInstallationsRoute,
   } as any)
 const AuthenticatedClientsClientIdRoute =
   AuthenticatedClientsClientIdRouteImport.update({
@@ -110,14 +124,16 @@ export interface FileRoutesByFullPath {
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/installations': typeof AuthenticatedInstallationsRoute
+  '/installations': typeof AuthenticatedInstallationsRouteWithChildren
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/sites': typeof AuthenticatedSitesRoute
+  '/sites': typeof AuthenticatedSitesRouteWithChildren
   '/suppliers': typeof AuthenticatedSuppliersRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/installations/$installationId': typeof AuthenticatedInstallationsInstallationIdRoute
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/quotes/new': typeof AuthenticatedQuotesNewRoute
+  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/quotes/': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -126,14 +142,16 @@ export interface FileRoutesByTo {
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/installations': typeof AuthenticatedInstallationsRoute
+  '/installations': typeof AuthenticatedInstallationsRouteWithChildren
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/sites': typeof AuthenticatedSitesRoute
+  '/sites': typeof AuthenticatedSitesRouteWithChildren
   '/suppliers': typeof AuthenticatedSuppliersRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/installations/$installationId': typeof AuthenticatedInstallationsInstallationIdRoute
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/quotes/new': typeof AuthenticatedQuotesNewRoute
+  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/quotes': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRoutesById {
@@ -144,14 +162,16 @@ export interface FileRoutesById {
   '/_authenticated/clients': typeof AuthenticatedClientsRouteWithChildren
   '/_authenticated/contracts': typeof AuthenticatedContractsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/installations': typeof AuthenticatedInstallationsRoute
+  '/_authenticated/installations': typeof AuthenticatedInstallationsRouteWithChildren
   '/_authenticated/parts': typeof AuthenticatedPartsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/sites': typeof AuthenticatedSitesRoute
+  '/_authenticated/sites': typeof AuthenticatedSitesRouteWithChildren
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRoute
   '/_authenticated/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
+  '/_authenticated/installations/$installationId': typeof AuthenticatedInstallationsInstallationIdRoute
   '/_authenticated/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/_authenticated/quotes/new': typeof AuthenticatedQuotesNewRoute
+  '/_authenticated/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/_authenticated/quotes/': typeof AuthenticatedQuotesIndexRoute
 }
 export interface FileRouteTypes {
@@ -168,8 +188,10 @@ export interface FileRouteTypes {
     | '/sites'
     | '/suppliers'
     | '/clients/$clientId'
+    | '/installations/$installationId'
     | '/quotes/$quoteId'
     | '/quotes/new'
+    | '/sites/$siteId'
     | '/quotes/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -184,8 +206,10 @@ export interface FileRouteTypes {
     | '/sites'
     | '/suppliers'
     | '/clients/$clientId'
+    | '/installations/$installationId'
     | '/quotes/$quoteId'
     | '/quotes/new'
+    | '/sites/$siteId'
     | '/quotes'
   id:
     | '__root__'
@@ -201,8 +225,10 @@ export interface FileRouteTypes {
     | '/_authenticated/sites'
     | '/_authenticated/suppliers'
     | '/_authenticated/clients/$clientId'
+    | '/_authenticated/installations/$installationId'
     | '/_authenticated/quotes/$quoteId'
     | '/_authenticated/quotes/new'
+    | '/_authenticated/sites/$siteId'
     | '/_authenticated/quotes/'
   fileRoutesById: FileRoutesById
 }
@@ -298,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedQuotesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/sites/$siteId': {
+      id: '/_authenticated/sites/$siteId'
+      path: '/$siteId'
+      fullPath: '/sites/$siteId'
+      preLoaderRoute: typeof AuthenticatedSitesSiteIdRouteImport
+      parentRoute: typeof AuthenticatedSitesRoute
+    }
     '/_authenticated/quotes/new': {
       id: '/_authenticated/quotes/new'
       path: '/quotes/new'
@@ -311,6 +344,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/quotes/$quoteId'
       preLoaderRoute: typeof AuthenticatedQuotesQuoteIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/installations/$installationId': {
+      id: '/_authenticated/installations/$installationId'
+      path: '/$installationId'
+      fullPath: '/installations/$installationId'
+      preLoaderRoute: typeof AuthenticatedInstallationsInstallationIdRouteImport
+      parentRoute: typeof AuthenticatedInstallationsRoute
     }
     '/_authenticated/clients/$clientId': {
       id: '/_authenticated/clients/$clientId'
@@ -333,14 +373,40 @@ const AuthenticatedClientsRouteChildren: AuthenticatedClientsRouteChildren = {
 const AuthenticatedClientsRouteWithChildren =
   AuthenticatedClientsRoute._addFileChildren(AuthenticatedClientsRouteChildren)
 
+interface AuthenticatedInstallationsRouteChildren {
+  AuthenticatedInstallationsInstallationIdRoute: typeof AuthenticatedInstallationsInstallationIdRoute
+}
+
+const AuthenticatedInstallationsRouteChildren: AuthenticatedInstallationsRouteChildren =
+  {
+    AuthenticatedInstallationsInstallationIdRoute:
+      AuthenticatedInstallationsInstallationIdRoute,
+  }
+
+const AuthenticatedInstallationsRouteWithChildren =
+  AuthenticatedInstallationsRoute._addFileChildren(
+    AuthenticatedInstallationsRouteChildren,
+  )
+
+interface AuthenticatedSitesRouteChildren {
+  AuthenticatedSitesSiteIdRoute: typeof AuthenticatedSitesSiteIdRoute
+}
+
+const AuthenticatedSitesRouteChildren: AuthenticatedSitesRouteChildren = {
+  AuthenticatedSitesSiteIdRoute: AuthenticatedSitesSiteIdRoute,
+}
+
+const AuthenticatedSitesRouteWithChildren =
+  AuthenticatedSitesRoute._addFileChildren(AuthenticatedSitesRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedClientsRoute: typeof AuthenticatedClientsRouteWithChildren
   AuthenticatedContractsRoute: typeof AuthenticatedContractsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRoute
+  AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRouteWithChildren
   AuthenticatedPartsRoute: typeof AuthenticatedPartsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
+  AuthenticatedSitesRoute: typeof AuthenticatedSitesRouteWithChildren
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRoute
   AuthenticatedQuotesQuoteIdRoute: typeof AuthenticatedQuotesQuoteIdRoute
   AuthenticatedQuotesNewRoute: typeof AuthenticatedQuotesNewRoute
@@ -351,10 +417,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedClientsRoute: AuthenticatedClientsRouteWithChildren,
   AuthenticatedContractsRoute: AuthenticatedContractsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedInstallationsRoute: AuthenticatedInstallationsRoute,
+  AuthenticatedInstallationsRoute: AuthenticatedInstallationsRouteWithChildren,
   AuthenticatedPartsRoute: AuthenticatedPartsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedSitesRoute: AuthenticatedSitesRoute,
+  AuthenticatedSitesRoute: AuthenticatedSitesRouteWithChildren,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRoute,
   AuthenticatedQuotesQuoteIdRoute: AuthenticatedQuotesQuoteIdRoute,
   AuthenticatedQuotesNewRoute: AuthenticatedQuotesNewRoute,
