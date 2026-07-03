@@ -55,20 +55,34 @@ function Page() {
   const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
 
+  const normalizeName = (value: unknown) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+
   const getCompatibleParts = (installation: any) => {
     if (!installation?.id) return [];
     const ids = new Set<string>();
+    const installationModel = models.find((m: any) => m.id === installation.model_id);
+    const effectiveTypeId = installation.type_id || installationModel?.type_id;
+    const installationType = types.find((t: any) => t.id === effectiveTypeId);
+    const componentTypes = new Set(
+      (installationType?.component_types ?? []).map((name: string) => normalizeName(name)),
+    );
+
     if (installation.model_id) {
       modelCompat
         .filter((c: any) => c.model_id === installation.model_id)
         .forEach((c: any) => ids.add(c.part_id));
     }
-    if (installation.type_id) {
+    if (effectiveTypeId) {
       typeCompat
-        .filter((c: any) => c.type_id === installation.type_id)
+        .filter((c: any) => c.type_id === effectiveTypeId)
         .forEach((c: any) => ids.add(c.part_id));
     }
-    return parts.filter((p: any) => ids.has(p.id));
+    return parts.filter(
+      (p: any) => ids.has(p.id) || (p.category && componentTypes.has(normalizeName(p.category))),
+    );
   };
 
   const getPresentParts = (installationId: string) =>
