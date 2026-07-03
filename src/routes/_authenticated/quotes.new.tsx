@@ -56,6 +56,11 @@ function NewQuote() {
   const [laborHours, setLaborHours] = useState(0);
   const [laborRate, setLaborRate] = useState(65);
   const [travelFee, setTravelFee] = useState(0);
+  const [interventionReason, setInterventionReason] = useState("standard_repair");
+  const [isOnCall, setIsOnCall] = useState(false);
+  const [shippingFee, setShippingFee] = useState(0);
+  const [wasteTreatmentFee, setWasteTreatmentFee] = useState(0);
+  const [liftingEquipmentFee, setLiftingEquipmentFee] = useState(0);
   const [vatRate, setVatRate] = useState(20);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,12 +73,53 @@ function NewQuote() {
   const selectedSite = sites.find((s: any) => s.id === siteId);
   const contractDiscountPct = Number(contract?.parts_discount_pct ?? 0);
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
+  const contractRepairsIncluded = Boolean(contract?.repairs_included);
+  const contractOnCallIncluded = Boolean(contract?.on_call_included);
+  const shouldUseContractWorkRates =
+    interventionReason === "damage_vandalism" || interventionReason === "new_installation";
+  const effectiveLaborRate = Number(laborRate);
+  const effectiveTravelFee = Number(travelFee);
+
+  const applyContractPricing = (c: any, reason = interventionReason, onCall = isOnCall) => {
+    if (!c) return;
+
+    if (reason === "standard_repair" && c.repairs_included) {
+      setLaborRate(0);
+      setTravelFee(0);
+    } else {
+      setLaborRate(Number(c.hourly_rate ?? 65));
+      setTravelFee(Number(c.travel_fee ?? 0));
+    }
+
+    if (onCall) {
+      if (c.on_call_included) {
+        setLaborRate(0);
+        setTravelFee(0);
+      } else {
+        setLaborRate(Number(c.on_call_hourly_rate ?? c.hourly_rate ?? 65));
+        setTravelFee(Number(c.on_call_travel_fee ?? c.travel_fee ?? 0));
+      }
+    }
+
+    setShippingFee(Number(c.shipping_fee ?? 0));
+    setWasteTreatmentFee(Number(c.waste_treatment_fee ?? 0));
+    setLiftingEquipmentFee(Number(c.lifting_equipment_fee ?? 0));
+  };
 
   // Apply contract rates
   const applyContract = (c: any) => {
     setContractId(c?.id ?? "");
-    if (c?.hourly_rate != null) setLaborRate(Number(c.hourly_rate));
-    if (c?.travel_fee != null) setTravelFee(Number(c.travel_fee));
+    applyContractPricing(c);
+  };
+
+  const updateInterventionReason = (reason: string) => {
+    setInterventionReason(reason);
+    applyContractPricing(contract, reason, isOnCall);
+  };
+
+  const updateIsOnCall = (checked: boolean) => {
+    setIsOnCall(checked);
+    applyContractPricing(contract, interventionReason, checked);
   };
 
   const presentPartIds = useMemo(
@@ -209,14 +255,15 @@ function NewQuote() {
   const remove = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
 
   const partsHT = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const laborHT = laborHours * laborRate;
-  const totalHT = partsHT + laborHT + travelFee;
+  const laborHT = laborHours * effectiveLaborRate;
+  const feesHT = effectiveTravelFee + shippingFee + wasteTreatmentFee + liftingEquipmentFee;
+  const totalHT = partsHT + laborHT + feesHT;
   const vat = totalHT * (vatRate / 100);
   const totalTTC = totalHT + vat;
   const costsTotal = items.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
   const margin = partsHT - costsTotal;
   const marginPct = partsHT > 0 ? (margin / partsHT) * 100 : 0;
-  const hasBillableLine = items.length > 0 || laborHours > 0 || travelFee > 0;
+  const hasBillableLine = items.length > 0 || laborHours > 0 || feesHT > 0;
   const workflowSteps = [
     { label: "Client", done: Boolean(clientId), hint: selectedClient?.name ?? "À choisir" },
     { label: "Site", done: Boolean(siteId), hint: selectedSite?.name ?? "Optionnel" },
@@ -251,8 +298,13 @@ function NewQuote() {
           installation_id: installationId || null,
           contract_id: contractId || null,
           labor_hours: laborHours,
-          labor_rate: laborRate,
-          travel_fee: travelFee,
+          labor_rate: effectiveLaborRate,
+          travel_fee: effectiveTravelFee,
+          intervention_reason: interventionReason,
+          is_on_call: isOnCall,
+          shipping_fee: shippingFee,
+          waste_treatment_fee: wasteTreatmentFee,
+          lifting_equipment_fee: liftingEquipmentFee,
           vat_rate: vatRate,
           notes: notes || null,
         })
@@ -625,6 +677,18 @@ function NewQuote() {
                   value={travelFee}
                   onChange={(e) => setTravelFee(Number(e.target.value))}
                 />
+              </div>
+              <div>
+                <Label>Frais de port €</Label>
+                <Input type="number" step="0.01" value={shippingFee} onChange={(e) => setShippingFee(Number(e.target.value))} />
+              </div>
+              <div>
+                <Label>Traitement déchets €</Label>
+                <Input type="number" step="0.01" value={wasteTreatmentFee} onChange={(e) => setWasteTreatmentFee(Number(e.target.value))} />
+              </div>
+              <div>
+                <Label>Engin de levage €</Label>
+                <Input type="number" step="0.01" value={liftingEquipmentFee} onChange={(e) => setLiftingEquipmentFee(Number(e.target.value))} />
               </div>
               <div>
                 <Label>TVA %</Label>
