@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
-import { Plus, Pencil, Trash2, Search, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, ChevronRight, MapPin } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/clients")({
   component: ClientsPage,
