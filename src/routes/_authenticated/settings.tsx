@@ -4,7 +4,6 @@ import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, Pencil, X } from "lucide-react";
@@ -71,18 +70,16 @@ const normalizeFields = (fields: any[]): CustomField[] =>
   fields
     .map((f) => ({ key: f.key || toKey(f.label), label: f.label, type: f.type || "text" }))
     .filter((f) => f.key && f.label);
-const splitList = (value: string) =>
-  value
-    .split("\n")
-    .map((v) => v.trim())
-    .filter(Boolean);
 
 function SettingsPage() {
   const types = useList<any>("installation_types", { orderBy: "name", ascending: true });
   const brands = useList<any>("brands", { orderBy: "name", ascending: true });
   const models = useList<any>("models", { orderBy: "name", ascending: true });
+  const partCategories = useList<any>("part_categories", { orderBy: "name", ascending: true });
   const upType = useUpsert("installation_types");
   const rmType = useRemove("installation_types");
+  const upPartCategory = useUpsert("part_categories");
+  const rmPartCategory = useRemove("part_categories");
   const upBrand = useUpsert("brands");
   const rmBrand = useRemove("brands");
   const upModel = useUpsert("models");
@@ -91,13 +88,22 @@ function SettingsPage() {
   const [typeName, setTypeName] = useState("");
   const [brandName, setBrandName] = useState("");
   const [modelName, setModelName] = useState("");
+  const [partCategoryName, setPartCategoryName] = useState("");
   const [modelBrand, setModelBrand] = useState("");
   const [typeDraft, setTypeDraft] = useState<any | null>(null);
-  const [componentText, setComponentText] = useState("");
+  const [selectedComponentTypes, setSelectedComponentTypes] = useState<string[]>([]);
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState<CustomField["type"]>("text");
 
   const seedTypes = async () => {
+    const defaultPartCategories = Array.from(
+      new Set(DEFAULT_TYPES.flatMap((type) => type.component_types)),
+    );
+    for (const name of defaultPartCategories) {
+      if (!partCategories.data?.some((category: any) => category.name === name)) {
+        await upPartCategory.mutateAsync({ name });
+      }
+    }
     for (const type of DEFAULT_TYPES) {
       if (!types.data?.some((t: any) => t.name === type.name)) {
         await upType.mutateAsync(type);
@@ -107,7 +113,7 @@ function SettingsPage() {
 
   const openTypeEditor = (type: any) => {
     setTypeDraft({ ...type, custom_fields: normalizeFields(type.custom_fields ?? []) });
-    setComponentText((type.component_types ?? []).join("\n"));
+    setSelectedComponentTypes(type.component_types ?? []);
     setNewFieldLabel("");
     setNewFieldType("text");
   };
@@ -117,7 +123,7 @@ function SettingsPage() {
     await upType.mutateAsync({
       id: typeDraft.id,
       name: typeDraft.name.trim(),
-      component_types: splitList(componentText),
+      component_types: selectedComponentTypes,
       custom_fields: normalizeFields(typeDraft.custom_fields ?? []),
     });
     setTypeDraft(null);
@@ -198,13 +204,37 @@ function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Types de pièces / organes (un par ligne)</Label>
-                <Textarea
-                  value={componentText}
-                  onChange={(e) => setComponentText(e.target.value)}
-                  rows={4}
-                  placeholder="Moteur\nSystème de détection\nBarre palpeuse"
-                />
+                <Label>Types de pièces / organes associés</Label>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {(partCategories.data ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-3">
+                      Ajoutez d’abord des types de pièces dans les paramètres.
+                    </p>
+                  ) : (
+                    (partCategories.data ?? []).map((category: any) => {
+                      const checked = selectedComponentTypes.includes(category.name);
+                      return (
+                        <label
+                          key={category.id}
+                          className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedComponentTypes((current) =>
+                                checked
+                                  ? current.filter((name) => name !== category.name)
+                                  : [...current, category.name],
+                              )
+                            }
+                          />
+                          <span>{category.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Champs caractéristiques</Label>
@@ -297,6 +327,62 @@ function SettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Types de pièces</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                value={partCategoryName}
+                onChange={(e) => setPartCategoryName(e.target.value)}
+                placeholder="Ex. Moteur, radar, carte..."
+              />
+              <Button
+                size="icon"
+                onClick={async () => {
+                  if (partCategoryName.trim()) {
+                    await upPartCategory.mutateAsync({ name: partCategoryName.trim() });
+                    setPartCategoryName("");
+                  }
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            {(partCategories.data ?? []).map((category: any) => (
+              <div
+                key={category.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
+              >
+                <span className="min-w-0 truncate">{category.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      const n = prompt("Nouveau nom", category.name);
+                      if (n && n.trim()) upPartCategory.mutate({ id: category.id, name: n.trim() });
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (confirm(`Supprimer ${category.name} ?`))
+                        rmPartCategory.mutate(category.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
