@@ -42,6 +42,7 @@ export type Database = {
           notes: string | null;
           owner_id: string;
           phone: string | null;
+          siret: string | null;
           updated_at: string;
         };
         Insert: {
@@ -56,6 +57,7 @@ export type Database = {
           notes?: string | null;
           owner_id: string;
           phone?: string | null;
+          siret?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -70,6 +72,7 @@ export type Database = {
           notes?: string | null;
           owner_id?: string;
           phone?: string | null;
+          siret?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -903,32 +906,44 @@ export type Database = {
       };
       suppliers: {
         Row: {
+          account_holder: string | null;
+          bic: string | null;
           created_at: string;
           email: string | null;
+          iban: string | null;
           id: string;
           name: string;
           notes: string | null;
           owner_id: string;
+          payment_terms: string | null;
           phone: string | null;
           updated_at: string;
         };
         Insert: {
+          account_holder?: string | null;
+          bic?: string | null;
           created_at?: string;
           email?: string | null;
+          iban?: string | null;
           id?: string;
           name: string;
           notes?: string | null;
           owner_id: string;
+          payment_terms?: string | null;
           phone?: string | null;
           updated_at?: string;
         };
         Update: {
+          account_holder?: string | null;
+          bic?: string | null;
           created_at?: string;
           email?: string | null;
+          iban?: string | null;
           id?: string;
           name?: string;
           notes?: string | null;
           owner_id?: string;
+          payment_terms?: string | null;
           phone?: string | null;
           updated_at?: string;
         };

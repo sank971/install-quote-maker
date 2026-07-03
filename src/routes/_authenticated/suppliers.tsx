@@ -51,6 +51,10 @@ function SuppliersPage() {
       name: fd.get("name"),
       email: fd.get("email") || null,
       phone: fd.get("phone") || null,
+      payment_terms: fd.get("payment_terms") || null,
+      iban: fd.get("iban") || null,
+      bic: fd.get("bic") || null,
+      account_holder: fd.get("account_holder") || null,
       notes: fd.get("notes") || null,
     });
     setOpen(false);
@@ -112,8 +116,13 @@ function SuppliersPage() {
                     <div>
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {[s.email, s.phone].filter(Boolean).join(" · ") || "—"}
+                        {[s.email, s.phone, s.payment_terms].filter(Boolean).join(" · ") || "—"}
                       </div>
+                      {(s.account_holder || s.iban || s.bic) && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Paiement : {[s.account_holder, s.iban, s.bic].filter(Boolean).join(" · ")}
+                        </div>
+                      )}
                       <div className="mt-1 text-xs text-muted-foreground">
                         {partsCount} pièces référencées
                       </div>
@@ -161,6 +170,31 @@ function SuppliersPage() {
               <div>
                 <Label>Téléphone</Label>
                 <Input name="phone" defaultValue={edit?.phone} />
+              </div>
+            </div>
+            <div className="space-y-3 rounded-md border border-border/60 p-3">
+              <div className="text-sm font-medium">Informations de paiement</div>
+              <div>
+                <Label>Conditions de paiement</Label>
+                <Input
+                  name="payment_terms"
+                  placeholder="Ex. Virement à 30 jours"
+                  defaultValue={edit?.payment_terms}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Titulaire du compte</Label>
+                  <Input name="account_holder" defaultValue={edit?.account_holder} />
+                </div>
+                <div>
+                  <Label>BIC</Label>
+                  <Input name="bic" defaultValue={edit?.bic} />
+                </div>
+              </div>
+              <div>
+                <Label>IBAN</Label>
+                <Input name="iban" defaultValue={edit?.iban} />
               </div>
             </div>
             <div>
