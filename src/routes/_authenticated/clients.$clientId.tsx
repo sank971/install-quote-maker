@@ -125,7 +125,7 @@ function ClientDetail() {
         <ChevronLeft className="h-4 w-4" /> Clients
       </Link>
       <PageHeader
-        title={client.name}
+        title={client.client_number ? `${client.client_number} · ${client.name}` : client.name}
         description={[client.contact_name, client.email, client.phone].filter(Boolean).join(" · ")}
         actions={
           <Button onClick={openNewSite}>
@@ -172,7 +172,7 @@ function ClientDetail() {
                         params={{ siteId: s.id }}
                         className="truncate font-medium hover:underline"
                       >
-                        {s.name}
+                        {s.site_number ? `${s.site_number} · ` : ""}{s.name}
                       </Link>
                       <div className="truncate text-xs text-muted-foreground">
                         {s.address || "—"}

@@ -64,8 +64,8 @@ function SiteDetail() {
         <ChevronLeft className="h-4 w-4" /> {client?.name ?? "Client"}
       </Link>
       <PageHeader
-        title={site.name}
-        description={[client?.name, site.address].filter(Boolean).join(" · ")}
+        title={site.site_number ? `${site.site_number} · ${site.name}` : site.name}
+        description={[client?.client_number ? `${client.client_number} · ${client.name}` : client?.name, site.address].filter(Boolean).join(" · ")}
       />
 
       <Card className="mb-6">
@@ -120,7 +120,7 @@ function SiteDetail() {
                       <Wrench className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="font-medium">{installation.name}</div>
+                      <div className="font-medium">{installation.installation_number ? `${installation.installation_number} · ` : ""}{installation.name}</div>
                       <div className="text-xs text-muted-foreground">
                         {[
                           type?.name,

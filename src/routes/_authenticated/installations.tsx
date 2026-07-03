@@ -116,7 +116,7 @@ function InstallationsList() {
   const filtered = installs.filter((i) => {
     const site = sites.find((s) => s.id === i.site_id);
     const client = clients.find((c) => c.id === site?.client_id);
-    return [i.name, i.serial_number, site?.name, client?.name]
+    return [i.installation_number, i.name, i.serial_number, site?.site_number, site?.name, client?.client_number, client?.name]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -223,7 +223,7 @@ function InstallationsList() {
                         params={{ installationId: i.id }}
                         className="font-medium hover:underline"
                       >
-                        {i.name}
+                        {i.installation_number ? `${i.installation_number} · ` : ""}{i.name}
                       </Link>
                       <div className="text-xs text-muted-foreground">
                         {[type?.name, brand?.name, model?.name].filter(Boolean).join(" · ") || "—"}
@@ -281,7 +281,7 @@ function InstallationsList() {
                           params={{ siteId: site?.id }}
                           className="hover:underline"
                         >
-                          {site?.name}
+                          {site?.site_number ? `${site.site_number} · ` : ""}{site?.name}
                         </Link>
                         {i.serial_number && ` · SN ${i.serial_number}`}
                       </div>
