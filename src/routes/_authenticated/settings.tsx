@@ -107,9 +107,12 @@ function SettingsPage() {
               {(models.data ?? []).map((m: any) => {
                 const b = brands.data?.find((x: any) => x.id === m.brand_id);
                 return (
-                  <div key={m.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                    <span>{b?.name} <span className="text-muted-foreground">— {m.name}</span></span>
-                    <Button variant="ghost" size="icon" onClick={() => rmModel.mutate(m.id)}><Trash2 className="h-4 w-4" /></Button>
+                  <div key={m.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                    <span className="min-w-0 truncate">{b?.name} <span className="text-muted-foreground">— {m.name}</span></span>
+                    <div className="flex shrink-0 items-center">
+                      <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", m.name); if (n && n.trim()) upModel.mutate({ id: m.id, name: n.trim(), brand_id: m.brand_id }); }}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${m.name} ?`)) rmModel.mutate(m.id); }}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
                   </div>
                 );
               })}
