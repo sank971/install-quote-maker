@@ -13,6 +13,7 @@ export type TableName =
   | "parts"
   | "part_model_compat"
   | "part_type_compat"
+  | "installation_parts"
   | "suppliers"
   | "supplier_parts"
   | "contracts"

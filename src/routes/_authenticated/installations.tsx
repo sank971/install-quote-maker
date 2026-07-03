@@ -14,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Wrench, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Wrench, Pencil, Trash2, Package } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 type CustomField = { key: string; label: string; type: "text" | "number" | "date" | "checkbox" };
 
@@ -36,14 +39,57 @@ function Page() {
   const { data: brands = [] } = useList<any>("brands", { orderBy: "name", ascending: true });
   const { data: models = [] } = useList<any>("models");
   const { data: contracts = [] } = useList<any>("contracts");
+  const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
+  const { data: modelCompat = [] } = useList<any>("part_model_compat");
+  const { data: typeCompat = [] } = useList<any>("part_type_compat");
+  const { data: installationParts = [] } = useList<any>("installation_parts");
   const upsert = useUpsert("installations");
   const remove = useRemove("installations");
+  const qc = useQueryClient();
 
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [brandId, setBrandId] = useState<string>("");
   const [typeId, setTypeId] = useState<string>("");
+  const [partsOpen, setPartsOpen] = useState<any>(null);
+
+  const getCompatibleParts = (installation: any) => {
+    if (!installation?.id) return [];
+    const ids = new Set<string>();
+    if (installation.model_id) {
+      modelCompat
+        .filter((c: any) => c.model_id === installation.model_id)
+        .forEach((c: any) => ids.add(c.part_id));
+    }
+    if (installation.type_id) {
+      typeCompat
+        .filter((c: any) => c.type_id === installation.type_id)
+        .forEach((c: any) => ids.add(c.part_id));
+    }
+    return parts.filter((p: any) => ids.has(p.id));
+  };
+
+  const getPresentParts = (installationId: string) =>
+    installationParts
+      .filter((x: any) => x.installation_id === installationId)
+      .map((x: any) => ({ ...x, part: parts.find((p: any) => p.id === x.part_id) }))
+      .filter((x: any) => x.part);
+
+  const toggleInstallationPart = async (
+    installationId: string,
+    partId: string,
+    present: boolean,
+  ) => {
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+    const table = supabase.from("installation_parts" as any) as any;
+    const { error } = present
+      ? await table.delete().eq("installation_id", installationId).eq("part_id", partId)
+      : await table.insert({ installation_id: installationId, part_id: partId, owner_id });
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["installation_parts"] });
+  };
 
   const filtered = installs.filter((i) => {
     const site = sites.find((s) => s.id === i.site_id);
@@ -137,6 +183,7 @@ function Page() {
             const type = types.find((t: any) => t.id === i.type_id);
             const brand = brands.find((b: any) => b.id === i.brand_id);
             const model = models.find((m: any) => m.id === i.model_id);
+            const presentParts = getPresentParts(i.id);
             return (
               <Card key={i.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -152,6 +199,23 @@ function Page() {
                       {type?.component_types?.length ? (
                         <div className="mt-1 text-xs text-muted-foreground">
                           Pièces: {type.component_types.join(", ")}
+                        </div>
+                      ) : null}
+                      {presentParts.length ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {presentParts.slice(0, 4).map((x: any) => (
+                            <span
+                              key={x.part_id}
+                              className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                            >
+                              {x.part.name}
+                            </span>
+                          ))}
+                          {presentParts.length > 4 ? (
+                            <span className="rounded bg-muted px-2 py-0.5 text-xs">
+                              +{presentParts.length - 4}
+                            </span>
+                          ) : null}
                         </div>
                       ) : null}
                       {type?.custom_fields?.length ? (
@@ -186,6 +250,9 @@ function Page() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => setPartsOpen(i)}>
+                      <Package className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(i)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -353,6 +420,51 @@ function Page() {
               <Button type="submit">Enregistrer</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!partsOpen} onOpenChange={(o) => !o && setPartsOpen(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pièces présentes : {partsOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Cochez les pièces réellement présentes sur cette installation. Les pièces compatibles
+            avec son type ou son modèle sont suggérées pour accélérer les futurs devis.
+          </p>
+          {partsOpen ? (
+            <div className="space-y-4">
+              {getCompatibleParts(partsOpen).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Aucune pièce compatible trouvée. Ajoutez les compatibilités depuis la fiche pièce.
+                </p>
+              ) : (
+                <div className="grid gap-2">
+                  {getCompatibleParts(partsOpen).map((part: any) => {
+                    const present = installationParts.some(
+                      (x: any) => x.installation_id === partsOpen.id && x.part_id === part.id,
+                    );
+                    return (
+                      <label
+                        key={part.id}
+                        className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={present}
+                          onChange={() => toggleInstallationPart(partsOpen.id, part.id, present)}
+                        />
+                        <span className="font-medium">{part.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {[part.reference, part.category].filter(Boolean).join(" · ")}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

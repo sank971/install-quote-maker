@@ -30,7 +30,9 @@ function NewQuote() {
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
-  const { data: compat = [] } = useList<any>("part_model_compat");
+  const { data: modelCompat = [] } = useList<any>("part_model_compat");
+  const { data: typeCompat = [] } = useList<any>("part_type_compat");
+  const { data: installationParts = [] } = useList<any>("installation_parts");
   const { data: sp = [] } = useList<any>("supplier_parts");
   const { data: contracts = [] } = useList<any>("contracts");
 
@@ -58,11 +60,39 @@ function NewQuote() {
     if (c?.travel_fee != null) setTravelFee(Number(c.travel_fee));
   };
 
+  const presentPartIds = useMemo(
+    () =>
+      new Set(
+        installationParts
+          .filter((x: any) => x.installation_id === installationId)
+          .map((x: any) => x.part_id),
+      ),
+    [installationParts, installationId],
+  );
+
   const compatibleParts = useMemo(() => {
-    if (!installation?.model_id) return parts;
-    const ids = new Set(compat.filter((x: any) => x.model_id === installation.model_id).map((x: any) => x.part_id));
-    return parts.filter((p: any) => ids.has(p.id));
-  }, [parts, compat, installation]);
+    if (!installation?.model_id && !installation?.type_id) return parts;
+    const ids = new Set<string>();
+    if (installation.model_id) {
+      modelCompat
+        .filter((x: any) => x.model_id === installation.model_id)
+        .forEach((x: any) => ids.add(x.part_id));
+    }
+    if (installation.type_id) {
+      typeCompat
+        .filter((x: any) => x.type_id === installation.type_id)
+        .forEach((x: any) => ids.add(x.part_id));
+    }
+    installationParts
+      .filter((x: any) => x.installation_id === installation.id)
+      .forEach((x: any) => ids.add(x.part_id));
+
+    return parts
+      .filter((p: any) => ids.has(p.id))
+      .sort(
+        (a: any, b: any) => Number(presentPartIds.has(b.id)) - Number(presentPartIds.has(a.id)),
+      );
+  }, [parts, modelCompat, typeCompat, installationParts, installation, presentPartIds]);
 
   const cheapestCost = (partId: string) => {
     const offers = sp.filter((x: any) => x.part_id === partId);
@@ -74,19 +104,30 @@ function NewQuote() {
     const p = parts.find((x: any) => x.id === partId);
     if (!p) return;
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
-    setItems((prev) => [...prev, {
-      key: crypto.randomUUID(),
-      part_id: p.id,
-      description: p.name,
-      quantity: 1,
-      unit_price: Number(p.sale_price) * (1 - discount),
-      unit_cost: cheapestCost(p.id),
-    }]);
+    setItems((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        part_id: p.id,
+        description: p.name,
+        quantity: 1,
+        unit_price: Number(p.sale_price) * (1 - discount),
+        unit_cost: cheapestCost(p.id),
+      },
+    ]);
   };
 
-  const addFree = () => setItems((prev) => [...prev, {
-    key: crypto.randomUUID(), description: "", quantity: 1, unit_price: 0, unit_cost: 0,
-  }]);
+  const addFree = () =>
+    setItems((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        description: "",
+        quantity: 1,
+        unit_price: 0,
+        unit_cost: 0,
+      },
+    ]);
 
   const update = (key: string, patch: Partial<Item>) =>
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -109,19 +150,23 @@ function NewQuote() {
       const { data: user } = await supabase.auth.getUser();
       const owner_id = user.user!.id;
       const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
-      const { data: quote, error } = await supabase.from("quotes").insert({
-        owner_id,
-        quote_number: number,
-        client_id: clientId,
-        site_id: siteId || null,
-        installation_id: installationId || null,
-        contract_id: contractId || null,
-        labor_hours: laborHours,
-        labor_rate: laborRate,
-        travel_fee: travelFee,
-        vat_rate: vatRate,
-        notes: notes || null,
-      }).select().single();
+      const { data: quote, error } = await supabase
+        .from("quotes")
+        .insert({
+          owner_id,
+          quote_number: number,
+          client_id: clientId,
+          site_id: siteId || null,
+          installation_id: installationId || null,
+          contract_id: contractId || null,
+          labor_hours: laborHours,
+          labor_rate: laborRate,
+          travel_fee: travelFee,
+          vat_rate: vatRate,
+          notes: notes || null,
+        })
+        .select()
+        .single();
       if (error) throw error;
       if (items.length > 0) {
         const rows = items.map((i, idx) => ({
@@ -148,90 +193,233 @@ function NewQuote() {
 
   return (
     <div>
-      <Link to="/quotes" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/quotes"
+        className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
         <ChevronLeft className="h-4 w-4" /> Devis
       </Link>
-      <PageHeader title="Nouveau devis" description="Suivez le workflow : client → site → installation → pièces" />
+      <PageHeader
+        title="Nouveau devis"
+        description="Suivez le workflow : client → site → installation → pièces"
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader><CardTitle className="text-base">1. Contexte</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">1. Contexte</CardTitle>
+            </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Client *</Label>
-                <select value={clientId} onChange={(e) => { setClientId(e.target.value); setSiteId(""); setInstallationId(""); }} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <select
+                  value={clientId}
+                  onChange={(e) => {
+                    setClientId(e.target.value);
+                    setSiteId("");
+                    setInstallationId("");
+                  }}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
                   <option value="">—</option>
-                  {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {clients.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <Label>Site</Label>
-                <select value={siteId} onChange={(e) => { setSiteId(e.target.value); setInstallationId(""); }} disabled={!clientId} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <select
+                  value={siteId}
+                  onChange={(e) => {
+                    setSiteId(e.target.value);
+                    setInstallationId("");
+                  }}
+                  disabled={!clientId}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
                   <option value="">—</option>
-                  {clientSites.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {clientSites.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <Label>Installation</Label>
-                <select value={installationId} onChange={(e) => {
-                  setInstallationId(e.target.value);
-                  const inst = installs.find((x: any) => x.id === e.target.value);
-                  if (inst?.contract_id) applyContract(contracts.find((c: any) => c.id === inst.contract_id));
-                }} disabled={!siteId} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <select
+                  value={installationId}
+                  onChange={(e) => {
+                    setInstallationId(e.target.value);
+                    const inst = installs.find((x: any) => x.id === e.target.value);
+                    if (inst?.contract_id)
+                      applyContract(contracts.find((c: any) => c.id === inst.contract_id));
+                  }}
+                  disabled={!siteId}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
                   <option value="">—</option>
-                  {siteInstalls.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  {siteInstalls.map((i: any) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <Label>Contrat appliqué</Label>
-                <select value={contractId} onChange={(e) => applyContract(contracts.find((c: any) => c.id === e.target.value))} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <select
+                  value={contractId}
+                  onChange={(e) =>
+                    applyContract(contracts.find((c: any) => c.id === e.target.value))
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
                   <option value="">Aucun</option>
-                  {contracts.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {contracts.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base">2. Pièces {installation?.model_id && <span className="ml-2 text-xs font-normal text-muted-foreground">(compatibles filtrées)</span>}</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">
+                2. Pièces{" "}
+                {installation && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (présentes puis compatibles)
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <select onChange={(e) => { if (e.target.value) { addPart(e.target.value); e.target.value = ""; } }} className="flex h-9 flex-1 min-w-[200px] rounded-md border border-input bg-transparent px-3 text-sm">
-                  <option value="">+ Ajouter une pièce compatible</option>
-                  {compatibleParts.map((p: any) => <option key={p.id} value={p.id}>{p.name} — {Number(p.sale_price).toFixed(2)}€</option>)}
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      addPart(e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  className="flex h-9 flex-1 min-w-[200px] rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">+ Ajouter une pièce présente / compatible</option>
+                  {compatibleParts.map((p: any) => (
+                    <option key={p.id} value={p.id}>
+                      {presentPartIds.has(p.id) ? "✓ " : ""}
+                      {p.name} — {Number(p.sale_price).toFixed(2)}€
+                    </option>
+                  ))}
                 </select>
-                <Button variant="outline" size="sm" onClick={addFree}><Plus className="mr-1 h-4 w-4" />Ligne libre</Button>
+                <Button variant="outline" size="sm" onClick={addFree}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Ligne libre
+                </Button>
               </div>
 
               {items.length === 0 && <p className="text-sm text-muted-foreground">Aucune ligne.</p>}
               {items.map((i) => (
-                <div key={i.key} className="grid gap-2 rounded-md border border-border/60 p-3 sm:grid-cols-[1fr_80px_100px_100px_40px] sm:items-center">
-                  <Input value={i.description} onChange={(e) => update(i.key, { description: e.target.value })} placeholder="Description" />
-                  <Input type="number" step="0.01" value={i.quantity} onChange={(e) => update(i.key, { quantity: Number(e.target.value) })} />
-                  <Input type="number" step="0.01" value={i.unit_price} onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })} placeholder="PU HT" />
-                  <Input type="number" step="0.01" value={i.unit_cost} onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })} placeholder="Coût" title="Coût réel" />
-                  <Button variant="ghost" size="icon" onClick={() => remove(i.key)}><Trash2 className="h-4 w-4" /></Button>
+                <div
+                  key={i.key}
+                  className="grid gap-2 rounded-md border border-border/60 p-3 sm:grid-cols-[1fr_80px_100px_100px_40px] sm:items-center"
+                >
+                  <Input
+                    value={i.description}
+                    onChange={(e) => update(i.key, { description: e.target.value })}
+                    placeholder="Description"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={i.quantity}
+                    onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={i.unit_price}
+                    onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })}
+                    placeholder="PU HT"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={i.unit_cost}
+                    onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })}
+                    placeholder="Coût"
+                    title="Coût réel"
+                  />
+                  <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base">3. Main-d'œuvre & déplacement</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">3. Main-d'œuvre & déplacement</CardTitle>
+            </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-4">
-              <div><Label>Heures</Label><Input type="number" step="0.25" value={laborHours} onChange={(e) => setLaborHours(Number(e.target.value))} /></div>
-              <div><Label>Tarif €/h</Label><Input type="number" step="0.01" value={laborRate} onChange={(e) => setLaborRate(Number(e.target.value))} /></div>
-              <div><Label>Déplacement €</Label><Input type="number" step="0.01" value={travelFee} onChange={(e) => setTravelFee(Number(e.target.value))} /></div>
-              <div><Label>TVA %</Label><Input type="number" step="0.01" value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} /></div>
-              <div className="sm:col-span-4"><Label>Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} /></div>
+              <div>
+                <Label>Heures</Label>
+                <Input
+                  type="number"
+                  step="0.25"
+                  value={laborHours}
+                  onChange={(e) => setLaborHours(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>Tarif €/h</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={laborRate}
+                  onChange={(e) => setLaborRate(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>Déplacement €</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={travelFee}
+                  onChange={(e) => setTravelFee(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>TVA %</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={vatRate}
+                  onChange={(e) => setVatRate(Number(e.target.value))}
+                />
+              </div>
+              <div className="sm:col-span-4">
+                <Label>Notes</Label>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+              </div>
             </CardContent>
           </Card>
         </div>
 
         <div>
           <Card className="sticky top-20">
-            <CardHeader><CardTitle className="text-base">Récapitulatif</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Récapitulatif</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-1.5 text-sm">
               <Row label="Pièces HT" value={partsHT} />
               <Row label="Main-d'œuvre" value={laborHT} />
@@ -246,12 +434,22 @@ function NewQuote() {
                 <Row label="Marge" value={margin} muted />
                 <div className="mt-1 flex justify-between text-xs text-muted-foreground">
                   <span>% de marge</span>
-                  <span className={marginPct >= 30 ? "text-success" : marginPct >= 15 ? "text-warning" : "text-destructive"}>
+                  <span
+                    className={
+                      marginPct >= 30
+                        ? "text-success"
+                        : marginPct >= 15
+                          ? "text-warning"
+                          : "text-destructive"
+                    }
+                  >
                     {marginPct.toFixed(1)}%
                   </span>
                 </div>
               </div>
-              <Button onClick={save} disabled={busy} className="mt-3 w-full">{busy ? "Enregistrement..." : "Créer le devis"}</Button>
+              <Button onClick={save} disabled={busy} className="mt-3 w-full">
+                {busy ? "Enregistrement..." : "Créer le devis"}
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -260,9 +458,21 @@ function NewQuote() {
   );
 }
 
-function Row({ label, value, strong, muted }: { label: string; value: number; strong?: boolean; muted?: boolean }) {
+function Row({
+  label,
+  value,
+  strong,
+  muted,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  muted?: boolean;
+}) {
   return (
-    <div className={`flex justify-between ${strong ? "font-semibold" : ""} ${muted ? "text-xs text-muted-foreground" : ""}`}>
+    <div
+      className={`flex justify-between ${strong ? "font-semibold" : ""} ${muted ? "text-xs text-muted-foreground" : ""}`}
+    >
       <span>{label}</span>
       <span>{value.toFixed(2)} €</span>
     </div>
