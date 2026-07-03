@@ -341,6 +341,39 @@ export type Database = {
           },
         ]
       }
+      part_type_compat: {
+        Row: {
+          owner_id: string
+          part_id: string
+          type_id: string
+        }
+        Insert: {
+          owner_id?: string
+          part_id: string
+          type_id: string
+        }
+        Update: {
+          owner_id?: string
+          part_id?: string
+          type_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "part_type_compat_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "part_type_compat_type_id_fkey"
+            columns: ["type_id"]
+            isOneToOne: false
+            referencedRelation: "installation_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parts: {
         Row: {
           brand_id: string | null
