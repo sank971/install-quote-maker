@@ -4,18 +4,78 @@ import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
 });
 
 const DEFAULT_TYPES = [
-  "Porte coulissante", "Porte sectionnelle", "Rideau métallique",
-  "Porte battante", "Portail coulissant", "Portail battant", "Porte souple",
+  {
+    name: "Porte coulissante",
+    component_types: ["Chariots", "Moteur", "Sélecteur de positions", "Système de détection"],
+    custom_fields: [
+      { key: "nombre_vantaux", label: "Nombre de vantaux", type: "number" },
+      { key: "taille_vantaux", label: "Taille des vantaux", type: "text" },
+    ],
+  },
+  {
+    name: "Porte sectionnelle",
+    component_types: ["Moteur", "Ressorts", "Rails", "Système de sécurité"],
+    custom_fields: [],
+  },
+  {
+    name: "Rideau métallique",
+    component_types: ["Moteur", "Lames", "Boîtier de commande"],
+    custom_fields: [],
+  },
+  {
+    name: "Porte battante",
+    component_types: ["Ferme-porte", "Paumelles", "Système de détection"],
+    custom_fields: [{ key: "nombre_vantaux", label: "Nombre de vantaux", type: "number" }],
+  },
+  {
+    name: "Portail coulissant",
+    component_types: ["Moteur", "Crémaillère", "Barre palpeuse", "Système de détection"],
+    custom_fields: [],
+  },
+  {
+    name: "Portail battant",
+    component_types: ["Barre palpeuse", "Système de détection", "Moteur"],
+    custom_fields: [
+      { key: "nombre_vantaux", label: "Nombre de vantaux", type: "number" },
+      { key: "taille_vantaux", label: "Taille des vantaux", type: "text" },
+    ],
+  },
+  {
+    name: "Porte souple",
+    component_types: ["Moteur", "Toile", "Barre palpeuse"],
+    custom_fields: [],
+  },
 ];
+
+type CustomField = { key: string; label: string; type: "text" | "number" | "date" | "checkbox" };
+
+const toKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+const normalizeFields = (fields: any[]): CustomField[] =>
+  fields
+    .map((f) => ({ key: f.key || toKey(f.label), label: f.label, type: f.type || "text" }))
+    .filter((f) => f.key && f.label);
+const splitList = (value: string) =>
+  value
+    .split("\n")
+    .map((v) => v.trim())
+    .filter(Boolean);
 
 function SettingsPage() {
   const types = useList<any>("installation_types", { orderBy: "name", ascending: true });
@@ -32,13 +92,35 @@ function SettingsPage() {
   const [brandName, setBrandName] = useState("");
   const [modelName, setModelName] = useState("");
   const [modelBrand, setModelBrand] = useState("");
+  const [typeDraft, setTypeDraft] = useState<any | null>(null);
+  const [componentText, setComponentText] = useState("");
+  const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [newFieldType, setNewFieldType] = useState<CustomField["type"]>("text");
 
   const seedTypes = async () => {
-    for (const name of DEFAULT_TYPES) {
-      if (!types.data?.some((t: any) => t.name === name)) {
-        await upType.mutateAsync({ name });
+    for (const type of DEFAULT_TYPES) {
+      if (!types.data?.some((t: any) => t.name === type.name)) {
+        await upType.mutateAsync(type);
       }
     }
+  };
+
+  const openTypeEditor = (type: any) => {
+    setTypeDraft({ ...type, custom_fields: normalizeFields(type.custom_fields ?? []) });
+    setComponentText((type.component_types ?? []).join("\n"));
+    setNewFieldLabel("");
+    setNewFieldType("text");
+  };
+
+  const saveTypeDraft = async () => {
+    if (!typeDraft?.name?.trim()) return;
+    await upType.mutateAsync({
+      id: typeDraft.id,
+      name: typeDraft.name.trim(),
+      component_types: splitList(componentText),
+      custom_fields: normalizeFields(typeDraft.custom_fields ?? []),
+    });
+    setTypeDraft(null);
   };
 
   return (
@@ -50,39 +132,221 @@ function SettingsPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Types d'installation</CardTitle>
             {(types.data ?? []).length === 0 && (
-              <Button variant="outline" size="sm" onClick={seedTypes}>Charger les types courants</Button>
+              <Button variant="outline" size="sm" onClick={seedTypes}>
+                Charger les types courants
+              </Button>
             )}
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex gap-2">
-              <Input value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="Nouveau type" />
-              <Button size="icon" onClick={async () => { if (typeName.trim()) { await upType.mutateAsync({ name: typeName.trim() }); setTypeName(""); } }}><Plus className="h-4 w-4" /></Button>
+              <Input
+                value={typeName}
+                onChange={(e) => setTypeName(e.target.value)}
+                placeholder="Nouveau type"
+              />
+              <Button
+                size="icon"
+                onClick={async () => {
+                  if (typeName.trim()) {
+                    await upType.mutateAsync({ name: typeName.trim() });
+                    setTypeName("");
+                  }
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
             {(types.data ?? []).map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
+              >
                 <span className="min-w-0 truncate">{t.name}</span>
                 <div className="flex shrink-0 items-center">
-                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", t.name); if (n && n.trim()) upType.mutate({ id: t.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${t.name} ?`)) rmType.mutate(t.id); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => openTypeEditor(t)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (confirm(`Supprimer ${t.name} ?`)) rmType.mutate(t.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))}
           </CardContent>
         </Card>
 
+        {typeDraft && (
+          <Card className="lg:col-span-3">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Modifier le type d'installation</CardTitle>
+              <Button variant="ghost" size="icon" onClick={() => setTypeDraft(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Nom</Label>
+                <Input
+                  value={typeDraft.name ?? ""}
+                  onChange={(e) => setTypeDraft({ ...typeDraft, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Types de pièces / organes (un par ligne)</Label>
+                <Textarea
+                  value={componentText}
+                  onChange={(e) => setComponentText(e.target.value)}
+                  rows={4}
+                  placeholder="Moteur\nSystème de détection\nBarre palpeuse"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Champs caractéristiques</Label>
+                {(typeDraft.custom_fields ?? []).map((field: CustomField, index: number) => (
+                  <div
+                    key={`${field.key}-${index}`}
+                    className="grid gap-2 sm:grid-cols-[1fr_150px_auto]"
+                  >
+                    <Input
+                      value={field.label}
+                      onChange={(e) => {
+                        const fields = [...(typeDraft.custom_fields ?? [])];
+                        fields[index] = {
+                          ...field,
+                          label: e.target.value,
+                          key: toKey(e.target.value),
+                        };
+                        setTypeDraft({ ...typeDraft, custom_fields: fields });
+                      }}
+                    />
+                    <select
+                      value={field.type}
+                      onChange={(e) => {
+                        const fields = [...(typeDraft.custom_fields ?? [])];
+                        fields[index] = { ...field, type: e.target.value as CustomField["type"] };
+                        setTypeDraft({ ...typeDraft, custom_fields: fields });
+                      }}
+                      className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                    >
+                      <option value="text">Texte</option>
+                      <option value="number">Nombre</option>
+                      <option value="date">Date</option>
+                      <option value="checkbox">Oui / non</option>
+                    </select>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setTypeDraft({
+                          ...typeDraft,
+                          custom_fields: (typeDraft.custom_fields ?? []).filter(
+                            (_: any, i: number) => i !== index,
+                          ),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <Input
+                    value={newFieldLabel}
+                    onChange={(e) => setNewFieldLabel(e.target.value)}
+                    placeholder="Ex. Nombre de vantaux"
+                  />
+                  <select
+                    value={newFieldType}
+                    onChange={(e) => setNewFieldType(e.target.value as CustomField["type"])}
+                    className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                  >
+                    <option value="text">Texte</option>
+                    <option value="number">Nombre</option>
+                    <option value="date">Date</option>
+                    <option value="checkbox">Oui / non</option>
+                  </select>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (!newFieldLabel.trim()) return;
+                      setTypeDraft({
+                        ...typeDraft,
+                        custom_fields: [
+                          ...(typeDraft.custom_fields ?? []),
+                          {
+                            key: toKey(newFieldLabel),
+                            label: newFieldLabel.trim(),
+                            type: newFieldType,
+                          },
+                        ],
+                      });
+                      setNewFieldLabel("");
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <Button onClick={saveTypeDraft}>Enregistrer le type</Button>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
-          <CardHeader><CardTitle className="text-base">Marques</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Marques</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex gap-2">
-              <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Ex. Record, FAAC..." />
-              <Button size="icon" onClick={async () => { if (brandName.trim()) { await upBrand.mutateAsync({ name: brandName.trim() }); setBrandName(""); } }}><Plus className="h-4 w-4" /></Button>
+              <Input
+                value={brandName}
+                onChange={(e) => setBrandName(e.target.value)}
+                placeholder="Ex. Record, FAAC..."
+              />
+              <Button
+                size="icon"
+                onClick={async () => {
+                  if (brandName.trim()) {
+                    await upBrand.mutateAsync({ name: brandName.trim() });
+                    setBrandName("");
+                  }
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
             {(brands.data ?? []).map((b: any) => (
-              <div key={b.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+              <div
+                key={b.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
+              >
                 <span className="min-w-0 truncate">{b.name}</span>
                 <div className="flex shrink-0 items-center">
-                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", b.name); if (n && n.trim()) upBrand.mutate({ id: b.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${b.name} ?`)) rmBrand.mutate(b.id); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      const n = prompt("Nouveau nom", b.name);
+                      if (n && n.trim()) upBrand.mutate({ id: b.id, name: n.trim() });
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (confirm(`Supprimer ${b.name} ?`)) rmBrand.mutate(b.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -90,28 +354,76 @@ function SettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Modèles</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Modèles</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2">
             <div className="space-y-2">
               <Label className="text-xs">Marque</Label>
-              <select value={modelBrand} onChange={(e) => setModelBrand(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <select
+                value={modelBrand}
+                onChange={(e) => setModelBrand(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              >
                 <option value="">Choisir...</option>
-                {(brands.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {(brands.data ?? []).map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
               </select>
               <div className="flex gap-2">
-                <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="Ex. STA20" />
-                <Button size="icon" disabled={!modelBrand} onClick={async () => { if (modelName.trim()) { await upModel.mutateAsync({ name: modelName.trim(), brand_id: modelBrand }); setModelName(""); } }}><Plus className="h-4 w-4" /></Button>
+                <Input
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  placeholder="Ex. STA20"
+                />
+                <Button
+                  size="icon"
+                  disabled={!modelBrand}
+                  onClick={async () => {
+                    if (modelName.trim()) {
+                      await upModel.mutateAsync({ name: modelName.trim(), brand_id: modelBrand });
+                      setModelName("");
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
             </div>
             <div className="mt-3 max-h-[300px] overflow-y-auto space-y-1">
               {(models.data ?? []).map((m: any) => {
                 const b = brands.data?.find((x: any) => x.id === m.brand_id);
                 return (
-                  <div key={m.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                    <span className="min-w-0 truncate">{b?.name} <span className="text-muted-foreground">— {m.name}</span></span>
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
+                  >
+                    <span className="min-w-0 truncate">
+                      {b?.name} <span className="text-muted-foreground">— {m.name}</span>
+                    </span>
                     <div className="flex shrink-0 items-center">
-                      <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", m.name); if (n && n.trim()) upModel.mutate({ id: m.id, name: n.trim(), brand_id: m.brand_id }); }}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${m.name} ?`)) rmModel.mutate(m.id); }}><Trash2 className="h-4 w-4" /></Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const n = prompt("Nouveau nom", m.name);
+                          if (n && n.trim())
+                            upModel.mutate({ id: m.id, name: n.trim(), brand_id: m.brand_id });
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          if (confirm(`Supprimer ${m.name} ?`)) rmModel.mutate(m.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 );
