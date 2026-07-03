@@ -112,7 +112,7 @@ function Page() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader><DialogTitle>{edit?.id ? "Modifier" : "Nouvelle"} installation</DialogTitle></DialogHeader>
           <form onSubmit={submit} className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
