@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
@@ -21,6 +21,13 @@ export const Route = createFileRoute("/_authenticated/sites")({
 });
 
 function SitesPage() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isDetailRoute = pathname.startsWith("/sites/");
+
+  return isDetailRoute ? <Outlet /> : <SitesList />;
+}
+
+function SitesList() {
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
   const { data: clients = [] } = useList<any>("clients");
   const upsert = useUpsert("sites");

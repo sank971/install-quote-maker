@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
@@ -26,6 +26,13 @@ export const Route = createFileRoute("/_authenticated/installations")({
 });
 
 function Page() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isDetailRoute = pathname.startsWith("/installations/");
+
+  return isDetailRoute ? <Outlet /> : <InstallationsList />;
+}
+
+function InstallationsList() {
   const { data: installs = [] } = useList<any>("installations", {
     orderBy: "name",
     ascending: true,
