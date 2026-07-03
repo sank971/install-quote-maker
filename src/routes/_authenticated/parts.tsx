@@ -385,13 +385,13 @@ function PartsPage() {
           }
         }}
       >
-        <DialogContent className="max-h-[80vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Composition : {componentsOpen?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Déclarez les pièces incluses dans cette référence composée. Exemple : un vantail 20VR
-            peut contenir 5 pièces remplaçables individuellement dans un devis.
+            peut contenir autant de pièces remplaçables individuellement que nécessaire dans un devis.
           </p>
           <div className="space-y-2">
             {partComponents
@@ -430,7 +430,7 @@ function PartsPage() {
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Ajouter plusieurs pièces composantes
               </div>
-              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              <div className="grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
                 {parts
                   .filter((part: any) => part.id !== componentsOpen?.id)
                   .map((part: any) => {
