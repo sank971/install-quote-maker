@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useList } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -19,13 +20,17 @@ interface Item {
   key: string;
   part_id?: string;
   description: string;
+  reference?: string;
+  category?: string;
   quantity: number;
   unit_price: number;
   unit_cost: number;
+  save_as_part?: boolean;
 }
 
 function NewQuote() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: clients = [] } = useList<any>("clients");
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
@@ -37,12 +42,17 @@ function NewQuote() {
   const { data: installationParts = [] } = useList<any>("installation_parts");
   const { data: sp = [] } = useList<any>("supplier_parts");
   const { data: contracts = [] } = useList<any>("contracts");
+  const { data: partCategories = [] } = useList<any>("part_categories", {
+    orderBy: "name",
+    ascending: true,
+  });
 
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [installationId, setInstallationId] = useState("");
   const [contractId, setContractId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
+  const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
   const [laborHours, setLaborHours] = useState(0);
   const [laborRate, setLaborRate] = useState(65);
   const [travelFee, setTravelFee] = useState(0);
@@ -56,6 +66,8 @@ function NewQuote() {
   const contract = contracts.find((c: any) => c.id === contractId);
   const selectedClient = clients.find((c: any) => c.id === clientId);
   const selectedSite = sites.find((s: any) => s.id === siteId);
+  const contractDiscountPct = Number(contract?.parts_discount_pct ?? 0);
+  const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
 
   // Apply contract rates
   const applyContract = (c: any) => {
@@ -78,6 +90,19 @@ function NewQuote() {
     String(value ?? "")
       .trim()
       .toLowerCase();
+
+  const availablePartTypes = useMemo(() => {
+    const installationModel = models.find((m: any) => m.id === installation?.model_id);
+    const effectiveTypeId = installation?.type_id || installationModel?.type_id;
+    const installationType = types.find((t: any) => t.id === effectiveTypeId);
+    const componentTypes = Array.isArray(installationType?.component_types)
+      ? installationType.component_types
+      : [];
+    const names = componentTypes.length
+      ? componentTypes
+      : partCategories.map((category: any) => category.name);
+    return [...new Set(names.map((name: string) => String(name)).filter(Boolean))];
+  }, [installation, models, types, partCategories]);
 
   const compatibleParts = useMemo(() => {
     if (!installation?.model_id && !installation?.type_id) return parts;
@@ -103,10 +128,16 @@ function NewQuote() {
       .filter((x: any) => x.installation_id === installation.id)
       .forEach((x: any) => ids.add(x.part_id));
 
+    const selectedTypes = new Set(selectedPartTypes.map((name) => normalizeName(name)));
+
     return parts
-      .filter(
-        (p: any) => ids.has(p.id) || (p.category && componentTypes.has(normalizeName(p.category))),
-      )
+      .filter((p: any) => {
+        const matchesSelectedType =
+          selectedTypes.size === 0 || (p.category && selectedTypes.has(normalizeName(p.category)));
+        const matchesCompatibility =
+          ids.has(p.id) || (p.category && componentTypes.has(normalizeName(p.category)));
+        return matchesSelectedType && matchesCompatibility;
+      })
       .sort(
         (a: any, b: any) => Number(presentPartIds.has(b.id)) - Number(presentPartIds.has(a.id)),
       );
@@ -119,6 +150,7 @@ function NewQuote() {
     installationParts,
     installation,
     presentPartIds,
+    selectedPartTypes,
   ]);
 
   const cheapestCost = (partId: string) => {
@@ -137,6 +169,8 @@ function NewQuote() {
         key: crypto.randomUUID(),
         part_id: p.id,
         description: p.name,
+        reference: p.reference ?? "",
+        category: p.category ?? "",
         quantity: 1,
         unit_price: Number(p.sale_price) * (1 - discount),
         unit_cost: cheapestCost(p.id),
@@ -161,6 +195,8 @@ function NewQuote() {
       {
         key: crypto.randomUUID(),
         description: "",
+        reference: "",
+        category: selectedPartTypes[0] ?? "",
         quantity: 1,
         unit_price: 0,
         unit_cost: 0,
@@ -223,8 +259,34 @@ function NewQuote() {
         .select()
         .single();
       if (error) throw error;
-      if (items.length > 0) {
-        const rows = items.map((i, idx) => ({
+      const resolvedItems = await Promise.all(
+        items.map(async (i) => {
+          if (!i.save_as_part || i.part_id || !i.description.trim()) return i;
+          const { data: newPart, error: partError } = await supabase
+            .from("parts")
+            .insert({
+              owner_id,
+              name: i.description.trim(),
+              reference: i.reference?.trim() || null,
+              category: i.category || null,
+              sale_price: i.unit_price,
+            })
+            .select()
+            .single();
+          if (partError) throw partError;
+          if (installation?.model_id) {
+            const { error: compatError } = await supabase.from("part_model_compat").insert({
+              owner_id,
+              part_id: newPart.id,
+              model_id: installation.model_id,
+            });
+            if (compatError) throw compatError;
+          }
+          return { ...i, part_id: newPart.id };
+        }),
+      );
+      if (resolvedItems.length > 0) {
+        const rows = resolvedItems.map((i, idx) => ({
           owner_id,
           quote_id: quote.id,
           part_id: i.part_id ?? null,
@@ -237,6 +299,8 @@ function NewQuote() {
         const { error: e2 } = await supabase.from("quote_items").insert(rows);
         if (e2) throw e2;
       }
+      qc.invalidateQueries({ queryKey: ["parts"] });
+      qc.invalidateQueries({ queryKey: ["part_model_compat"] });
       toast.success("Devis créé");
       navigate({ to: "/quotes/$quoteId", params: { quoteId: quote.id } });
     } catch (e: any) {
@@ -297,6 +361,7 @@ function NewQuote() {
                     setClientId(e.target.value);
                     setSiteId("");
                     setInstallationId("");
+                    setSelectedPartTypes([]);
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
@@ -315,6 +380,7 @@ function NewQuote() {
                   onChange={(e) => {
                     setSiteId(e.target.value);
                     setInstallationId("");
+                    setSelectedPartTypes([]);
                   }}
                   disabled={!clientId}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
@@ -333,6 +399,7 @@ function NewQuote() {
                   value={installationId}
                   onChange={(e) => {
                     setInstallationId(e.target.value);
+                    setSelectedPartTypes([]);
                     const inst = installs.find((x: any) => x.id === e.target.value);
                     if (inst?.contract_id)
                       applyContract(contracts.find((c: any) => c.id === inst.contract_id));
@@ -380,6 +447,42 @@ function NewQuote() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {availablePartTypes.length > 0 && (
+                <div className="rounded-md border border-border/60 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Types de pièces à remplacer
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {availablePartTypes.map((type) => {
+                      const checked = selectedPartTypes.includes(type);
+                      return (
+                        <label
+                          key={type}
+                          className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedPartTypes((current) =>
+                                checked
+                                  ? current.filter((name) => name !== type)
+                                  : [...current, type],
+                              )
+                            }
+                          />
+                          <span>{type}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Les références proposées ci-dessous sont filtrées par type de pièce et
+                    compatibilité avec l’installation sélectionnée.
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 <select
                   onChange={(e) => {
@@ -414,44 +517,78 @@ function NewQuote() {
 
               {items.length === 0 && (
                 <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-                  Commencez par sélectionner une installation pour filtrer les pièces compatibles,
-                  ajoutez toutes les pièces présentes en un clic, ou créez une ligne libre.
+                  Commencez par sélectionner une installation, cochez les types de pièces à
+                  remplacer pour afficher les références compatibles, ou créez une ligne libre.
                 </div>
               )}
               {items.map((i) => (
-                <div
-                  key={i.key}
-                  className="grid gap-2 rounded-md border border-border/60 p-3 sm:grid-cols-[1fr_80px_100px_100px_40px] sm:items-center"
-                >
-                  <Input
-                    value={i.description}
-                    onChange={(e) => update(i.key, { description: e.target.value })}
-                    placeholder="Description"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={i.quantity}
-                    onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={i.unit_price}
-                    onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })}
-                    placeholder="PU HT"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={i.unit_cost}
-                    onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })}
-                    placeholder="Coût"
-                    title="Coût réel"
-                  />
-                  <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <div key={i.key} className="rounded-md border border-border/60 p-3">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_80px_100px_100px_40px] sm:items-center">
+                    <Input
+                      value={i.description}
+                      onChange={(e) => update(i.key, { description: e.target.value })}
+                      placeholder="Description"
+                    />
+                    <Input
+                      value={i.reference ?? ""}
+                      onChange={(e) => update(i.key, { reference: e.target.value })}
+                      placeholder="Référence"
+                      disabled={Boolean(i.part_id)}
+                    />
+                    <select
+                      value={i.category ?? ""}
+                      onChange={(e) => update(i.key, { category: e.target.value })}
+                      disabled={Boolean(i.part_id)}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    >
+                      <option value="">Type</option>
+                      {partCategories.map((category: any) => (
+                        <option key={category.id} value={category.name}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={i.quantity}
+                      onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={i.unit_price}
+                      onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })}
+                      placeholder="PU HT"
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={i.unit_cost}
+                      onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })}
+                      placeholder="Coût"
+                      title="Coût réel"
+                    />
+                    <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {!i.part_id && installation?.model_id && (
+                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(i.save_as_part)}
+                        onChange={(e) => update(i.key, { save_as_part: e.target.checked })}
+                      />
+                      Enregistrer cette nouvelle pièce et la rendre compatible avec ce modèle de
+                      porte
+                    </label>
+                  )}
+                  {contractDiscountPct > 0 && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Réduction contrat appliquée : {contractDiscountPct.toFixed(2)}%
+                    </div>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -512,6 +649,18 @@ function NewQuote() {
               <CardTitle className="text-base">Récapitulatif</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5 text-sm">
+              {contractTypeLabel && (
+                <div className="mb-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                  Type de contrat :{" "}
+                  <span className="font-medium text-foreground">{contractTypeLabel}</span>
+                </div>
+              )}
+              {contractDiscountPct > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Réduction contrat pièces</span>
+                  <span>{contractDiscountPct.toFixed(2)}%</span>
+                </div>
+              )}
               <Row label="Pièces HT" value={partsHT} />
               <Row label="Main-d'œuvre" value={laborHT} />
               <Row label="Déplacement" value={travelFee} />
