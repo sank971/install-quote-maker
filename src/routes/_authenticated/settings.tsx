@@ -59,9 +59,12 @@ function SettingsPage() {
               <Button size="icon" onClick={async () => { if (typeName.trim()) { await upType.mutateAsync({ name: typeName.trim() }); setTypeName(""); } }}><Plus className="h-4 w-4" /></Button>
             </div>
             {(types.data ?? []).map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                <span>{t.name}</span>
-                <Button variant="ghost" size="icon" onClick={() => rmType.mutate(t.id)}><Trash2 className="h-4 w-4" /></Button>
+              <div key={t.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                <span className="min-w-0 truncate">{t.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", t.name); if (n && n.trim()) upType.mutate({ id: t.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${t.name} ?`)) rmType.mutate(t.id); }}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
             ))}
           </CardContent>
