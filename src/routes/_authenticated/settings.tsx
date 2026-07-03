@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -59,9 +59,12 @@ function SettingsPage() {
               <Button size="icon" onClick={async () => { if (typeName.trim()) { await upType.mutateAsync({ name: typeName.trim() }); setTypeName(""); } }}><Plus className="h-4 w-4" /></Button>
             </div>
             {(types.data ?? []).map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                <span>{t.name}</span>
-                <Button variant="ghost" size="icon" onClick={() => rmType.mutate(t.id)}><Trash2 className="h-4 w-4" /></Button>
+              <div key={t.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                <span className="min-w-0 truncate">{t.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", t.name); if (n && n.trim()) upType.mutate({ id: t.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${t.name} ?`)) rmType.mutate(t.id); }}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -75,9 +78,12 @@ function SettingsPage() {
               <Button size="icon" onClick={async () => { if (brandName.trim()) { await upBrand.mutateAsync({ name: brandName.trim() }); setBrandName(""); } }}><Plus className="h-4 w-4" /></Button>
             </div>
             {(brands.data ?? []).map((b: any) => (
-              <div key={b.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                <span>{b.name}</span>
-                <Button variant="ghost" size="icon" onClick={() => rmBrand.mutate(b.id)}><Trash2 className="h-4 w-4" /></Button>
+              <div key={b.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                <span className="min-w-0 truncate">{b.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", b.name); if (n && n.trim()) upBrand.mutate({ id: b.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${b.name} ?`)) rmBrand.mutate(b.id); }}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -101,9 +107,12 @@ function SettingsPage() {
               {(models.data ?? []).map((m: any) => {
                 const b = brands.data?.find((x: any) => x.id === m.brand_id);
                 return (
-                  <div key={m.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                    <span>{b?.name} <span className="text-muted-foreground">— {m.name}</span></span>
-                    <Button variant="ghost" size="icon" onClick={() => rmModel.mutate(m.id)}><Trash2 className="h-4 w-4" /></Button>
+                  <div key={m.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                    <span className="min-w-0 truncate">{b?.name} <span className="text-muted-foreground">— {m.name}</span></span>
+                    <div className="flex shrink-0 items-center">
+                      <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", m.name); if (n && n.trim()) upModel.mutate({ id: m.id, name: n.trim(), brand_id: m.brand_id }); }}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${m.name} ?`)) rmModel.mutate(m.id); }}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
                   </div>
                 );
               })}

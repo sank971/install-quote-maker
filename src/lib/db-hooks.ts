@@ -5,6 +5,7 @@ import { toast } from "sonner";
 export type TableName =
   | "clients"
   | "sites"
+  | "site_contacts"
   | "installations"
   | "installation_types"
   | "brands"
