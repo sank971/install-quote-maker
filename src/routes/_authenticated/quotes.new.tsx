@@ -27,6 +27,7 @@ interface Item {
   unit_cost: number;
   save_as_part?: boolean;
   parent_part_id?: string;
+  pricing_unit?: string;
 }
 
 function NewQuote() {
@@ -223,7 +224,13 @@ function NewQuote() {
     const installedPart = installationParts.find(
       (x: any) => x.installation_id === installationId && x.part_id === partId,
     );
-    const details = [installedPart?.dimensions, installedPart?.color, installedPart?.notes]
+    const length = Number(installedPart?.length_meters ?? 0);
+    const details = [
+      p.pricing_unit === "linear_meter" && length > 0 ? `${length} ml` : null,
+      installedPart?.dimensions,
+      installedPart?.color,
+      installedPart?.notes,
+    ]
       .filter(Boolean)
       .join(" · ");
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
@@ -233,9 +240,10 @@ function NewQuote() {
       description: details ? `${p.name} — ${details}` : p.name,
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
-      quantity: 1,
+      quantity: p.pricing_unit === "linear_meter" && length > 0 ? length : 1,
       unit_price: Number(p.sale_price) * (1 - discount),
       unit_cost: cheapestCost(p.id),
+      pricing_unit: p.pricing_unit ?? "unit",
       ...patch,
     };
   };
@@ -629,7 +637,8 @@ function NewQuote() {
                   {compatibleParts.map((p: any) => (
                     <option key={p.id} value={p.id}>
                       {presentPartIds.has(p.id) ? "✓ " : ""}
-                      {p.name} — {Number(p.sale_price).toFixed(2)}€
+                      {p.name} — {Number(p.sale_price).toFixed(2)}€/
+                      {p.pricing_unit === "linear_meter" ? "ml" : "u"}
                     </option>
                   ))}
                 </select>
@@ -685,6 +694,8 @@ function NewQuote() {
                       step="0.01"
                       value={i.quantity}
                       onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
+                      placeholder={i.pricing_unit === "linear_meter" ? "ml" : "Qté"}
+                      title={i.pricing_unit === "linear_meter" ? "Mètres linéaires" : "Quantité"}
                     />
                     <Input
                       type="number"

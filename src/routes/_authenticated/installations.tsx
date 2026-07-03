@@ -26,6 +26,7 @@ type InstalledPartDraft = {
   color?: string;
   reference_override?: string;
   notes?: string;
+  length_meters?: number | string;
 };
 
 export const Route = createFileRoute("/_authenticated/installations")({
@@ -119,6 +120,7 @@ function InstallationsList() {
             color: x.color ?? "",
             reference_override: x.reference_override ?? "",
             notes: x.notes ?? "",
+            length_meters: x.length_meters ?? "",
           },
         ]),
     );
@@ -154,6 +156,10 @@ function InstallationsList() {
           color: partDrafts[partId]?.color || null,
           reference_override: partDrafts[partId]?.reference_override || null,
           notes: partDrafts[partId]?.notes || null,
+          length_meters:
+            parts.find((p: any) => p.id === partId)?.pricing_unit === "linear_meter"
+              ? Number(partDrafts[partId]?.length_meters || 0)
+              : null,
         });
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["installation_parts"] });
@@ -168,6 +174,10 @@ function InstallationsList() {
         color: draft.color || null,
         reference_override: draft.reference_override || null,
         notes: draft.notes || null,
+        length_meters:
+          parts.find((p: any) => p.id === partId)?.pricing_unit === "linear_meter"
+            ? Number(draft.length_meters || 0)
+            : null,
       })
       .eq("installation_id", installationId)
       .eq("part_id", partId);
@@ -315,6 +325,9 @@ function InstallationsList() {
                               {[
                                 x.part.name,
                                 x.reference_override || x.part.reference,
+                                x.part.pricing_unit === "linear_meter" && x.length_meters
+                                  ? `${Number(x.length_meters)} ml`
+                                  : null,
                                 x.dimensions,
                                 x.color,
                               ]
@@ -605,6 +618,18 @@ function InstallationsList() {
                                 }
                                 placeholder="Référence spécifique"
                               />
+                              {part.pricing_unit === "linear_meter" && (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={partDrafts[part.id]?.length_meters ?? ""}
+                                  onChange={(e) =>
+                                    updatePartDraft(part.id, { length_meters: e.target.value })
+                                  }
+                                  placeholder="Taille en mètres linéaires"
+                                />
+                              )}
                               <Input
                                 value={partDrafts[part.id]?.dimensions ?? ""}
                                 onChange={(e) =>
