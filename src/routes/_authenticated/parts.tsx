@@ -39,6 +39,10 @@ function PartsPage() {
     orderBy: "name",
     ascending: true,
   });
+  const { data: partCategories = [] } = useList<any>("part_categories", {
+    orderBy: "name",
+    ascending: true,
+  });
   const upsert = useUpsert("parts");
   const remove = useRemove("parts");
   const qc = useQueryClient();
@@ -218,12 +222,19 @@ function PartsPage() {
                 <Input name="reference" defaultValue={edit?.reference} />
               </div>
               <div>
-                <Label>Catégorie</Label>
-                <Input
+                <Label>Type de pièce</Label>
+                <select
                   name="category"
-                  defaultValue={edit?.category}
-                  placeholder="Radar, moteur, carte..."
-                />
+                  defaultValue={edit?.category ?? ""}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">—</option>
+                  {partCategories.map((category: any) => (
+                    <option key={category.id} value={category.name}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Marque</Label>
@@ -270,7 +281,8 @@ function PartsPage() {
             <DialogTitle>Compatibilité : {compatOpen?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Cochez les types et modèles d’installation avec lesquels cette pièce est compatible.
+            Cochez les types et modèles d’installation avec lesquels cette pièce est compatible. Le
+            type de pièce se sélectionne dans la fiche pièce.
           </p>
           <div className="space-y-5">
             <div>
