@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, ChevronLeft } from "lucide-react";
+import { CheckCircle2, ChevronLeft, Circle, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -52,6 +52,8 @@ function NewQuote() {
   const siteInstalls = installs.filter((i: any) => i.site_id === siteId);
   const installation = installs.find((i: any) => i.id === installationId);
   const contract = contracts.find((c: any) => c.id === contractId);
+  const selectedClient = clients.find((c: any) => c.id === clientId);
+  const selectedSite = sites.find((s: any) => s.id === siteId);
 
   // Apply contract rates
   const applyContract = (c: any) => {
@@ -117,6 +119,17 @@ function NewQuote() {
     ]);
   };
 
+  const addPresentParts = () => {
+    const existingPartIds = new Set(items.map((item) => item.part_id).filter(Boolean));
+    const ids = installationParts
+      .filter((x: any) => x.installation_id === installationId)
+      .map((x: any) => x.part_id)
+      .filter((id: string) => !existingPartIds.has(id));
+
+    ids.forEach(addPart);
+    if (ids.length === 0) toast.info("Toutes les pièces présentes sont déjà ajoutées");
+  };
+
   const addFree = () =>
     setItems((prev) => [
       ...prev,
@@ -142,9 +155,26 @@ function NewQuote() {
   const costsTotal = items.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
   const margin = partsHT - costsTotal;
   const marginPct = partsHT > 0 ? (margin / partsHT) * 100 : 0;
+  const hasBillableLine = items.length > 0 || laborHours > 0 || travelFee > 0;
+  const workflowSteps = [
+    { label: "Client", done: Boolean(clientId), hint: selectedClient?.name ?? "À choisir" },
+    { label: "Site", done: Boolean(siteId), hint: selectedSite?.name ?? "Optionnel" },
+    {
+      label: "Installation",
+      done: Boolean(installationId),
+      hint: installation?.name ?? "Optionnel",
+    },
+    {
+      label: "Chiffrage",
+      done: hasBillableLine,
+      hint: hasBillableLine ? `${totalHT.toFixed(2)} € HT` : "À compléter",
+    },
+  ];
 
   const save = async () => {
     if (!clientId) return toast.error("Sélectionnez un client");
+    if (!hasBillableLine)
+      return toast.error("Ajoutez une ligne, de la main-d’œuvre ou un déplacement");
     setBusy(true);
     try {
       const { data: user } = await supabase.auth.getUser();
@@ -203,6 +233,29 @@ function NewQuote() {
         title="Nouveau devis"
         description="Suivez le workflow : client → site → installation → pièces"
       />
+
+      <Card className="mb-6 border-primary/20 bg-primary/5">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-4">
+          {workflowSteps.map((step, index) => {
+            const Icon = step.done ? CheckCircle2 : Circle;
+            return (
+              <div key={step.label} className="flex items-center gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-background text-sm font-semibold shadow-sm">
+                  {step.done ? (
+                    <Icon className="h-4 w-4 text-success" />
+                  ) : (
+                    <span className="text-muted-foreground">{index + 1}</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{step.label}</div>
+                  <div className="truncate text-xs text-muted-foreground">{step.hint}</div>
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -320,13 +373,26 @@ function NewQuote() {
                     </option>
                   ))}
                 </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addPresentParts}
+                  disabled={!installationId || presentPartIds.size === 0}
+                >
+                  Ajouter présentes
+                </Button>
                 <Button variant="outline" size="sm" onClick={addFree}>
                   <Plus className="mr-1 h-4 w-4" />
                   Ligne libre
                 </Button>
               </div>
 
-              {items.length === 0 && <p className="text-sm text-muted-foreground">Aucune ligne.</p>}
+              {items.length === 0 && (
+                <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Commencez par sélectionner une installation pour filtrer les pièces compatibles,
+                  ajoutez toutes les pièces présentes en un clic, ou créez une ligne libre.
+                </div>
+              )}
               {items.map((i) => (
                 <div
                   key={i.key}
@@ -447,7 +513,21 @@ function NewQuote() {
                   </span>
                 </div>
               </div>
-              <Button onClick={save} disabled={busy} className="mt-3 w-full">
+              {!clientId && (
+                <p className="pt-2 text-xs text-muted-foreground">
+                  Sélectionnez au minimum un client pour créer le devis.
+                </p>
+              )}
+              {clientId && !hasBillableLine && (
+                <p className="pt-2 text-xs text-muted-foreground">
+                  Ajoutez une ligne, de la main-d’œuvre ou un déplacement pour finaliser.
+                </p>
+              )}
+              <Button
+                onClick={save}
+                disabled={busy || !clientId || !hasBillableLine}
+                className="mt-3 w-full"
+              >
                 {busy ? "Enregistrement..." : "Créer le devis"}
               </Button>
             </CardContent>
