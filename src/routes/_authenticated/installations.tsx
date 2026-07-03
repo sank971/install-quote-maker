@@ -52,6 +52,7 @@ function Page() {
   const [edit, setEdit] = useState<any>(null);
   const [brandId, setBrandId] = useState<string>("");
   const [typeId, setTypeId] = useState<string>("");
+  const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
 
   const getCompatibleParts = (installation: any) => {
@@ -105,12 +106,14 @@ function Page() {
     setEdit({ characteristics: {} });
     setBrandId("");
     setTypeId("");
+    setModelId("");
     setOpen(true);
   };
   const openEdit = (i: any) => {
     setEdit({ ...i, characteristics: i.characteristics ?? {} });
     setBrandId(i.brand_id ?? "");
     setTypeId(i.type_id ?? "");
+    setModelId(i.model_id ?? "");
     setOpen(true);
   };
 
@@ -138,7 +141,9 @@ function Page() {
     setOpen(false);
   };
 
-  const brandModels = models.filter((m: any) => m.brand_id === brandId);
+  const brandModels = models.filter(
+    (m: any) => m.brand_id === brandId && (!typeId || m.type_id === typeId),
+  );
   const selectedType = types.find((t: any) => t.id === typeId);
   const selectedTypeFields: CustomField[] = selectedType?.custom_fields ?? [];
 
@@ -308,7 +313,10 @@ function Page() {
                 <select
                   name="type_id"
                   value={typeId}
-                  onChange={(e) => setTypeId(e.target.value)}
+                  onChange={(e) => {
+                    setTypeId(e.target.value);
+                    setModelId("");
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">—</option>
@@ -324,7 +332,10 @@ function Page() {
                 <select
                   name="brand_id"
                   value={brandId}
-                  onChange={(e) => setBrandId(e.target.value)}
+                  onChange={(e) => {
+                    setBrandId(e.target.value);
+                    setModelId("");
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">—</option>
@@ -339,10 +350,14 @@ function Page() {
                 <Label>Modèle</Label>
                 <select
                   name="model_id"
-                  defaultValue={edit?.model_id ?? ""}
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  disabled={!typeId || !brandId}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
-                  <option value="">—</option>
+                  <option value="">
+                    {!typeId || !brandId ? "Choisir un type et une marque" : "—"}
+                  </option>
                   {brandModels.map((m: any) => (
                     <option key={m.id} value={m.id}>
                       {m.name}

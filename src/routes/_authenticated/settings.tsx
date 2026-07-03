@@ -90,6 +90,7 @@ function SettingsPage() {
   const [modelName, setModelName] = useState("");
   const [partCategoryName, setPartCategoryName] = useState("");
   const [modelBrand, setModelBrand] = useState("");
+  const [modelType, setModelType] = useState("");
   const [typeDraft, setTypeDraft] = useState<any | null>(null);
   const [selectedComponentTypes, setSelectedComponentTypes] = useState<string[]>([]);
   const [newFieldLabel, setNewFieldLabel] = useState("");
@@ -458,18 +459,35 @@ function SettingsPage() {
                   </option>
                 ))}
               </select>
+              <Label className="text-xs">Type de porte</Label>
+              <select
+                value={modelType}
+                onChange={(e) => setModelType(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="">Choisir...</option>
+                {(types.data ?? []).map((t: any) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
               <div className="flex gap-2">
                 <Input
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
-                  placeholder="Ex. STA20"
+                  placeholder="Ex. STA20, Speed, Look2..."
                 />
                 <Button
                   size="icon"
-                  disabled={!modelBrand}
+                  disabled={!modelBrand || !modelType}
                   onClick={async () => {
                     if (modelName.trim()) {
-                      await upModel.mutateAsync({ name: modelName.trim(), brand_id: modelBrand });
+                      await upModel.mutateAsync({
+                        name: modelName.trim(),
+                        brand_id: modelBrand,
+                        type_id: modelType || null,
+                      });
                       setModelName("");
                     }
                   }}
@@ -481,13 +499,15 @@ function SettingsPage() {
             <div className="mt-3 max-h-[300px] overflow-y-auto space-y-1">
               {(models.data ?? []).map((m: any) => {
                 const b = brands.data?.find((x: any) => x.id === m.brand_id);
+                const t = types.data?.find((x: any) => x.id === m.type_id);
                 return (
                   <div
                     key={m.id}
                     className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
                   >
                     <span className="min-w-0 truncate">
-                      {b?.name} <span className="text-muted-foreground">— {m.name}</span>
+                      {t?.name ?? "Type non défini"} · {b?.name}{" "}
+                      <span className="text-muted-foreground">— {m.name}</span>
                     </span>
                     <div className="flex shrink-0 items-center">
                       <Button
@@ -496,7 +516,12 @@ function SettingsPage() {
                         onClick={() => {
                           const n = prompt("Nouveau nom", m.name);
                           if (n && n.trim())
-                            upModel.mutate({ id: m.id, name: n.trim(), brand_id: m.brand_id });
+                            upModel.mutate({
+                              id: m.id,
+                              name: n.trim(),
+                              brand_id: m.brand_id,
+                              type_id: m.type_id ?? null,
+                            });
                         }}
                       >
                         <Pencil className="h-4 w-4" />

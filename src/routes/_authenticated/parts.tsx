@@ -51,6 +51,7 @@ function PartsPage() {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [compatOpen, setCompatOpen] = useState<any>(null);
+  const [selectedCompatTypeIds, setSelectedCompatTypeIds] = useState<string[]>([]);
 
   const filtered = parts.filter((p) =>
     [p.name, p.reference, p.category]
@@ -103,7 +104,17 @@ function PartsPage() {
     qc.invalidateQueries({ queryKey: ["part_model_compat"] });
   };
 
+  const openCompat = (part: any) => {
+    setCompatOpen(part);
+    setSelectedCompatTypeIds(
+      typeCompat.filter((c: any) => c.part_id === part.id).map((c: any) => c.type_id),
+    );
+  };
+
   const toggleTypeCompat = async (partId: string, typeId: string, present: boolean) => {
+    setSelectedCompatTypeIds((current) =>
+      present ? current.filter((id) => id !== typeId) : [...current, typeId],
+    );
     const { data: userData } = await supabase.auth.getUser();
     const owner_id = userData.user!.id;
     if (present) {
@@ -183,7 +194,7 @@ function PartsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => setCompatOpen(p)}>
+                    <Button variant="ghost" size="icon" onClick={() => openCompat(p)}>
                       <LinkIcon className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
@@ -275,14 +286,22 @@ function PartsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!compatOpen} onOpenChange={(o) => !o && setCompatOpen(null)}>
+      <Dialog
+        open={!!compatOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCompatOpen(null);
+            setSelectedCompatTypeIds([]);
+          }
+        }}
+      >
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Compatibilité : {compatOpen?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Cochez les types et modèles d’installation avec lesquels cette pièce est compatible. Le
-            type de pièce se sélectionne dans la fiche pièce.
+            Cochez d’abord un ou plusieurs types d’installation, puis sélectionnez les modèles
+            compatibles parmi les marques filtrées par ces types.
           </p>
           <div className="space-y-5">
             <div>
@@ -320,8 +339,16 @@ function PartsPage() {
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Modèles d’installation
             </div>
+            {selectedCompatTypeIds.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sélectionnez au moins un type d’installation pour afficher les marques et modèles
+                disponibles.
+              </p>
+            ) : null}
             {brands.map((b: any) => {
-              const bModels = models.filter((m: any) => m.brand_id === b.id);
+              const bModels = models.filter(
+                (m: any) => m.brand_id === b.id && selectedCompatTypeIds.includes(m.type_id),
+              );
               if (bModels.length === 0) return null;
               return (
                 <div key={b.id}>
@@ -343,7 +370,9 @@ function PartsPage() {
                             checked={present}
                             onChange={() => toggleCompat(compatOpen.id, m.id, present)}
                           />
-                          <span>{m.name}</span>
+                          <span>
+                            {types.find((t: any) => t.id === m.type_id)?.name} · {m.name}
+                          </span>
                         </label>
                       );
                     })}
