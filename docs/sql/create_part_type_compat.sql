@@ -1,4 +1,8 @@
--- Compatibilité pièce <-> type d'installation (M:N)
+-- SQL à exécuter dans Supabase pour créer la table de compatibilité
+-- entre les pièces et les types d'installation.
+-- La table est idempotente : elle peut être relancée sans recréer la table
+-- ni dupliquer la policy RLS.
+
 CREATE TABLE IF NOT EXISTS public.part_type_compat (
   part_id UUID NOT NULL REFERENCES public.parts(id) ON DELETE CASCADE,
   type_id UUID NOT NULL REFERENCES public.installation_types(id) ON DELETE CASCADE,
