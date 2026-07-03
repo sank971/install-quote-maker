@@ -126,7 +126,14 @@ function ClientDetail() {
       </Link>
       <PageHeader
         title={client.client_number ? `${client.client_number} · ${client.name}` : client.name}
-        description={[client.contact_name, client.email, client.phone].filter(Boolean).join(" · ")}
+        description={[
+          client.siret ? `SIRET ${client.siret}` : null,
+          client.contact_name,
+          client.email,
+          client.phone,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <Button onClick={openNewSite}>
             <Plus className="mr-2 h-4 w-4" />
@@ -141,9 +148,12 @@ function ClientDetail() {
         </CardHeader>
         <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <span className="text-muted-foreground">Adresse :</span> {client.address || "—"}
+            <span className="text-muted-foreground">SIRET :</span> {client.siret || "—"}
           </div>
           <div>
+            <span className="text-muted-foreground">Adresse :</span> {client.address || "—"}
+          </div>
+          <div className="sm:col-span-2">
             <span className="text-muted-foreground">Notes :</span> {client.notes || "—"}
           </div>
         </CardContent>
@@ -172,7 +182,8 @@ function ClientDetail() {
                         params={{ siteId: s.id }}
                         className="truncate font-medium hover:underline"
                       >
-                        {s.site_number ? `${s.site_number} · ` : ""}{s.name}
+                        {s.site_number ? `${s.site_number} · ` : ""}
+                        {s.name}
                       </Link>
                       <div className="truncate text-xs text-muted-foreground">
                         {s.address || "—"}

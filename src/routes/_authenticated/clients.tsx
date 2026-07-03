@@ -40,7 +40,7 @@ function ClientsList() {
   const [siteClient, setSiteClient] = useState<any>(null);
 
   const filtered = data.filter((c) =>
-    [c.client_number, c.name, c.email, c.phone, c.contact_name]
+    [c.client_number, c.name, c.siret, c.email, c.phone, c.contact_name]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -66,6 +66,7 @@ function ClientsList() {
       phone: fd.get("phone") || null,
       address: fd.get("address") || null,
       contact_name: fd.get("contact_name") || null,
+      siret: fd.get("siret") || null,
       notes: fd.get("notes") || null,
     });
     setOpen(false);
@@ -115,9 +116,14 @@ function ClientsList() {
                 <Link to="/clients/$clientId" params={{ clientId: c.id }} className="flex-1">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium">{c.client_number ? `${c.client_number} · ` : ""}{c.name}</div>
+                      <div className="font-medium">
+                        {c.client_number ? `${c.client_number} · ` : ""}
+                        {c.name}
+                      </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {[c.contact_name, c.email, c.phone].filter(Boolean).join(" · ") || "—"}
+                        {[c.siret ? `SIRET ${c.siret}` : null, c.contact_name, c.email, c.phone]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -174,9 +180,15 @@ function ClientsList() {
                 <Input name="phone" defaultValue={edit?.phone} />
               </div>
             </div>
-            <div>
-              <Label>Contact</Label>
-              <Input name="contact_name" defaultValue={edit?.contact_name} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Contact</Label>
+                <Input name="contact_name" defaultValue={edit?.contact_name} />
+              </div>
+              <div>
+                <Label>SIRET</Label>
+                <Input name="siret" inputMode="numeric" defaultValue={edit?.siret} />
+              </div>
             </div>
             <div>
               <Label>Adresse</Label>
