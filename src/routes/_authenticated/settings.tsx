@@ -78,9 +78,12 @@ function SettingsPage() {
               <Button size="icon" onClick={async () => { if (brandName.trim()) { await upBrand.mutateAsync({ name: brandName.trim() }); setBrandName(""); } }}><Plus className="h-4 w-4" /></Button>
             </div>
             {(brands.data ?? []).map((b: any) => (
-              <div key={b.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
-                <span>{b.name}</span>
-                <Button variant="ghost" size="icon" onClick={() => rmBrand.mutate(b.id)}><Trash2 className="h-4 w-4" /></Button>
+              <div key={b.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm">
+                <span className="min-w-0 truncate">{b.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" onClick={() => { const n = prompt("Nouveau nom", b.name); if (n && n.trim()) upBrand.mutate({ id: b.id, name: n.trim() }); }}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${b.name} ?`)) rmBrand.mutate(b.id); }}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
             ))}
           </CardContent>
