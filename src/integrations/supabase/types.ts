@@ -531,6 +531,53 @@ export type Database = {
           },
         ]
       }
+      site_contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          owner_id: string
+          phone: string | null
+          role: string | null
+          site_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          owner_id?: string
+          phone?: string | null
+          role?: string | null
+          site_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          owner_id?: string
+          phone?: string | null
+          role?: string | null
+          site_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_contacts_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sites: {
         Row: {
           address: string | null
@@ -538,6 +585,7 @@ export type Database = {
           contact_name: string | null
           contact_phone: string | null
           created_at: string
+          email: string | null
           id: string
           name: string
           notes: string | null
@@ -550,6 +598,7 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           name: string
           notes?: string | null
@@ -562,6 +611,7 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           name?: string
           notes?: string | null
