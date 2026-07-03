@@ -12,6 +12,7 @@ export type TableName =
   | "models"
   | "parts"
   | "part_model_compat"
+  | "part_type_compat"
   | "suppliers"
   | "supplier_parts"
   | "contracts"
@@ -19,13 +20,16 @@ export type TableName =
   | "quotes"
   | "quote_items";
 
-export function useList<T = any>(table: TableName, options?: {
-  filter?: (q: any) => any;
-  orderBy?: string;
-  ascending?: boolean;
-  enabled?: boolean;
-  key?: QueryKey;
-}) {
+export function useList<T = any>(
+  table: TableName,
+  options?: {
+    filter?: (q: any) => any;
+    orderBy?: string;
+    ascending?: boolean;
+    enabled?: boolean;
+    key?: QueryKey;
+  },
+) {
   return useQuery({
     queryKey: options?.key ?? [table, options?.filter?.toString(), options?.orderBy],
     enabled: options?.enabled ?? true,
@@ -45,7 +49,10 @@ export function useOne<T = any>(table: TableName, id: string | undefined) {
     queryKey: [table, id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await (supabase.from(table) as any).select("*").eq("id", id!).maybeSingle();
+      const { data, error } = await (supabase.from(table) as any)
+        .select("*")
+        .eq("id", id!)
+        .maybeSingle();
       if (error) throw error;
       return data as T | null;
     },
