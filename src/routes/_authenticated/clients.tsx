@@ -17,10 +17,13 @@ export const Route = createFileRoute("/_authenticated/clients")({
 function ClientsPage() {
   const { data = [] } = useList<any>("clients");
   const upsert = useUpsert("clients");
+  const upsertSite = useUpsert("sites", [["sites"]]);
   const remove = useRemove("clients");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
+  const [siteOpen, setSiteOpen] = useState(false);
+  const [siteClient, setSiteClient] = useState<any>(null);
 
   const filtered = data.filter((c) =>
     [c.name, c.email, c.phone, c.contact_name].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase()),
