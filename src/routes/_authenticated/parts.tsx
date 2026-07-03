@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Package, Pencil, Trash2, Link as LinkIcon } from "lucide-react";
+import { Plus, Search, Package, Pencil, Trash2, Link as LinkIcon, Boxes } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -35,6 +35,10 @@ function PartsPage() {
     orderBy: "part_id",
     ascending: true,
   });
+  const { data: partComponents = [] } = useList<any>("part_components", {
+    orderBy: "position",
+    ascending: true,
+  });
   const { data: types = [] } = useList<any>("installation_types", {
     orderBy: "name",
     ascending: true,
@@ -51,6 +55,12 @@ function PartsPage() {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [compatOpen, setCompatOpen] = useState<any>(null);
+  const [componentsOpen, setComponentsOpen] = useState<any>(null);
+  const [componentDraft, setComponentDraft] = useState({
+    component_part_id: "",
+    quantity: 1,
+    notes: "",
+  });
   const [selectedCompatTypeIds, setSelectedCompatTypeIds] = useState<string[]>([]);
 
   const filtered = parts.filter((p) =>
@@ -109,6 +119,38 @@ function PartsPage() {
     setSelectedCompatTypeIds(
       typeCompat.filter((c: any) => c.part_id === part.id).map((c: any) => c.type_id),
     );
+  };
+
+  const addComponent = async (parentPartId: string) => {
+    if (!componentDraft.component_part_id) return toast.error("Sélectionnez une pièce composante");
+    if (componentDraft.component_part_id === parentPartId) {
+      return toast.error("Une pièce ne peut pas être composante d’elle-même");
+    }
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+    const siblings = partComponents.filter((c: any) => c.parent_part_id === parentPartId);
+    const { error } = await (supabase.from("part_components" as any) as any).upsert({
+      parent_part_id: parentPartId,
+      component_part_id: componentDraft.component_part_id,
+      owner_id,
+      quantity: Number(componentDraft.quantity) || 1,
+      position: siblings.length,
+      notes: componentDraft.notes || null,
+    });
+    if (error) return toast.error(error.message);
+    setComponentDraft({ component_part_id: "", quantity: 1, notes: "" });
+    qc.invalidateQueries({ queryKey: ["part_components"] });
+    toast.success("Composant ajouté");
+  };
+
+  const removeComponent = async (parentPartId: string, componentPartId: string) => {
+    const { error } = await (supabase.from("part_components" as any) as any)
+      .delete()
+      .eq("parent_part_id", parentPartId)
+      .eq("component_part_id", componentPartId);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["part_components"] });
+    toast.success("Composant supprimé");
   };
 
   const toggleTypeCompat = async (partId: string, typeId: string, present: boolean) => {
@@ -171,6 +213,9 @@ function PartsPage() {
             const brand = brands.find((b: any) => b.id === p.brand_id);
             const modelCompatCount = modelCompat.filter((c: any) => c.part_id === p.id).length;
             const typeCompatCount = typeCompat.filter((c: any) => c.part_id === p.id).length;
+            const componentCount = partComponents.filter(
+              (c: any) => c.parent_part_id === p.id,
+            ).length;
             return (
               <Card key={p.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -190,10 +235,26 @@ function PartsPage() {
                         <span className="text-muted-foreground">
                           Compat. : {typeCompatCount} types · {modelCompatCount} modèles
                         </span>
+                        {componentCount > 0 && (
+                          <>
+                            <span className="mx-2 text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">
+                              Composé : {componentCount} pièces
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setComponentsOpen(p)}
+                      title="Composer cette pièce"
+                    >
+                      <Boxes className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openCompat(p)}>
                       <LinkIcon className="h-4 w-4" />
                     </Button>
@@ -283,6 +344,86 @@ function PartsPage() {
               <Button type="submit">Enregistrer</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!componentsOpen} onOpenChange={(o) => !o && setComponentsOpen(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Composition : {componentsOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Déclarez les pièces incluses dans cette référence composée. Exemple : un vantail 20VR
+            peut contenir 5 pièces remplaçables individuellement dans un devis.
+          </p>
+          <div className="space-y-2">
+            {partComponents
+              .filter((component: any) => component.parent_part_id === componentsOpen?.id)
+              .map((component: any) => {
+                const part = parts.find(
+                  (candidate: any) => candidate.id === component.component_part_id,
+                );
+                return (
+                  <div
+                    key={component.component_part_id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium">{part?.name ?? "Pièce inconnue"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Qté {component.quantity} {part?.reference ? `· Réf. ${part.reference}` : ""}{" "}
+                        {component.notes ? `· ${component.notes}` : ""}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        removeComponent(componentsOpen.id, component.component_part_id)
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_90px_1fr_auto]">
+            <select
+              value={componentDraft.component_part_id}
+              onChange={(e) =>
+                setComponentDraft((draft) => ({ ...draft, component_part_id: e.target.value }))
+              }
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            >
+              <option value="">Ajouter une pièce composante</option>
+              {parts
+                .filter((part: any) => part.id !== componentsOpen?.id)
+                .map((part: any) => (
+                  <option key={part.id} value={part.id}>
+                    {part.name}
+                  </option>
+                ))}
+            </select>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={componentDraft.quantity}
+              onChange={(e) =>
+                setComponentDraft((draft) => ({ ...draft, quantity: Number(e.target.value) }))
+              }
+              placeholder="Qté"
+            />
+            <Input
+              value={componentDraft.notes}
+              onChange={(e) => setComponentDraft((draft) => ({ ...draft, notes: e.target.value }))}
+              placeholder="Note"
+            />
+            <Button type="button" onClick={() => addComponent(componentsOpen.id)}>
+              Ajouter
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

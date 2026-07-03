@@ -434,6 +434,51 @@ export type Database = {
           },
         ];
       };
+      part_components: {
+        Row: {
+          component_part_id: string;
+          created_at: string;
+          notes: string | null;
+          owner_id: string;
+          parent_part_id: string;
+          position: number;
+          quantity: number;
+        };
+        Insert: {
+          component_part_id: string;
+          created_at?: string;
+          notes?: string | null;
+          owner_id?: string;
+          parent_part_id: string;
+          position?: number;
+          quantity?: number;
+        };
+        Update: {
+          component_part_id?: string;
+          created_at?: string;
+          notes?: string | null;
+          owner_id?: string;
+          parent_part_id?: string;
+          position?: number;
+          quantity?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "part_components_component_part_id_fkey";
+            columns: ["component_part_id"];
+            isOneToOne: false;
+            referencedRelation: "parts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "part_components_parent_part_id_fkey";
+            columns: ["parent_part_id"];
+            isOneToOne: false;
+            referencedRelation: "parts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       part_type_compat: {
         Row: {
           owner_id: string;

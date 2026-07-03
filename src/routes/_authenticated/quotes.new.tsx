@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, ChevronLeft, Circle, Plus, Trash2 } from "lucide-react";
+import { Boxes, CheckCircle2, ChevronLeft, Circle, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ interface Item {
   unit_price: number;
   unit_cost: number;
   save_as_part?: boolean;
+  parent_part_id?: string;
 }
 
 function NewQuote() {
@@ -40,6 +41,10 @@ function NewQuote() {
   const { data: modelCompat = [] } = useList<any>("part_model_compat");
   const { data: typeCompat = [] } = useList<any>("part_type_compat");
   const { data: installationParts = [] } = useList<any>("installation_parts");
+  const { data: partComponents = [] } = useList<any>("part_components", {
+    orderBy: "position",
+    ascending: true,
+  });
   const { data: sp = [] } = useList<any>("supplier_parts");
   const { data: contracts = [] } = useList<any>("contracts");
   const { data: partCategories = [] } = useList<any>("part_categories", {
@@ -212,9 +217,9 @@ function NewQuote() {
     return Math.min(...offers.map((o: any) => Number(o.purchase_price) + Number(o.shipping_cost)));
   };
 
-  const addPart = (partId: string) => {
+  const buildPartItem = (partId: string, patch: Partial<Item> = {}): Item | null => {
     const p = parts.find((x: any) => x.id === partId);
-    if (!p) return;
+    if (!p) return null;
     const installedPart = installationParts.find(
       (x: any) => x.installation_id === installationId && x.part_id === partId,
     );
@@ -222,19 +227,74 @@ function NewQuote() {
       .filter(Boolean)
       .join(" · ");
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
+    return {
+      key: crypto.randomUUID(),
+      part_id: p.id,
+      description: details ? `${p.name} — ${details}` : p.name,
+      reference: installedPart?.reference_override || p.reference || "",
+      category: installedPart?.component_type || p.category || "",
+      quantity: 1,
+      unit_price: Number(p.sale_price) * (1 - discount),
+      unit_cost: cheapestCost(p.id),
+      ...patch,
+    };
+  };
+
+  const addPart = (partId: string) => {
+    const item = buildPartItem(partId);
+    if (!item) return;
+    setItems((prev) => [...prev, item]);
+  };
+
+  const addComponentToQuote = (parentItem: Item, component: any) => {
+    const componentItem = buildPartItem(component.component_part_id, {
+      parent_part_id: parentItem.part_id,
+      quantity: Number(component.quantity) || 1,
+    });
+    if (!componentItem) return;
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
     setItems((prev) => [
       ...prev,
       {
-        key: crypto.randomUUID(),
-        part_id: p.id,
-        description: details ? `${p.name} — ${details}` : p.name,
-        reference: installedPart?.reference_override || p.reference || "",
-        category: installedPart?.component_type || p.category || "",
-        quantity: 1,
-        unit_price: Number(p.sale_price) * (1 - discount),
-        unit_cost: cheapestCost(p.id),
+        ...componentItem,
+        description: parentName
+          ? `${parentName} > ${componentItem.description}`
+          : componentItem.description,
       },
     ]);
+  };
+
+  const addAllComponentsToQuote = (parentItem: Item) => {
+    const components = partComponents.filter(
+      (component: any) => component.parent_part_id === parentItem.part_id,
+    );
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    setItems((prev) => {
+      const additions = components
+        .filter(
+          (component: any) =>
+            !prev.some(
+              (item) =>
+                item.parent_part_id === parentItem.part_id &&
+                item.part_id === component.component_part_id,
+            ),
+        )
+        .map((component: any) => {
+          const componentItem = buildPartItem(component.component_part_id, {
+            parent_part_id: parentItem.part_id,
+            quantity: Number(component.quantity) || 1,
+          });
+          if (!componentItem) return null;
+          return {
+            ...componentItem,
+            description: parentName
+              ? `${parentName} > ${componentItem.description}`
+              : componentItem.description,
+          };
+        })
+        .filter(Boolean) as Item[];
+      return [...prev, ...additions];
+    });
   };
 
   const addPresentParts = () => {
@@ -645,6 +705,57 @@ function NewQuote() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+                  {partComponents.some(
+                    (component: any) => component.parent_part_id === i.part_id,
+                  ) && (
+                    <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <Boxes className="h-3.5 w-3.5" />
+                          Pièces composantes à remplacer
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => addAllComponentsToQuote(i)}
+                        >
+                          Ajouter toutes
+                        </Button>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {partComponents
+                          .filter((component: any) => component.parent_part_id === i.part_id)
+                          .map((component: any) => {
+                            const componentPart = parts.find(
+                              (part: any) => part.id === component.component_part_id,
+                            );
+                            const alreadyAdded = items.some(
+                              (item) =>
+                                item.parent_part_id === i.part_id &&
+                                item.part_id === component.component_part_id,
+                            );
+                            return (
+                              <Button
+                                key={component.component_part_id}
+                                type="button"
+                                variant={alreadyAdded ? "secondary" : "outline"}
+                                size="sm"
+                                disabled={alreadyAdded}
+                                className="justify-start"
+                                onClick={() => addComponentToQuote(i, component)}
+                              >
+                                {alreadyAdded ? "✓ " : "+ "}
+                                {componentPart?.name ?? "Pièce inconnue"} · Qté {component.quantity}
+                              </Button>
+                            );
+                          })}
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Gardez la référence composée comme repère, puis ajoutez uniquement les
+                        pièces à remplacer.
+                      </p>
+                    </div>
+                  )}
                   {!i.part_id && installation?.model_id && (
                     <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                       <input
