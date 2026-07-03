@@ -81,6 +81,9 @@ function ClientsPage() {
                   </div>
                 </Link>
                 <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => { setSiteClient(c); setSiteOpen(true); }}>
+                    <MapPin className="mr-1 h-4 w-4" />Site
+                  </Button>
                   <Button variant="ghost" size="icon" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${c.name} ?`)) remove.mutate(c.id); }}><Trash2 className="h-4 w-4" /></Button>
                 </div>
