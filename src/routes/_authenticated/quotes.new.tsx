@@ -180,8 +180,15 @@ function NewQuote() {
       .filter((p: any) => {
         const matchesSelectedType =
           selectedTypes.size === 0 || (p.category && selectedTypes.has(normalizeName(p.category)));
+        const normalizedCategory = normalizeName(p.category);
+        const selectedTypeMatchesCategory =
+          selectedTypes.size > 0 &&
+          Boolean(normalizedCategory) &&
+          selectedTypes.has(normalizedCategory);
         const matchesCompatibility =
-          ids.has(p.id) || (p.category && componentTypes.has(normalizeName(p.category)));
+          ids.has(p.id) ||
+          (Boolean(normalizedCategory) && componentTypes.has(normalizedCategory)) ||
+          selectedTypeMatchesCategory;
         return matchesSelectedType && matchesCompatibility;
       })
       .sort(
@@ -226,13 +233,20 @@ function NewQuote() {
 
   const addPresentParts = () => {
     const existingPartIds = new Set(items.map((item) => item.part_id).filter(Boolean));
+    const compatiblePartIds = new Set(compatibleParts.map((part: any) => part.id));
     const ids = installationParts
       .filter((x: any) => x.installation_id === installationId)
       .map((x: any) => x.part_id)
-      .filter((id: string) => !existingPartIds.has(id));
+      .filter((id: string) => compatiblePartIds.has(id) && !existingPartIds.has(id));
 
     ids.forEach(addPart);
-    if (ids.length === 0) toast.info("Toutes les pièces présentes sont déjà ajoutées");
+    if (ids.length === 0) {
+      toast.info(
+        selectedPartTypes.length > 0
+          ? "Aucune pièce présente ne correspond aux types sélectionnés"
+          : "Toutes les pièces présentes sont déjà ajoutées",
+      );
+    }
   };
 
   const addFree = () =>
@@ -680,15 +694,30 @@ function NewQuote() {
               </div>
               <div>
                 <Label>Frais de port €</Label>
-                <Input type="number" step="0.01" value={shippingFee} onChange={(e) => setShippingFee(Number(e.target.value))} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={shippingFee}
+                  onChange={(e) => setShippingFee(Number(e.target.value))}
+                />
               </div>
               <div>
                 <Label>Traitement déchets €</Label>
-                <Input type="number" step="0.01" value={wasteTreatmentFee} onChange={(e) => setWasteTreatmentFee(Number(e.target.value))} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={wasteTreatmentFee}
+                  onChange={(e) => setWasteTreatmentFee(Number(e.target.value))}
+                />
               </div>
               <div>
                 <Label>Engin de levage €</Label>
-                <Input type="number" step="0.01" value={liftingEquipmentFee} onChange={(e) => setLiftingEquipmentFee(Number(e.target.value))} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={liftingEquipmentFee}
+                  onChange={(e) => setLiftingEquipmentFee(Number(e.target.value))}
+                />
               </div>
               <div>
                 <Label>TVA %</Label>
