@@ -48,7 +48,11 @@ function QuoteDetail() {
     0,
   );
   const laborHT = Number(quote.labor_hours ?? 0) * Number(quote.labor_rate ?? 0);
-  const totalHT = partsHT + laborHT + Number(quote.travel_fee ?? 0);
+  const shippingFee = Number(quote.shipping_fee ?? 0);
+  const wasteTreatmentFee = Number(quote.waste_treatment_fee ?? 0);
+  const liftingEquipmentFee = Number(quote.lifting_equipment_fee ?? 0);
+  const totalHT =
+    partsHT + laborHT + Number(quote.travel_fee ?? 0) + shippingFee + wasteTreatmentFee + liftingEquipmentFee;
   const vat = (totalHT * Number(quote.vat_rate)) / 100;
   const totalTTC = totalHT + vat;
   const fmt = (n: number) => n.toFixed(2) + " €";
@@ -120,6 +124,14 @@ function QuoteDetail() {
             {contractTypeLabel && (
               <div className="text-muted-foreground">Type de contrat : {contractTypeLabel}</div>
             )}
+            <div className="text-muted-foreground">
+              Intervention : {quote.intervention_reason === "damage_vandalism"
+                ? "Casse / vandalisme"
+                : quote.intervention_reason === "new_installation"
+                  ? "Nouvelle installation"
+                  : "Réparation hors casse"}
+              {quote.is_on_call ? " · Astreinte" : ""}
+            </div>
           </div>
         </div>
 
@@ -162,6 +174,24 @@ function QuoteDetail() {
                   Déplacement
                 </td>
                 <td className="py-2 text-right">{fmt(Number(quote.travel_fee))}</td>
+              </tr>
+            )}
+            {shippingFee > 0 && (
+              <tr>
+                <td className="py-2" colSpan={4}>Frais de port</td>
+                <td className="py-2 text-right">{fmt(shippingFee)}</td>
+              </tr>
+            )}
+            {wasteTreatmentFee > 0 && (
+              <tr>
+                <td className="py-2" colSpan={4}>Traitement déchets</td>
+                <td className="py-2 text-right">{fmt(wasteTreatmentFee)}</td>
+              </tr>
+            )}
+            {liftingEquipmentFee > 0 && (
+              <tr>
+                <td className="py-2" colSpan={4}>Engin de levage</td>
+                <td className="py-2 text-right">{fmt(liftingEquipmentFee)}</td>
               </tr>
             )}
           </tbody>
