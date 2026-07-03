@@ -57,10 +57,10 @@ function PartsPage() {
   const [compatOpen, setCompatOpen] = useState<any>(null);
   const [componentsOpen, setComponentsOpen] = useState<any>(null);
   const [componentDraft, setComponentDraft] = useState({
-    component_part_id: "",
     quantity: 1,
     notes: "",
   });
+  const [selectedComponentPartIds, setSelectedComponentPartIds] = useState<string[]>([]);
   const [selectedCompatTypeIds, setSelectedCompatTypeIds] = useState<string[]>([]);
 
   const filtered = parts.filter((p) =>
@@ -121,26 +121,50 @@ function PartsPage() {
     );
   };
 
-  const addComponent = async (parentPartId: string) => {
-    if (!componentDraft.component_part_id) return toast.error("Sélectionnez une pièce composante");
-    if (componentDraft.component_part_id === parentPartId) {
+  const addComponents = async (parentPartId: string) => {
+    if (selectedComponentPartIds.length === 0) {
+      return toast.error("Sélectionnez au moins une pièce composante");
+    }
+    if (selectedComponentPartIds.includes(parentPartId)) {
       return toast.error("Une pièce ne peut pas être composante d’elle-même");
     }
     const { data: userData } = await supabase.auth.getUser();
     const owner_id = userData.user!.id;
     const siblings = partComponents.filter((c: any) => c.parent_part_id === parentPartId);
-    const { error } = await (supabase.from("part_components" as any) as any).upsert({
-      parent_part_id: parentPartId,
-      component_part_id: componentDraft.component_part_id,
-      owner_id,
-      quantity: Number(componentDraft.quantity) || 1,
-      position: siblings.length,
-      notes: componentDraft.notes || null,
-    });
+    const existingComponentIds = new Set(siblings.map((c: any) => c.component_part_id));
+    const componentsToAdd = selectedComponentPartIds.filter((id) => !existingComponentIds.has(id));
+
+    if (componentsToAdd.length === 0) {
+      return toast.info("Toutes les pièces sélectionnées sont déjà dans cette composition");
+    }
+
+    const { error } = await (supabase.from("part_components" as any) as any).upsert(
+      componentsToAdd.map((componentPartId, index) => ({
+        parent_part_id: parentPartId,
+        component_part_id: componentPartId,
+        owner_id,
+        quantity: Number(componentDraft.quantity) || 1,
+        position: siblings.length + index,
+        notes: componentDraft.notes || null,
+      })),
+    );
     if (error) return toast.error(error.message);
-    setComponentDraft({ component_part_id: "", quantity: 1, notes: "" });
+    setComponentDraft({ quantity: 1, notes: "" });
+    setSelectedComponentPartIds([]);
     qc.invalidateQueries({ queryKey: ["part_components"] });
-    toast.success("Composant ajouté");
+    toast.success(
+      componentsToAdd.length > 1
+        ? `${componentsToAdd.length} composants ajoutés`
+        : "Composant ajouté",
+    );
+  };
+
+  const toggleSelectedComponent = (componentPartId: string) => {
+    setSelectedComponentPartIds((current) =>
+      current.includes(componentPartId)
+        ? current.filter((id) => id !== componentPartId)
+        : [...current, componentPartId],
+    );
   };
 
   const removeComponent = async (parentPartId: string, componentPartId: string) => {
@@ -250,7 +274,11 @@ function PartsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setComponentsOpen(p)}
+                      onClick={() => {
+                        setComponentsOpen(p);
+                        setSelectedComponentPartIds([]);
+                        setComponentDraft({ quantity: 1, notes: "" });
+                      }}
                       title="Composer cette pièce"
                     >
                       <Boxes className="h-4 w-4" />
@@ -347,7 +375,16 @@ function PartsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!componentsOpen} onOpenChange={(o) => !o && setComponentsOpen(null)}>
+      <Dialog
+        open={!!componentsOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setComponentsOpen(null);
+            setSelectedComponentPartIds([]);
+            setComponentDraft({ quantity: 1, notes: "" });
+          }
+        }}
+      >
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Composition : {componentsOpen?.name}</DialogTitle>
@@ -388,41 +425,71 @@ function PartsPage() {
                 );
               })}
           </div>
-          <div className="grid gap-2 sm:grid-cols-[1fr_90px_1fr_auto]">
-            <select
-              value={componentDraft.component_part_id}
-              onChange={(e) =>
-                setComponentDraft((draft) => ({ ...draft, component_part_id: e.target.value }))
-              }
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-            >
-              <option value="">Ajouter une pièce composante</option>
-              {parts
-                .filter((part: any) => part.id !== componentsOpen?.id)
-                .map((part: any) => (
-                  <option key={part.id} value={part.id}>
-                    {part.name}
-                  </option>
-                ))}
-            </select>
-            <Input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={componentDraft.quantity}
-              onChange={(e) =>
-                setComponentDraft((draft) => ({ ...draft, quantity: Number(e.target.value) }))
-              }
-              placeholder="Qté"
-            />
-            <Input
-              value={componentDraft.notes}
-              onChange={(e) => setComponentDraft((draft) => ({ ...draft, notes: e.target.value }))}
-              placeholder="Note"
-            />
-            <Button type="button" onClick={() => addComponent(componentsOpen.id)}>
-              Ajouter
-            </Button>
+          <div className="space-y-3 rounded-md border border-border/60 p-3">
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Ajouter plusieurs pièces composantes
+              </div>
+              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {parts
+                  .filter((part: any) => part.id !== componentsOpen?.id)
+                  .map((part: any) => {
+                    const alreadyInComposition = partComponents.some(
+                      (component: any) =>
+                        component.parent_part_id === componentsOpen?.id &&
+                        component.component_part_id === part.id,
+                    );
+                    return (
+                      <label
+                        key={part.id}
+                        className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={selectedComponentPartIds.includes(part.id)}
+                          disabled={alreadyInComposition}
+                          onChange={() => toggleSelectedComponent(part.id)}
+                        />
+                        <span>
+                          <span className="font-medium">{part.name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {[
+                              part.reference,
+                              part.category,
+                              alreadyInComposition ? "déjà ajouté" : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "—"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[90px_1fr_auto]">
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={componentDraft.quantity}
+                onChange={(e) =>
+                  setComponentDraft((draft) => ({ ...draft, quantity: Number(e.target.value) }))
+                }
+                placeholder="Qté"
+              />
+              <Input
+                value={componentDraft.notes}
+                onChange={(e) =>
+                  setComponentDraft((draft) => ({ ...draft, notes: e.target.value }))
+                }
+                placeholder="Note commune"
+              />
+              <Button type="button" onClick={() => addComponents(componentsOpen.id)}>
+                Ajouter {selectedComponentPartIds.length > 1 ? selectedComponentPartIds.length : ""}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
