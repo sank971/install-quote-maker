@@ -40,7 +40,7 @@ function ClientsList() {
   const [siteClient, setSiteClient] = useState<any>(null);
 
   const filtered = data.filter((c) =>
-    [c.name, c.email, c.phone, c.contact_name]
+    [c.client_number, c.name, c.email, c.phone, c.contact_name]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -115,7 +115,7 @@ function ClientsList() {
                 <Link to="/clients/$clientId" params={{ clientId: c.id }} className="flex-1">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium">{c.name}</div>
+                      <div className="font-medium">{c.client_number ? `${c.client_number} · ` : ""}{c.name}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {[c.contact_name, c.email, c.phone].filter(Boolean).join(" · ") || "—"}
                       </div>

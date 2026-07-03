@@ -32,6 +32,8 @@ export type Database = {
       clients: {
         Row: {
           address: string | null;
+          client_number: string;
+          client_sequence: number;
           contact_name: string | null;
           created_at: string;
           email: string | null;
@@ -44,6 +46,8 @@ export type Database = {
         };
         Insert: {
           address?: string | null;
+          client_number?: string;
+          client_sequence?: number;
           contact_name?: string | null;
           created_at?: string;
           email?: string | null;
@@ -56,6 +60,8 @@ export type Database = {
         };
         Update: {
           address?: string | null;
+          client_number?: string;
+          client_sequence?: number;
           contact_name?: string | null;
           created_at?: string;
           email?: string | null;
@@ -176,6 +182,8 @@ export type Database = {
           contract_id: string | null;
           created_at: string;
           id: string;
+          installation_number: string;
+          installation_sequence: number;
           location: string | null;
           model_id: string | null;
           name: string;
@@ -194,6 +202,8 @@ export type Database = {
           contract_id?: string | null;
           created_at?: string;
           id?: string;
+          installation_number?: string;
+          installation_sequence?: number;
           location?: string | null;
           model_id?: string | null;
           name: string;
@@ -212,6 +222,8 @@ export type Database = {
           contract_id?: string | null;
           created_at?: string;
           id?: string;
+          installation_number?: string;
+          installation_sequence?: number;
           location?: string | null;
           model_id?: string | null;
           name?: string;
@@ -328,6 +340,48 @@ export type Database = {
             columns: ["brand_id"];
             isOneToOne: false;
             referencedRelation: "brands";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      installation_parts: {
+        Row: {
+          created_at: string;
+          installation_id: string;
+          notes: string | null;
+          owner_id: string;
+          part_id: string;
+          quantity: number;
+        };
+        Insert: {
+          created_at?: string;
+          installation_id: string;
+          notes?: string | null;
+          owner_id?: string;
+          part_id: string;
+          quantity?: number;
+        };
+        Update: {
+          created_at?: string;
+          installation_id?: string;
+          notes?: string | null;
+          owner_id?: string;
+          part_id?: string;
+          quantity?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "installation_parts_installation_id_fkey";
+            columns: ["installation_id"];
+            isOneToOne: false;
+            referencedRelation: "installations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "installation_parts_part_id_fkey";
+            columns: ["part_id"];
+            isOneToOne: false;
+            referencedRelation: "parts";
             referencedColumns: ["id"];
           },
         ];
@@ -683,6 +737,8 @@ export type Database = {
           name: string;
           notes: string | null;
           owner_id: string;
+          site_number: string;
+          site_sequence: number;
           updated_at: string;
         };
         Insert: {
@@ -696,6 +752,8 @@ export type Database = {
           name: string;
           notes?: string | null;
           owner_id: string;
+          site_number?: string;
+          site_sequence?: number;
           updated_at?: string;
         };
         Update: {
@@ -709,6 +767,8 @@ export type Database = {
           name?: string;
           notes?: string | null;
           owner_id?: string;
+          site_number?: string;
+          site_sequence?: number;
           updated_at?: string;
         };
         Relationships: [

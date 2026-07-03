@@ -78,8 +78,8 @@ function InstallationDetail() {
         </Link>
       ) : null}
       <PageHeader
-        title={installation.name}
-        description={[client?.name, site?.name, type?.name].filter(Boolean).join(" · ")}
+        title={installation.installation_number ? `${installation.installation_number} · ${installation.name}` : installation.name}
+        description={[client?.client_number ? `${client.client_number} · ${client.name}` : client?.name, site?.site_number ? `${site.site_number} · ${site.name}` : site?.name, type?.name].filter(Boolean).join(" · ")}
       />
 
       <Card className="mb-6">
@@ -88,10 +88,10 @@ function InstallationDetail() {
         </CardHeader>
         <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <span className="text-muted-foreground">Client :</span> {client?.name ?? "—"}
+            <span className="text-muted-foreground">Client :</span> {client ? (client.client_number ? `${client.client_number} · ${client.name}` : client.name) : "—"}
           </div>
           <div>
-            <span className="text-muted-foreground">Site :</span> {site?.name ?? "—"}
+            <span className="text-muted-foreground">Site :</span> {site ? (site.site_number ? `${site.site_number} · ${site.name}` : site.name) : "—"}
           </div>
           <div>
             <span className="text-muted-foreground">Type :</span> {type?.name ?? "—"}

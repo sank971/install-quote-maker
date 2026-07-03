@@ -137,17 +137,17 @@ function NewQuote() {
       .trim()
       .toLowerCase();
 
-  const availablePartTypes = useMemo(() => {
+  const availablePartTypes = useMemo<string[]>(() => {
     const installationModel = models.find((m: any) => m.id === installation?.model_id);
     const effectiveTypeId = installation?.type_id || installationModel?.type_id;
     const installationType = types.find((t: any) => t.id === effectiveTypeId);
     const componentTypes = Array.isArray(installationType?.component_types)
       ? installationType.component_types
       : [];
-    const names = componentTypes.length
-      ? componentTypes
-      : partCategories.map((category: any) => category.name);
-    return [...new Set(names.map((name: string) => String(name)).filter(Boolean))];
+    const names: string[] = componentTypes.length
+      ? componentTypes.map((name: unknown) => String(name))
+      : partCategories.map((category: any) => String(category.name));
+    return [...new Set(names.filter(Boolean))];
   }, [installation, models, types, partCategories]);
 
   const compatibleParts = useMemo(() => {

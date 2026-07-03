@@ -38,7 +38,7 @@ function SitesList() {
 
   const filtered = sites.filter((s) => {
     const client = clients.find((c) => c.id === s.client_id);
-    return [s.name, s.address, s.email, client?.name]
+    return [s.site_number, s.name, s.address, s.email, client?.client_number, client?.name]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -88,7 +88,7 @@ function SitesList() {
                         <MapPin className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="truncate font-medium">{s.name}</div>
+                        <div className="truncate font-medium">{s.site_number ? `${s.site_number} · ` : ""}{s.name}</div>
                         <div className="truncate text-xs text-muted-foreground">
                           {client?.name} · {s.address || "—"}
                         </div>
