@@ -63,8 +63,8 @@ function InstallationDetail() {
     );
   const presentParts = installationParts
     .filter((item: any) => item.installation_id === installationId)
-    .map((item: any) => parts.find((part: any) => part.id === item.part_id))
-    .filter(Boolean);
+    .map((item: any) => ({ ...item, part: parts.find((part: any) => part.id === item.part_id) }))
+    .filter((item: any) => item.part);
 
   return (
     <div>
@@ -78,8 +78,18 @@ function InstallationDetail() {
         </Link>
       ) : null}
       <PageHeader
-        title={installation.installation_number ? `${installation.installation_number} · ${installation.name}` : installation.name}
-        description={[client?.client_number ? `${client.client_number} · ${client.name}` : client?.name, site?.site_number ? `${site.site_number} · ${site.name}` : site?.name, type?.name].filter(Boolean).join(" · ")}
+        title={
+          installation.installation_number
+            ? `${installation.installation_number} · ${installation.name}`
+            : installation.name
+        }
+        description={[
+          client?.client_number ? `${client.client_number} · ${client.name}` : client?.name,
+          site?.site_number ? `${site.site_number} · ${site.name}` : site?.name,
+          type?.name,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       />
 
       <Card className="mb-6">
@@ -88,10 +98,16 @@ function InstallationDetail() {
         </CardHeader>
         <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <span className="text-muted-foreground">Client :</span> {client ? (client.client_number ? `${client.client_number} · ${client.name}` : client.name) : "—"}
+            <span className="text-muted-foreground">Client :</span>{" "}
+            {client
+              ? client.client_number
+                ? `${client.client_number} · ${client.name}`
+                : client.name
+              : "—"}
           </div>
           <div>
-            <span className="text-muted-foreground">Site :</span> {site ? (site.site_number ? `${site.site_number} · ${site.name}` : site.name) : "—"}
+            <span className="text-muted-foreground">Site :</span>{" "}
+            {site ? (site.site_number ? `${site.site_number} · ${site.name}` : site.name) : "—"}
           </div>
           <div>
             <span className="text-muted-foreground">Type :</span> {type?.name ?? "—"}
@@ -128,11 +144,22 @@ function InstallationDetail() {
           {presentParts.length === 0 ? (
             <p className="text-sm text-muted-foreground">Aucune pièce présente renseignée.</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {presentParts.map((part: any) => (
-                <Badge key={part.id} variant="secondary">
-                  {part.name}
-                </Badge>
+            <div className="grid gap-2">
+              {presentParts.map((item: any) => (
+                <div key={item.part_id} className="rounded-md border border-border/60 p-3 text-sm">
+                  <div className="font-medium">{item.part.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <Badge variant="secondary">
+                      {item.component_type || item.part.category || "Type non défini"}
+                    </Badge>
+                    {(item.reference_override || item.part.reference) && (
+                      <span>Réf. {item.reference_override || item.part.reference}</span>
+                    )}
+                    {item.dimensions && <span>Dimensions {item.dimensions}</span>}
+                    {item.color && <span>Couleur {item.color}</span>}
+                    {item.notes && <span>Options {item.notes}</span>}
+                  </div>
+                </div>
               ))}
             </div>
           )}

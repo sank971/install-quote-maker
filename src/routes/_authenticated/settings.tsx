@@ -15,7 +15,18 @@ export const Route = createFileRoute("/_authenticated/settings")({
 const DEFAULT_TYPES = [
   {
     name: "Porte coulissante",
-    component_types: ["Chariots", "Moteur", "Sélecteur de positions", "Système de détection"],
+    component_types: [
+      "Vantail complet",
+      "Profil avant",
+      "Profil arrière",
+      "Plinthe",
+      "Cimaise",
+      "Verrou",
+      "Chariots",
+      "Moteur",
+      "Sélecteur de positions",
+      "Système de détection",
+    ],
     custom_fields: [
       { key: "nombre_vantaux", label: "Nombre de vantaux", type: "number" },
       { key: "taille_vantaux", label: "Taille des vantaux", type: "text" },

@@ -20,6 +20,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 type CustomField = { key: string; label: string; type: "text" | "number" | "date" | "checkbox" };
+type InstalledPartDraft = {
+  component_type?: string;
+  dimensions?: string;
+  color?: string;
+  reference_override?: string;
+  notes?: string;
+};
 
 export const Route = createFileRoute("/_authenticated/installations")({
   component: Page,
@@ -61,6 +68,7 @@ function InstallationsList() {
   const [typeId, setTypeId] = useState<string>("");
   const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
+  const [partDrafts, setPartDrafts] = useState<Record<string, InstalledPartDraft>>({});
 
   const normalizeName = (value: unknown) =>
     String(value ?? "")
@@ -98,6 +106,32 @@ function InstallationsList() {
       .map((x: any) => ({ ...x, part: parts.find((p: any) => p.id === x.part_id) }))
       .filter((x: any) => x.part);
 
+  const openPartsDialog = (installation: any) => {
+    const drafts = Object.fromEntries(
+      installationParts
+        .filter((x: any) => x.installation_id === installation.id)
+        .map((x: any) => [
+          x.part_id,
+          {
+            component_type:
+              x.component_type ?? parts.find((p: any) => p.id === x.part_id)?.category ?? "",
+            dimensions: x.dimensions ?? "",
+            color: x.color ?? "",
+            reference_override: x.reference_override ?? "",
+            notes: x.notes ?? "",
+          },
+        ]),
+    );
+    setPartDrafts(drafts);
+    setPartsOpen(installation);
+  };
+
+  const updatePartDraft = (partId: string, patch: InstalledPartDraft) =>
+    setPartDrafts((current) => ({
+      ...current,
+      [partId]: { ...(current[partId] ?? {}), ...patch },
+    }));
+
   const toggleInstallationPart = async (
     installationId: string,
     partId: string,
@@ -108,15 +142,52 @@ function InstallationsList() {
     const table = supabase.from("installation_parts" as any) as any;
     const { error } = present
       ? await table.delete().eq("installation_id", installationId).eq("part_id", partId)
-      : await table.insert({ installation_id: installationId, part_id: partId, owner_id });
+      : await table.insert({
+          installation_id: installationId,
+          part_id: partId,
+          owner_id,
+          component_type:
+            partDrafts[partId]?.component_type ||
+            parts.find((p: any) => p.id === partId)?.category ||
+            null,
+          dimensions: partDrafts[partId]?.dimensions || null,
+          color: partDrafts[partId]?.color || null,
+          reference_override: partDrafts[partId]?.reference_override || null,
+          notes: partDrafts[partId]?.notes || null,
+        });
     if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["installation_parts"] });
+  };
+
+  const saveInstallationPart = async (installationId: string, partId: string) => {
+    const draft = partDrafts[partId] ?? {};
+    const { error } = await (supabase.from("installation_parts" as any) as any)
+      .update({
+        component_type: draft.component_type || null,
+        dimensions: draft.dimensions || null,
+        color: draft.color || null,
+        reference_override: draft.reference_override || null,
+        notes: draft.notes || null,
+      })
+      .eq("installation_id", installationId)
+      .eq("part_id", partId);
+    if (error) return toast.error(error.message);
+    toast.success("Pièce mise à jour");
     qc.invalidateQueries({ queryKey: ["installation_parts"] });
   };
 
   const filtered = installs.filter((i) => {
     const site = sites.find((s) => s.id === i.site_id);
     const client = clients.find((c) => c.id === site?.client_id);
-    return [i.installation_number, i.name, i.serial_number, site?.site_number, site?.name, client?.client_number, client?.name]
+    return [
+      i.installation_number,
+      i.name,
+      i.serial_number,
+      site?.site_number,
+      site?.name,
+      client?.client_number,
+      client?.name,
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -223,7 +294,8 @@ function InstallationsList() {
                         params={{ installationId: i.id }}
                         className="font-medium hover:underline"
                       >
-                        {i.installation_number ? `${i.installation_number} · ` : ""}{i.name}
+                        {i.installation_number ? `${i.installation_number} · ` : ""}
+                        {i.name}
                       </Link>
                       <div className="text-xs text-muted-foreground">
                         {[type?.name, brand?.name, model?.name].filter(Boolean).join(" · ") || "—"}
@@ -240,7 +312,14 @@ function InstallationsList() {
                               key={x.part_id}
                               className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
                             >
-                              {x.part.name}
+                              {[
+                                x.part.name,
+                                x.reference_override || x.part.reference,
+                                x.dimensions,
+                                x.color,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </span>
                           ))}
                           {presentParts.length > 4 ? (
@@ -281,14 +360,15 @@ function InstallationsList() {
                           params={{ siteId: site?.id }}
                           className="hover:underline"
                         >
-                          {site?.site_number ? `${site.site_number} · ` : ""}{site?.name}
+                          {site?.site_number ? `${site.site_number} · ` : ""}
+                          {site?.name}
                         </Link>
                         {i.serial_number && ` · SN ${i.serial_number}`}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => setPartsOpen(i)}>
+                    <Button variant="ghost" size="icon" onClick={() => openPartsDialog(i)}>
                       <Package className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(i)}>
@@ -495,17 +575,70 @@ function InstallationsList() {
                     return (
                       <label
                         key={part.id}
-                        className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
+                        className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent"
                       >
                         <input
                           type="checkbox"
                           checked={present}
                           onChange={() => toggleInstallationPart(partsOpen.id, part.id, present)}
                         />
-                        <span className="font-medium">{part.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {[part.reference, part.category].filter(Boolean).join(" · ")}
-                        </span>
+                        <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <span className="font-medium">{part.name}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {[part.reference, part.category].filter(Boolean).join(" · ")}
+                            </span>
+                          </div>
+                          {present && (
+                            <>
+                              <Input
+                                value={partDrafts[part.id]?.component_type ?? part.category ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { component_type: e.target.value })
+                                }
+                                placeholder="Type de pièce (profil avant...)"
+                              />
+                              <Input
+                                value={partDrafts[part.id]?.reference_override ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { reference_override: e.target.value })
+                                }
+                                placeholder="Référence spécifique"
+                              />
+                              <Input
+                                value={partDrafts[part.id]?.dimensions ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { dimensions: e.target.value })
+                                }
+                                placeholder="Dimensions"
+                              />
+                              <Input
+                                value={partDrafts[part.id]?.color ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { color: e.target.value })
+                                }
+                                placeholder="Couleur"
+                              />
+                              <Input
+                                value={partDrafts[part.id]?.notes ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { notes: e.target.value })
+                                }
+                                placeholder="Options (verrou, accessoires...)"
+                                className="sm:col-span-2"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="sm:col-span-2"
+                                onClick={() => saveInstallationPart(partsOpen.id, part.id)}
+                              >
+                                Enregistrer les infos de cette pièce
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </label>
                     );
                   })}

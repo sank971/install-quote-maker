@@ -215,15 +215,21 @@ function NewQuote() {
   const addPart = (partId: string) => {
     const p = parts.find((x: any) => x.id === partId);
     if (!p) return;
+    const installedPart = installationParts.find(
+      (x: any) => x.installation_id === installationId && x.part_id === partId,
+    );
+    const details = [installedPart?.dimensions, installedPart?.color, installedPart?.notes]
+      .filter(Boolean)
+      .join(" · ");
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
     setItems((prev) => [
       ...prev,
       {
         key: crypto.randomUUID(),
         part_id: p.id,
-        description: p.name,
-        reference: p.reference ?? "",
-        category: p.category ?? "",
+        description: details ? `${p.name} — ${details}` : p.name,
+        reference: installedPart?.reference_override || p.reference || "",
+        category: installedPart?.component_type || p.category || "",
         quantity: 1,
         unit_price: Number(p.sale_price) * (1 - discount),
         unit_cost: cheapestCost(p.id),
