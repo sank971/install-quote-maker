@@ -346,28 +346,43 @@ export type Database = {
       };
       installation_parts: {
         Row: {
+          color: string | null;
+          component_type: string | null;
+          configuration: Json;
           created_at: string;
+          dimensions: string | null;
           installation_id: string;
           notes: string | null;
           owner_id: string;
           part_id: string;
           quantity: number;
+          reference_override: string | null;
         };
         Insert: {
+          color?: string | null;
+          component_type?: string | null;
+          configuration?: Json;
           created_at?: string;
+          dimensions?: string | null;
           installation_id: string;
           notes?: string | null;
           owner_id?: string;
           part_id: string;
           quantity?: number;
+          reference_override?: string | null;
         };
         Update: {
+          color?: string | null;
+          component_type?: string | null;
+          configuration?: Json;
           created_at?: string;
+          dimensions?: string | null;
           installation_id?: string;
           notes?: string | null;
           owner_id?: string;
           part_id?: string;
           quantity?: number;
+          reference_override?: string | null;
         };
         Relationships: [
           {
