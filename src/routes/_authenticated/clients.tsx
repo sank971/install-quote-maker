@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
-import { Plus, Pencil, Trash2, Search, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, ChevronRight, MapPin } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/clients")({
   component: ClientsPage,
@@ -17,10 +17,13 @@ export const Route = createFileRoute("/_authenticated/clients")({
 function ClientsPage() {
   const { data = [] } = useList<any>("clients");
   const upsert = useUpsert("clients");
+  const upsertSite = useUpsert("sites", [["sites"]]);
   const remove = useRemove("clients");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
+  const [siteOpen, setSiteOpen] = useState(false);
+  const [siteClient, setSiteClient] = useState<any>(null);
 
   const filtered = data.filter((c) =>
     [c.name, c.email, c.phone, c.contact_name].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase()),
@@ -78,6 +81,9 @@ function ClientsPage() {
                   </div>
                 </Link>
                 <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => { setSiteClient(c); setSiteOpen(true); }}>
+                    <MapPin className="mr-1 h-4 w-4" />Site
+                  </Button>
                   <Button variant="ghost" size="icon" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Supprimer ${c.name} ?`)) remove.mutate(c.id); }}><Trash2 className="h-4 w-4" /></Button>
                 </div>
@@ -106,6 +112,41 @@ function ClientsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={siteOpen} onOpenChange={setSiteOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nouveau site {siteClient?.name ? `— ${siteClient.name}` : ""}</DialogTitle></DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              await upsertSite.mutateAsync({
+                client_id: siteClient.id,
+                name: fd.get("name"),
+                address: fd.get("address") || null,
+                contact_name: fd.get("contact_name") || null,
+                contact_phone: fd.get("contact_phone") || null,
+                notes: fd.get("notes") || null,
+              });
+              setSiteOpen(false);
+            }}
+            className="space-y-3"
+          >
+            <div><Label>Nom *</Label><Input name="name" required /></div>
+            <div><Label>Adresse</Label><Input name="address" /></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label>Contact site</Label><Input name="contact_name" /></div>
+              <div><Label>Téléphone</Label><Input name="contact_phone" /></div>
+            </div>
+            <div><Label>Notes</Label><Textarea name="notes" rows={3} /></div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setSiteOpen(false)}>Annuler</Button>
+              <Button type="submit">Enregistrer</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
