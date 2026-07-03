@@ -91,6 +91,7 @@ function PartsPage() {
       brand_id: fd.get("brand_id") || null,
       description: fd.get("description") || null,
       sale_price: Number(fd.get("sale_price") ?? 0),
+      pricing_unit: fd.get("pricing_unit") || "unit",
     });
     setOpen(false);
   };
@@ -254,7 +255,10 @@ function PartsPage() {
                       </div>
                       <div className="mt-1 text-xs">
                         <span className="text-muted-foreground">PV : </span>
-                        <span className="font-medium">{Number(p.sale_price).toFixed(2)} €</span>
+                        <span className="font-medium">
+                          {Number(p.sale_price).toFixed(2)} €/
+                          {p.pricing_unit === "linear_meter" ? "ml" : "u"}
+                        </span>
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-muted-foreground">
                           Compat. : {typeCompatCount} types · {modelCompatCount} modèles
@@ -359,6 +363,17 @@ function PartsPage() {
                   step="0.01"
                   defaultValue={edit?.sale_price ?? 0}
                 />
+              </div>
+              <div>
+                <Label>Chiffrage</Label>
+                <select
+                  name="pricing_unit"
+                  defaultValue={edit?.pricing_unit ?? "unit"}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="unit">À l’unité</option>
+                  <option value="linear_meter">Au mètre linéaire</option>
+                </select>
               </div>
             </div>
             <div>

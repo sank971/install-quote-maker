@@ -155,6 +155,9 @@ function InstallationDetail() {
                     {(item.reference_override || item.part.reference) && (
                       <span>Réf. {item.reference_override || item.part.reference}</span>
                     )}
+                    {item.part.pricing_unit === "linear_meter" && item.length_meters && (
+                      <span>Taille {Number(item.length_meters)} ml</span>
+                    )}
                     {item.dimensions && <span>Dimensions {item.dimensions}</span>}
                     {item.color && <span>Couleur {item.color}</span>}
                     {item.notes && <span>Options {item.notes}</span>}

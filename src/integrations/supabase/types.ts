@@ -353,6 +353,7 @@ export type Database = {
           dimensions: string | null;
           installation_id: string;
           notes: string | null;
+          length_meters: number | null;
           owner_id: string;
           part_id: string;
           quantity: number;
@@ -366,6 +367,7 @@ export type Database = {
           dimensions?: string | null;
           installation_id: string;
           notes?: string | null;
+          length_meters?: number | null;
           owner_id?: string;
           part_id: string;
           quantity?: number;
@@ -379,6 +381,7 @@ export type Database = {
           dimensions?: string | null;
           installation_id?: string;
           notes?: string | null;
+          length_meters?: number | null;
           owner_id?: string;
           part_id?: string;
           quantity?: number;
@@ -543,6 +546,7 @@ export type Database = {
           name: string;
           owner_id: string;
           photo_url: string | null;
+          pricing_unit: string;
           reference: string | null;
           sale_price: number;
           updated_at: string;
@@ -556,6 +560,7 @@ export type Database = {
           name: string;
           owner_id: string;
           photo_url?: string | null;
+          pricing_unit?: string;
           reference?: string | null;
           sale_price?: number;
           updated_at?: string;
@@ -569,6 +574,7 @@ export type Database = {
           name?: string;
           owner_id?: string;
           photo_url?: string | null;
+          pricing_unit?: string;
           reference?: string | null;
           sale_price?: number;
           updated_at?: string;
