@@ -211,7 +211,13 @@ function Page() {
                       <Wrench className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="font-medium">{i.name}</div>
+                      <Link
+                        to="/installations/$installationId"
+                        params={{ installationId: i.id }}
+                        className="font-medium hover:underline"
+                      >
+                        {i.name}
+                      </Link>
                       <div className="text-xs text-muted-foreground">
                         {[type?.name, brand?.name, model?.name].filter(Boolean).join(" · ") || "—"}
                       </div>
@@ -263,7 +269,13 @@ function Page() {
                           {client?.name}
                         </Link>
                         {" · "}
-                        {site?.name}
+                        <Link
+                          to="/sites/$siteId"
+                          params={{ siteId: site?.id }}
+                          className="hover:underline"
+                        >
+                          {site?.name}
+                        </Link>
                         {i.serial_number && ` · SN ${i.serial_number}`}
                       </div>
                     </div>
