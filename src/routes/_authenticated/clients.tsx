@@ -112,6 +112,41 @@ function ClientsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={siteOpen} onOpenChange={setSiteOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nouveau site {siteClient?.name ? `— ${siteClient.name}` : ""}</DialogTitle></DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              await upsertSite.mutateAsync({
+                client_id: siteClient.id,
+                name: fd.get("name"),
+                address: fd.get("address") || null,
+                contact_name: fd.get("contact_name") || null,
+                contact_phone: fd.get("contact_phone") || null,
+                notes: fd.get("notes") || null,
+              });
+              setSiteOpen(false);
+            }}
+            className="space-y-3"
+          >
+            <div><Label>Nom *</Label><Input name="name" required /></div>
+            <div><Label>Adresse</Label><Input name="address" /></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label>Contact site</Label><Input name="contact_name" /></div>
+              <div><Label>Téléphone</Label><Input name="contact_phone" /></div>
+            </div>
+            <div><Label>Notes</Label><Textarea name="notes" rows={3} /></div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setSiteOpen(false)}>Annuler</Button>
+              <Button type="submit">Enregistrer</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
