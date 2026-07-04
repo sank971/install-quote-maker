@@ -124,7 +124,7 @@ function PartsPage() {
 
   const addComponents = async (parentPartId: string) => {
     if (selectedComponentPartIds.length === 0) {
-      return toast.error("Sélectionnez au moins une pièce composante");
+      return toast.error("Sélectionnez au moins un accessoire");
     }
     if (selectedComponentPartIds.includes(parentPartId)) {
       return toast.error("Une pièce ne peut pas être composante d’elle-même");
@@ -136,7 +136,7 @@ function PartsPage() {
     const componentsToAdd = selectedComponentPartIds.filter((id) => !existingComponentIds.has(id));
 
     if (componentsToAdd.length === 0) {
-      return toast.info("Toutes les pièces sélectionnées sont déjà dans cette composition");
+      return toast.info("Toutes les pièces sélectionnées sont déjà liées comme accessoires");
     }
 
     const { error } = await (supabase.from("part_components" as any) as any).upsert(
@@ -155,8 +155,8 @@ function PartsPage() {
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success(
       componentsToAdd.length > 1
-        ? `${componentsToAdd.length} composants ajoutés`
-        : "Composant ajouté",
+        ? `${componentsToAdd.length} accessoires liés`
+        : "Accessoire lié",
     );
   };
 
@@ -175,7 +175,7 @@ function PartsPage() {
       .eq("component_part_id", componentPartId);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["part_components"] });
-    toast.success("Composant supprimé");
+    toast.success("Accessoire supprimé");
   };
 
   const toggleTypeCompat = async (partId: string, typeId: string, present: boolean) => {
@@ -276,18 +276,24 @@ function PartsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Button
-                      variant="ghost"
-                      size="icon"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         setComponentsOpen(p);
                         setSelectedComponentPartIds([]);
                         setComponentDraft({ quantity: 1, notes: "" });
                       }}
-                      title="Composer cette pièce"
+                      title="Lier des accessoires à cette pièce"
                     >
-                      <Boxes className="h-4 w-4" />
+                      <Boxes className="mr-2 h-4 w-4" />
+                      Accessoires
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => openCompat(p)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openCompat(p)}
+                      title="Gérer les compatibilités"
+                    >
                       <LinkIcon className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
@@ -402,11 +408,11 @@ function PartsPage() {
       >
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Composition : {componentsOpen?.name}</DialogTitle>
+            <DialogTitle>Accessoires liés : {componentsOpen?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Déclarez les pièces incluses dans cette référence composée. Exemple : un vantail 20VR
-            peut contenir autant de pièces remplaçables individuellement que nécessaire dans un devis.
+            Liez une ou plusieurs pièces en tant qu’accessoires de cette pièce. Exemple : un moteur
+            peut être lié à ses accessoires, kits ou organes complémentaires nécessaires dans un devis.
           </p>
           <div className="space-y-2">
             {partComponents
@@ -443,7 +449,7 @@ function PartsPage() {
           <div className="space-y-3 rounded-md border border-border/60 p-3">
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Ajouter plusieurs pièces composantes
+                Ajouter plusieurs accessoires
               </div>
               <div className="grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
                 {parts
@@ -472,7 +478,7 @@ function PartsPage() {
                             {[
                               part.reference,
                               part.category,
-                              alreadyInComposition ? "déjà ajouté" : null,
+                              alreadyInComposition ? "déjà lié" : null,
                             ]
                               .filter(Boolean)
                               .join(" · ") || "—"}
