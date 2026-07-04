@@ -18,6 +18,7 @@ export const Route = createFileRoute("/_authenticated/quotes/new")({
 
 interface Item {
   key: string;
+  installation_id?: string;
   part_id?: string;
   description: string;
   reference?: string;
@@ -55,7 +56,7 @@ function NewQuote() {
 
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
-  const [installationId, setInstallationId] = useState("");
+  const [installationIds, setInstallationIds] = useState<string[]>([]);
   const [contractId, setContractId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
@@ -73,7 +74,9 @@ function NewQuote() {
 
   const clientSites = sites.filter((s: any) => s.client_id === clientId);
   const siteInstalls = installs.filter((i: any) => i.site_id === siteId);
-  const installation = installs.find((i: any) => i.id === installationId);
+  const selectedInstallations = installs.filter((i: any) => installationIds.includes(i.id));
+  const installationId = installationIds[0] ?? "";
+  const installation = selectedInstallations[0];
   const contract = contracts.find((c: any) => c.id === contractId);
   const selectedClient = clients.find((c: any) => c.id === clientId);
   const selectedSite = sites.find((s: any) => s.id === siteId);
@@ -218,11 +221,15 @@ function NewQuote() {
     return Math.min(...offers.map((o: any) => Number(o.purchase_price) + Number(o.shipping_cost)));
   };
 
-  const buildPartItem = (partId: string, patch: Partial<Item> = {}): Item | null => {
+  const buildPartItem = (
+    partId: string,
+    patch: Partial<Item> = {},
+    sourceInstallationId = installationId,
+  ): Item | null => {
     const p = parts.find((x: any) => x.id === partId);
     if (!p) return null;
     const installedPart = installationParts.find(
-      (x: any) => x.installation_id === installationId && x.part_id === partId,
+      (x: any) => x.installation_id === sourceInstallationId && x.part_id === partId,
     );
     const length = Number(installedPart?.length_meters ?? 0);
     const details = [
@@ -237,6 +244,7 @@ function NewQuote() {
     return {
       key: crypto.randomUUID(),
       part_id: p.id,
+      installation_id: sourceInstallationId || undefined,
       description: details ? `${p.name} — ${details}` : p.name,
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
@@ -248,8 +256,8 @@ function NewQuote() {
     };
   };
 
-  const addPart = (partId: string) => {
-    const item = buildPartItem(partId);
+  const addPart = (partId: string, sourceInstallationId = installationId) => {
+    const item = buildPartItem(partId, {}, sourceInstallationId);
     if (!item) return;
     setItems((prev) => [...prev, item]);
   };
@@ -309,11 +317,10 @@ function NewQuote() {
     const existingPartIds = new Set(items.map((item) => item.part_id).filter(Boolean));
     const compatiblePartIds = new Set(compatibleParts.map((part: any) => part.id));
     const ids = installationParts
-      .filter((x: any) => x.installation_id === installationId)
-      .map((x: any) => x.part_id)
-      .filter((id: string) => compatiblePartIds.has(id) && !existingPartIds.has(id));
+      .filter((x: any) => installationIds.includes(x.installation_id))
+      .filter((x: any) => compatiblePartIds.has(x.part_id) && !existingPartIds.has(x.part_id));
 
-    ids.forEach(addPart);
+    ids.forEach((x: any) => addPart(x.part_id, x.installation_id));
     if (ids.length === 0) {
       toast.info(
         selectedPartTypes.length > 0
@@ -357,8 +364,8 @@ function NewQuote() {
     { label: "Site", done: Boolean(siteId), hint: selectedSite?.name ?? "Optionnel" },
     {
       label: "Installation",
-      done: Boolean(installationId),
-      hint: installation?.name ?? "Optionnel",
+      done: installationIds.length > 0,
+      hint: installationIds.length > 0 ? `${installationIds.length} installation(s)` : "Optionnel",
     },
     {
       label: "Chiffrage",
@@ -425,11 +432,25 @@ function NewQuote() {
           return { ...i, part_id: newPart.id };
         }),
       );
+      if (installationIds.length > 0) {
+        const { error: qiError } = await (
+          supabase.from("quote_installations" as any) as any
+        ).insert(
+          installationIds.map((id, idx) => ({
+            owner_id,
+            quote_id: quote.id,
+            installation_id: id,
+            position: idx,
+          })),
+        );
+        if (qiError) throw qiError;
+      }
       if (resolvedItems.length > 0) {
         const rows = resolvedItems.map((i, idx) => ({
           owner_id,
           quote_id: quote.id,
           part_id: i.part_id ?? null,
+          installation_id: i.installation_id ?? null,
           description: i.description,
           quantity: i.quantity,
           unit_price: i.unit_price,
@@ -500,7 +521,7 @@ function NewQuote() {
                   onChange={(e) => {
                     setClientId(e.target.value);
                     setSiteId("");
-                    setInstallationId("");
+                    setInstallationIds([]);
                     setSelectedPartTypes([]);
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
@@ -519,7 +540,7 @@ function NewQuote() {
                   value={siteId}
                   onChange={(e) => {
                     setSiteId(e.target.value);
-                    setInstallationId("");
+                    setInstallationIds([]);
                     setSelectedPartTypes([]);
                   }}
                   disabled={!clientId}
@@ -534,26 +555,34 @@ function NewQuote() {
                 </select>
               </div>
               <div>
-                <Label>Installation</Label>
-                <select
-                  value={installationId}
-                  onChange={(e) => {
-                    setInstallationId(e.target.value);
-                    setSelectedPartTypes([]);
-                    const inst = installs.find((x: any) => x.id === e.target.value);
-                    if (inst?.contract_id)
-                      applyContract(contracts.find((c: any) => c.id === inst.contract_id));
-                  }}
-                  disabled={!siteId}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                >
-                  <option value="">—</option>
-                  {siteInstalls.map((i: any) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
+                <Label>Installations</Label>
+                <div className="rounded-md border border-input p-2 space-y-1">
+                  {siteInstalls.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">—</div>
+                  ) : (
+                    siteInstalls.map((i: any) => {
+                      const checked = installationIds.includes(i.id);
+                      return (
+                        <label key={i.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setInstallationIds((current) =>
+                                checked ? current.filter((id) => id !== i.id) : [...current, i.id],
+                              );
+                              setSelectedPartTypes([]);
+                              if (!checked && i.contract_id)
+                                applyContract(contracts.find((c: any) => c.id === i.contract_id));
+                            }}
+                            disabled={!siteId}
+                          />
+                          <span>{i.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
               <div>
                 <Label>Contrat appliqué</Label>
@@ -646,7 +675,7 @@ function NewQuote() {
                   variant="outline"
                   size="sm"
                   onClick={addPresentParts}
-                  disabled={!installationId || presentPartIds.size === 0}
+                  disabled={installationIds.length === 0 || presentPartIds.size === 0}
                 >
                   Ajouter présentes
                 </Button>

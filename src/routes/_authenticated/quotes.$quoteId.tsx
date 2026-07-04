@@ -28,6 +28,13 @@ function QuoteDetail() {
       return data ?? [];
     },
   });
+  const { data: quoteInstallations = [] } = useList<any>("quote_installations", {
+    filter: (q: any) => q.eq("quote_id", quoteId),
+    orderBy: "position",
+    ascending: true,
+    key: ["quote_installations", quoteId],
+  });
+  const { data: settings = [] } = useList<any>("app_settings");
   const { data: clients = [] } = useList<any>("clients");
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
@@ -38,7 +45,15 @@ function QuoteDetail() {
 
   const client = clients.find((c: any) => c.id === quote.client_id);
   const site = sites.find((s: any) => s.id === quote.site_id);
-  const install = installs.find((i: any) => i.id === quote.installation_id);
+  const linkedInstallations = quoteInstallations.length
+    ? quoteInstallations
+        .map((qi: any) => installs.find((i: any) => i.id === qi.installation_id))
+        .filter(Boolean)
+    : installs.filter((i: any) => i.id === quote.installation_id);
+  const displayInstallations = linkedInstallations.length
+    ? linkedInstallations
+    : [{ id: "__general", name: "Chiffrage" }];
+  const install = linkedInstallations[0];
   const contract = contracts.find((c: any) => c.id === quote.contract_id);
   const contractDiscountPct = Number(contract?.parts_discount_pct ?? 0);
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
@@ -52,9 +67,19 @@ function QuoteDetail() {
   const wasteTreatmentFee = Number(quote.waste_treatment_fee ?? 0);
   const liftingEquipmentFee = Number(quote.lifting_equipment_fee ?? 0);
   const totalHT =
-    partsHT + laborHT + Number(quote.travel_fee ?? 0) + shippingFee + wasteTreatmentFee + liftingEquipmentFee;
+    partsHT +
+    laborHT +
+    Number(quote.travel_fee ?? 0) +
+    shippingFee +
+    wasteTreatmentFee +
+    liftingEquipmentFee;
   const vat = (totalHT * Number(quote.vat_rate)) / 100;
   const totalTTC = totalHT + vat;
+  const quoteSettings = settings.find((setting: any) => setting.key === "quote_document");
+  const pageOneDescription = String(quoteSettings?.value?.description ?? "");
+  const terms = String(
+    quoteSettings?.value?.terms ?? "Devis valable 30 jours. Bon pour accord : date et signature.",
+  );
   const fmt = (n: number) => n.toFixed(2) + " €";
 
   const del = async () => {
@@ -120,12 +145,17 @@ function QuoteDetail() {
             </div>
             <div>{site?.name}</div>
             <div className="text-muted-foreground">{site?.address}</div>
-            {install && <div className="text-muted-foreground">Installation : {install.name}</div>}
+            {linkedInstallations.length > 0 && (
+              <div className="text-muted-foreground">
+                Installations : {linkedInstallations.map((x: any) => x.name).join(", ")}
+              </div>
+            )}
             {contractTypeLabel && (
               <div className="text-muted-foreground">Type de contrat : {contractTypeLabel}</div>
             )}
             <div className="text-muted-foreground">
-              Intervention : {quote.intervention_reason === "damage_vandalism"
+              Intervention :{" "}
+              {quote.intervention_reason === "damage_vandalism"
                 ? "Casse / vandalisme"
                 : quote.intervention_reason === "new_installation"
                   ? "Nouvelle installation"
@@ -135,67 +165,98 @@ function QuoteDetail() {
           </div>
         </div>
 
-        <table className="w-full text-sm">
-          <thead className="border-b border-border">
-            <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="py-2">Désignation</th>
-              <th className="py-2 text-right">Qté</th>
-              <th className="py-2 text-right">PU HT</th>
-              <th className="py-2 text-right">Réduc. contrat</th>
-              <th className="py-2 text-right">Total HT</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {items.map((i: any) => (
-              <tr key={i.id}>
-                <td className="py-2">{i.description}</td>
-                <td className="py-2 text-right">{Number(i.quantity)}</td>
-                <td className="py-2 text-right">{fmt(Number(i.unit_price))}</td>
-                <td className="py-2 text-right">
-                  {contractDiscountPct > 0 ? `${contractDiscountPct.toFixed(2)}%` : "—"}
-                </td>
-                <td className="py-2 text-right">
-                  {fmt(Number(i.unit_price) * Number(i.quantity))}
-                </td>
+        {pageOneDescription && (
+          <div className="mb-8 rounded-md bg-muted/40 p-4 text-sm print:bg-transparent">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Description
+            </div>
+            <div className="whitespace-pre-wrap">{pageOneDescription}</div>
+          </div>
+        )}
+
+        <div className="print:break-before-page">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border">
+              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="py-2">Désignation</th>
+                <th className="py-2 text-right">Qté</th>
+                <th className="py-2 text-right">PU HT</th>
+                <th className="py-2 text-right">Réduc. contrat</th>
+                <th className="py-2 text-right">Total HT</th>
               </tr>
-            ))}
-            {Number(quote.labor_hours) > 0 && (
-              <tr>
-                <td className="py-2">Main-d'œuvre</td>
-                <td className="py-2 text-right">{quote.labor_hours} h</td>
-                <td className="py-2 text-right">{fmt(Number(quote.labor_rate))}</td>
-                <td className="py-2 text-right">—</td>
-                <td className="py-2 text-right">{fmt(laborHT)}</td>
-              </tr>
-            )}
-            {Number(quote.travel_fee) > 0 && (
-              <tr>
-                <td className="py-2" colSpan={4}>
-                  Déplacement
-                </td>
-                <td className="py-2 text-right">{fmt(Number(quote.travel_fee))}</td>
-              </tr>
-            )}
-            {shippingFee > 0 && (
-              <tr>
-                <td className="py-2" colSpan={4}>Frais de port</td>
-                <td className="py-2 text-right">{fmt(shippingFee)}</td>
-              </tr>
-            )}
-            {wasteTreatmentFee > 0 && (
-              <tr>
-                <td className="py-2" colSpan={4}>Traitement déchets</td>
-                <td className="py-2 text-right">{fmt(wasteTreatmentFee)}</td>
-              </tr>
-            )}
-            {liftingEquipmentFee > 0 && (
-              <tr>
-                <td className="py-2" colSpan={4}>Engin de levage</td>
-                <td className="py-2 text-right">{fmt(liftingEquipmentFee)}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {displayInstallations.flatMap((inst: any) => [
+                <tr key={`inst-${inst.id}`} className="bg-muted/40 font-semibold">
+                  <td className="py-2" colSpan={5}>
+                    Installation : {inst.name}
+                  </td>
+                </tr>,
+                ...items
+                  .filter(
+                    (i: any) =>
+                      inst.id === "__general" ||
+                      !i.installation_id ||
+                      i.installation_id === inst.id,
+                  )
+                  .map((i: any) => (
+                    <tr key={i.id}>
+                      <td className="py-2">{i.description}</td>
+                      <td className="py-2 text-right">{Number(i.quantity)}</td>
+                      <td className="py-2 text-right">{fmt(Number(i.unit_price))}</td>
+                      <td className="py-2 text-right">
+                        {contractDiscountPct > 0 ? `${contractDiscountPct.toFixed(2)}%` : "—"}
+                      </td>
+                      <td className="py-2 text-right">
+                        {fmt(Number(i.unit_price) * Number(i.quantity))}
+                      </td>
+                    </tr>
+                  )),
+              ])}
+              {Number(quote.labor_hours) > 0 && (
+                <tr>
+                  <td className="py-2">Main-d'œuvre</td>
+                  <td className="py-2 text-right">{quote.labor_hours} h</td>
+                  <td className="py-2 text-right">{fmt(Number(quote.labor_rate))}</td>
+                  <td className="py-2 text-right">—</td>
+                  <td className="py-2 text-right">{fmt(laborHT)}</td>
+                </tr>
+              )}
+              {Number(quote.travel_fee) > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Déplacement
+                  </td>
+                  <td className="py-2 text-right">{fmt(Number(quote.travel_fee))}</td>
+                </tr>
+              )}
+              {shippingFee > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Frais de port
+                  </td>
+                  <td className="py-2 text-right">{fmt(shippingFee)}</td>
+                </tr>
+              )}
+              {wasteTreatmentFee > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Traitement déchets
+                  </td>
+                  <td className="py-2 text-right">{fmt(wasteTreatmentFee)}</td>
+                </tr>
+              )}
+              {liftingEquipmentFee > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Engin de levage
+                  </td>
+                  <td className="py-2 text-right">{fmt(liftingEquipmentFee)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         <div className="mt-6 ml-auto w-full max-w-xs space-y-1 text-sm">
           {contractDiscountPct > 0 && (
@@ -227,8 +288,8 @@ function QuoteDetail() {
           </div>
         )}
 
-        <div className="mt-10 border-t border-border pt-4 text-xs text-muted-foreground">
-          Devis valable 30 jours. Bon pour accord : date et signature.
+        <div className="mt-10 border-t border-border pt-4 text-xs text-muted-foreground whitespace-pre-wrap">
+          {terms}
         </div>
       </div>
 

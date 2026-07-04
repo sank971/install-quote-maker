@@ -58,6 +58,7 @@ function InstallationsList() {
   const { data: modelCompat = [] } = useList<any>("part_model_compat");
   const { data: typeCompat = [] } = useList<any>("part_type_compat");
   const { data: installationParts = [] } = useList<any>("installation_parts");
+  const { data: defaultParts = [] } = useList<any>("installation_type_default_parts");
   const upsert = useUpsert("installations");
   const remove = useRemove("installations");
   const qc = useQueryClient();
@@ -222,7 +223,7 @@ function InstallationsList() {
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    await upsert.mutateAsync({
+    const savedInstallation = await upsert.mutateAsync({
       id: edit.id,
       name: fd.get("name"),
       site_id: fd.get("site_id"),
@@ -240,6 +241,23 @@ function InstallationsList() {
         return acc;
       }, {}),
     });
+    if (!edit.id && savedInstallation?.type_id) {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user!.id;
+      const rows = defaultParts
+        .filter((row: any) => row.type_id === savedInstallation.type_id)
+        .map((row: any) => ({
+          owner_id,
+          installation_id: savedInstallation.id,
+          part_id: row.part_id,
+          component_type: parts.find((part: any) => part.id === row.part_id)?.category ?? null,
+        }));
+      if (rows.length > 0) {
+        const { error } = await (supabase.from("installation_parts" as any) as any).insert(rows);
+        if (error) toast.error(error.message);
+        qc.invalidateQueries({ queryKey: ["installation_parts"] });
+      }
+    }
     setOpen(false);
   };
 
