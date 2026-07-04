@@ -215,6 +215,63 @@ function NewQuote() {
     selectedPartTypes,
   ]);
 
+  const accessorySuggestions = useMemo(() => {
+    const selectedTypes = new Set(selectedPartTypes.map((name) => normalizeName(name)));
+    const parentIds = new Set(
+      installationParts
+        .filter((x: any) => installationIds.includes(x.installation_id))
+        .filter((x: any) => {
+          if (selectedTypes.size === 0) return true;
+          const part = parts.find((p: any) => p.id === x.part_id);
+          return Boolean(part?.category && selectedTypes.has(normalizeName(part.category)));
+        })
+        .map((x: any) => x.part_id),
+    );
+
+    return partComponents
+      .filter((component: any) => parentIds.has(component.parent_part_id))
+      .map((component: any) => ({
+        ...component,
+        parentPart: parts.find((part: any) => part.id === component.parent_part_id),
+        accessoryPart: parts.find((part: any) => part.id === component.component_part_id),
+      }))
+      .filter((component: any) => component.accessoryPart)
+      .sort((a: any, b: any) => {
+        const aParent = a.parentPart?.name ?? "";
+        const bParent = b.parentPart?.name ?? "";
+        return (
+          aParent.localeCompare(bParent) || a.accessoryPart.name.localeCompare(b.accessoryPart.name)
+        );
+      });
+  }, [installationParts, installationIds, partComponents, parts, selectedPartTypes]);
+
+  const addAccessoryToQuote = (component: any) => {
+    const sourceInstallationId =
+      installationParts.find(
+        (x: any) =>
+          installationIds.includes(x.installation_id) && x.part_id === component.parent_part_id,
+      )?.installation_id ?? installationId;
+    const accessoryItem = buildPartItem(
+      component.component_part_id,
+      {
+        parent_part_id: component.parent_part_id,
+        quantity: Number(component.quantity) || 1,
+      },
+      sourceInstallationId,
+    );
+    if (!accessoryItem) return;
+    const parentName = parts.find((part: any) => part.id === component.parent_part_id)?.name;
+    setItems((prev) => [
+      ...prev,
+      {
+        ...accessoryItem,
+        description: parentName
+          ? `${parentName} > ${accessoryItem.description}`
+          : accessoryItem.description,
+      },
+    ]);
+  };
+
   const cheapestCost = (partId: string) => {
     const offers = sp.filter((x: any) => x.part_id === partId);
     if (offers.length === 0) return 0;
@@ -684,6 +741,43 @@ function NewQuote() {
                   Ligne libre
                 </Button>
               </div>
+
+              {accessorySuggestions.length > 0 && (
+                <div className="rounded-md border border-dashed border-border/70 p-3">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Boxes className="h-3.5 w-3.5" />
+                    Accessoires liés aux pièces présentes
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {accessorySuggestions.map((component: any) => {
+                      const alreadyAdded = items.some(
+                        (item) =>
+                          item.parent_part_id === component.parent_part_id &&
+                          item.part_id === component.component_part_id,
+                      );
+                      return (
+                        <Button
+                          key={`${component.parent_part_id}-${component.component_part_id}`}
+                          type="button"
+                          variant={alreadyAdded ? "secondary" : "outline"}
+                          size="sm"
+                          disabled={alreadyAdded}
+                          className="justify-start"
+                          onClick={() => addAccessoryToQuote(component)}
+                        >
+                          {alreadyAdded ? "✓ " : "+ "}
+                          {component.parentPart?.name ?? "Pièce liée"} &gt;{" "}
+                          {component.accessoryPart.name} · Qté {component.quantity}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Ces accessoires proviennent des pièces présentes sur l’installation et du type
+                    de pièce sélectionné (ex. système de détection).
+                  </p>
+                </div>
+              )}
 
               {items.length === 0 && (
                 <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">

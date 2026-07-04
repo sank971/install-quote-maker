@@ -17,6 +17,7 @@ export type TableName =
   | "part_components"
   | "installation_parts"
   | "installation_type_default_parts"
+  | "model_default_parts"
   | "quote_installations"
   | "app_settings"
   | "suppliers"
