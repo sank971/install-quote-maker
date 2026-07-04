@@ -90,6 +90,7 @@ function SettingsPage() {
   const partCategories = useList<any>("part_categories", { orderBy: "name", ascending: true });
   const parts = useList<any>("parts", { orderBy: "name", ascending: true });
   const defaultParts = useList<any>("installation_type_default_parts");
+  const modelDefaultParts = useList<any>("model_default_parts" as any);
   const settings = useList<any>("app_settings");
   const upType = useUpsert("installation_types");
   const rmType = useRemove("installation_types");
@@ -100,6 +101,8 @@ function SettingsPage() {
   const rmDefaultPart = useRemove("installation_type_default_parts", [
     ["installation_type_default_parts"],
   ]);
+  const upModelDefaultPart = useUpsert("model_default_parts" as any, [["model_default_parts"]]);
+  const rmModelDefaultPart = useRemove("model_default_parts" as any, [["model_default_parts"]]);
   const upSetting = useUpsert("app_settings", [["app_settings"]]);
   const rmPartCategory = useRemove("part_categories");
   const upBrand = useUpsert("brands");
@@ -612,10 +615,57 @@ function SettingsPage() {
                     key={m.id}
                     className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm"
                   >
-                    <span className="min-w-0 truncate">
-                      {t?.name ?? "Type non défini"} · {b?.name}{" "}
-                      <span className="text-muted-foreground">— {m.name}</span>
-                    </span>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <span className="block truncate">
+                        {t?.name ?? "Type non défini"} · {b?.name}{" "}
+                        <span className="text-muted-foreground">— {m.name}</span>
+                      </span>
+                      <div className="space-y-1 rounded-md bg-muted/40 p-2">
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Pièces présentes par défaut sur ce modèle
+                        </div>
+                        {(modelDefaultParts.data ?? [])
+                          .filter((row: any) => row.model_id === m.id)
+                          .map((row: any) => {
+                            const part = parts.data?.find((p: any) => p.id === row.part_id);
+                            return (
+                              <div
+                                key={row.id}
+                                className="flex items-center justify-between gap-2 text-xs"
+                              >
+                                <span className="truncate">{part?.name ?? "Pièce inconnue"}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => rmModelDefaultPart.mutate(row.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        <select
+                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              upModelDefaultPart.mutate({
+                                model_id: m.id,
+                                part_id: e.target.value,
+                              });
+                            }
+                          }}
+                        >
+                          <option value="">+ Ajouter une pièce modèle</option>
+                          {(parts.data ?? []).map((part: any) => (
+                            <option key={part.id} value={part.id}>
+                              {part.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <div className="flex shrink-0 items-center">
                       <Button
                         variant="ghost"

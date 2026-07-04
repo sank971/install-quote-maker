@@ -59,6 +59,7 @@ function InstallationsList() {
   const { data: typeCompat = [] } = useList<any>("part_type_compat");
   const { data: installationParts = [] } = useList<any>("installation_parts");
   const { data: defaultParts = [] } = useList<any>("installation_type_default_parts");
+  const { data: modelDefaultParts = [] } = useList<any>("model_default_parts" as any);
   const upsert = useUpsert("installations");
   const remove = useRemove("installations");
   const qc = useQueryClient();
@@ -241,17 +242,26 @@ function InstallationsList() {
         return acc;
       }, {}),
     });
-    if (!edit.id && savedInstallation?.type_id) {
+    if (!edit.id) {
       const { data: userData } = await supabase.auth.getUser();
       const owner_id = userData.user!.id;
-      const rows = defaultParts
-        .filter((row: any) => row.type_id === savedInstallation.type_id)
-        .map((row: any) => ({
-          owner_id,
-          installation_id: savedInstallation.id,
-          part_id: row.part_id,
-          component_type: parts.find((part: any) => part.id === row.part_id)?.category ?? null,
-        }));
+      const defaultPartIds = new Set<string>();
+      if (savedInstallation?.model_id) {
+        modelDefaultParts
+          .filter((row: any) => row.model_id === savedInstallation.model_id)
+          .forEach((row: any) => defaultPartIds.add(row.part_id));
+      }
+      if (savedInstallation?.type_id) {
+        defaultParts
+          .filter((row: any) => row.type_id === savedInstallation.type_id)
+          .forEach((row: any) => defaultPartIds.add(row.part_id));
+      }
+      const rows = Array.from(defaultPartIds).map((partId) => ({
+        owner_id,
+        installation_id: savedInstallation.id,
+        part_id: partId,
+        component_type: parts.find((part: any) => part.id === partId)?.category ?? null,
+      }));
       if (rows.length > 0) {
         const { error } = await (supabase.from("installation_parts" as any) as any).insert(rows);
         if (error) toast.error(error.message);
