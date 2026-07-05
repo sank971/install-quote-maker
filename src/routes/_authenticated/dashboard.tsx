@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useList } from "@/lib/db-hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,9 @@ function Dashboard() {
   const quotes = useList<any>("quotes");
   const items = useList<any>("quote_items");
   const supplierParts = useList<any>("supplier_parts");
+  const partOrders = useList<any>("part_orders");
+  const partOrderItems = useList<any>("part_order_items");
+  const interventionReports = useList<any>("intervention_reports");
 
   const potentialRevenue = (quotes.data ?? []).reduce((acc, q) => {
     const qItems = (items.data ?? []).filter((it: any) => it.quote_id === q.id);
@@ -55,6 +59,61 @@ function Dashboard() {
   const totalMargin = (items.data ?? []).reduce((s: number, it: any) => {
     return s + (Number(it.unit_price) - Number(it.unit_cost)) * Number(it.quantity);
   }, 0);
+
+  const getPartLabel = (partId: string | null | undefined, fallback?: string) => {
+    const part = (parts.data ?? []).find((p: any) => p.id === partId);
+    return [part?.name ?? fallback ?? "Pièce supprimée", part?.reference]
+      .filter(Boolean)
+      .join(" · ");
+  };
+
+  const partOrderStats = (() => {
+    const ordersById = new Map((partOrders.data ?? []).map((order: any) => [order.id, order]));
+    const byPart = new Map<string, { label: string; orderCount: number; quantity: number }>();
+
+    (partOrderItems.data ?? []).forEach((item: any) => {
+      const key = String(item.part_id ?? item.designation ?? "unknown");
+      const current = byPart.get(key) ?? {
+        label: getPartLabel(item.part_id, item.designation),
+        orderCount: 0,
+        quantity: 0,
+      };
+      const relatedOrder = ordersById.get(item.part_order_id);
+      if (relatedOrder?.status !== "annulee") current.orderCount += 1;
+      current.quantity += Number(item.quantity ?? 0);
+      byPart.set(key, current);
+    });
+
+    return [...byPart.values()].sort(
+      (a, b) => b.orderCount - a.orderCount || b.quantity - a.quantity,
+    );
+  })();
+
+  const replacementStats = (() => {
+    const byPart = new Map<string, { label: string; replacementCount: number; quantity: number }>();
+
+    (interventionReports.data ?? []).forEach((report: any) => {
+      if (report.besoin_devis) return;
+      if (!Array.isArray(report.pieces_remplacees_succes)) return;
+
+      report.pieces_remplacees_succes.forEach((piece: any) => {
+        if (!piece?.part_id) return;
+        const key = String(piece.part_id);
+        const current = byPart.get(key) ?? {
+          label: getPartLabel(key),
+          replacementCount: 0,
+          quantity: 0,
+        };
+        current.replacementCount += 1;
+        current.quantity += Number(piece.quantity ?? 1);
+        byPart.set(key, current);
+      });
+    });
+
+    return [...byPart.values()].sort(
+      (a, b) => b.replacementCount - a.replacementCount || b.quantity - a.quantity,
+    );
+  })();
 
   const fmt = (n: number) =>
     new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
@@ -118,6 +177,65 @@ function Dashboard() {
             ))}
             {(quotes.data ?? []).length === 0 && (
               <p className="text-sm text-muted-foreground">Aucun devis pour l'instant.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pièces les plus commandées</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {partOrderStats.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune commande de pièce enregistrée.</p>
+            ) : (
+              <div className="space-y-2">
+                {partOrderStats.slice(0, 5).map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{row.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Quantité totale : {row.quantity}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {row.orderCount} commande{row.orderCount > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pièces remplacées hors devis</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {replacementStats.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucun remplacement direct enregistré.</p>
+            ) : (
+              <div className="space-y-2">
+                {replacementStats.slice(0, 5).map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{row.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Quantité remplacée : {row.quantity}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {row.replacementCount} remplacement{row.replacementCount > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
