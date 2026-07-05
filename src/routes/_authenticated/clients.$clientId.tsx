@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { useOne, useUpsert, useRemove } from "@/lib/db-hooks";
+import { useList, useOne, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,39 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, ChevronLeft, MapPin, Pencil, Trash2, User, Mail, Phone } from "lucide-react";
+import { Plus, ChevronLeft, MapPin, Pencil, Trash2, User, Mail, Phone, Euro } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated/clients/$clientId")({
   component: ClientDetail,
 });
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value);
+}
+
+function quoteTotalTtc(quote: any, items: any[]) {
+  const partsHT = items
+    .filter((item: any) => item.quote_id === quote.id)
+    .reduce(
+      (sum: number, item: any) => sum + Number(item.unit_price ?? 0) * Number(item.quantity ?? 0),
+      0,
+    );
+  const laborHT =
+    Number(quote.labor_hours ?? 0) *
+    Number(quote.travel_count ?? 1) *
+    Number(quote.labor_rate ?? 0);
+  const feesHT =
+    Number(quote.travel_fee ?? 0) +
+    Number(quote.shipping_fee ?? 0) +
+    Number(quote.waste_treatment_fee ?? 0) +
+    Number(quote.oversized_shipping_fee ?? 0) +
+    Number(quote.dump_evacuation_fee ?? 0) +
+    Number(quote.lifting_equipment_fee ?? 0);
+  const totalHT = partsHT + laborHT + feesHT;
+  return totalHT * (1 + Number(quote.vat_rate ?? 20) / 100);
+}
 
 function ClientDetail() {
   const { clientId } = Route.useParams();
@@ -52,6 +78,25 @@ function ClientDetail() {
       return data ?? [];
     },
   });
+
+  const siteIds = sites.map((site: any) => site.id);
+  const { data: installations = [] } = useList<any>("installations", {
+    filter: (q: any) => q.in("site_id", siteIds),
+    key: ["installations", "byClientSites", clientId, siteIds.join(",")],
+    enabled: siteIds.length > 0,
+  });
+  const { data: contracts = [] } = useList<any>("contracts", { orderBy: "name", ascending: true });
+  const { data: installationTypes = [] } = useList<any>("installation_types", {
+    orderBy: "name",
+    ascending: true,
+  });
+  const { data: pricingTiers = [] } = useList<any>("contract_pricing_tiers");
+  const { data: clientPricing = [] } = useList<any>("contract_client_pricing");
+  const { data: quotes = [] } = useList<any>("quotes", {
+    filter: (q: any) => q.eq("client_id", clientId),
+    key: ["quotes", "byClient", clientId],
+  });
+  const { data: quoteItems = [] } = useList<any>("quote_items");
 
   const upsertSite = useUpsert("sites", [["sites"], ["sites", "byClient", clientId]]);
   const removeSite = useRemove("sites", [["sites"], ["sites", "byClient", clientId]]);
@@ -114,6 +159,76 @@ function ClientDetail() {
     setContactOpen(false);
   };
 
+  const installationCountByContractType = new Map<string, number>();
+  const installationCountByType = new Map<string, number>();
+  const installationCountByContractAndType = new Map<string, number>();
+
+  installations.forEach((installation: any) => {
+    const typeKey = installation.type_id ?? "none";
+    installationCountByType.set(typeKey, (installationCountByType.get(typeKey) ?? 0) + 1);
+    if (installation.contract_id) {
+      const contract = contracts.find((row: any) => row.id === installation.contract_id);
+      const contractType = contract?.type || "Sans type";
+      installationCountByContractType.set(
+        contractType,
+        (installationCountByContractType.get(contractType) ?? 0) + 1,
+      );
+      installationCountByContractAndType.set(
+        `${installation.contract_id}:${typeKey}`,
+        (installationCountByContractAndType.get(`${installation.contract_id}:${typeKey}`) ?? 0) + 1,
+      );
+    }
+  });
+
+  const contractAnnualPriceForInstallation = (installation: any) => {
+    const contract = contracts.find((row: any) => row.id === installation.contract_id);
+    if (!contract) return 0;
+    const count =
+      installationCountByContractAndType.get(`${contract.id}:${installation.type_id ?? "none"}`) ??
+      1;
+    const tier = pricingTiers
+      .filter(
+        (row: any) =>
+          row.contract_id === contract.id &&
+          row.installation_type_id === installation.type_id &&
+          Number(row.min_installations ?? 1) <= count,
+      )
+      .sort(
+        (a: any, b: any) => Number(b.min_installations ?? 1) - Number(a.min_installations ?? 1),
+      )[0];
+    const customerAdjustment = clientPricing.find(
+      (row: any) => row.contract_id === contract.id && row.client_id === clientId,
+    );
+    const basePrice = Number(tier?.base_annual_price ?? contract.flat_fee ?? 0);
+    return basePrice * (1 + Number(customerAdjustment?.adjustment_pct ?? 0) / 100);
+  };
+
+  const contractTypeTotals = Array.from(installationCountByContractType.entries()).map(
+    ([contractType, count]) => ({
+      contractType,
+      count,
+      total: installations
+        .filter((installation: any) => {
+          const contract = contracts.find((row: any) => row.id === installation.contract_id);
+          return (
+            contract?.type === contractType || (!contract?.type && contractType === "Sans type")
+          );
+        })
+        .reduce(
+          (sum: number, installation: any) =>
+            sum + contractAnnualPriceForInstallation(installation),
+          0,
+        ),
+    }),
+  );
+
+  const realizedQuotesTotal = quotes
+    .filter((quote: any) => ["envoye", "accepte", "pieces_commandees"].includes(quote.status))
+    .reduce((sum: number, quote: any) => sum + quoteTotalTtc(quote, quoteItems), 0);
+  const acceptedQuotesTotal = quotes
+    .filter((quote: any) => ["accepte", "pieces_commandees"].includes(quote.status))
+    .reduce((sum: number, quote: any) => sum + quoteTotalTtc(quote, quoteItems), 0);
+
   if (!client) return <p className="text-muted-foreground">Chargement...</p>;
 
   return (
@@ -159,6 +274,57 @@ function ClientDetail() {
         </CardContent>
       </Card>
 
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Synthèse commerciale</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm lg:grid-cols-3">
+          <div className="space-y-2">
+            <div className="font-medium">Installations par type</div>
+            {Array.from(installationCountByType.entries()).map(([typeId, count]) => {
+              const type = installationTypes.find((row: any) => row.id === typeId);
+              return (
+                <div key={typeId} className="flex justify-between gap-3 text-muted-foreground">
+                  <span>{type?.name ?? "Sans type"}</span>
+                  <span>{count}</span>
+                </div>
+              );
+            })}
+            {installationCountByType.size === 0 && (
+              <p className="text-muted-foreground">Aucune installation</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <div className="font-medium">Contrats par type</div>
+            {contractTypeTotals.map((row) => (
+              <div
+                key={row.contractType}
+                className="flex justify-between gap-3 text-muted-foreground"
+              >
+                <span>
+                  {row.contractType} · {row.count} install.
+                </span>
+                <span>{formatCurrency(row.total)}</span>
+              </div>
+            ))}
+            {contractTypeTotals.length === 0 && (
+              <p className="text-muted-foreground">Aucun contrat lié</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <div className="font-medium">Devis</div>
+            <div className="flex justify-between gap-3 text-muted-foreground">
+              <span>Réalisé</span>
+              <span>{formatCurrency(realizedQuotesTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-3 text-muted-foreground">
+              <span>Validé</span>
+              <span>{formatCurrency(acceptedQuotesTotal)}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
         Sites ({sites.length})
       </h2>
@@ -193,6 +359,33 @@ function ClientDetail() {
                           {[s.contact_name, s.contact_phone, s.email].filter(Boolean).join(" · ")}
                         </div>
                       )}
+                      {(() => {
+                        const siteInstallations = installations.filter(
+                          (installation: any) => installation.site_id === s.id,
+                        );
+                        const contractedInstallations = siteInstallations.filter(
+                          (installation: any) => installation.contract_id,
+                        );
+                        const siteContractPrice = contractedInstallations.reduce(
+                          (sum: number, installation: any) =>
+                            sum + contractAnnualPriceForInstallation(installation),
+                          0,
+                        );
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5">
+                              {siteInstallations.length} installation(s)
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5">
+                              {contractedInstallations.length} sous contrat
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-primary">
+                              <Euro className="h-3 w-3" />
+                              {formatCurrency(siteContractPrice)} / an
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
