@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, Pencil, X } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
+import { Download, Plus, Trash2, Pencil, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -163,9 +164,95 @@ function SettingsPage() {
     setTypeDraft(null);
   };
 
+  const formatList = (values: Array<string | null | undefined>) =>
+    values.filter(Boolean).join(" | ");
+
+  const formatFields = (fields: any[] = []) =>
+    normalizeFields(fields)
+      .map((field) => `${field.label} (${field.key}, ${field.type})`)
+      .join(" | ");
+
+  const exportDoorSettings = () => {
+    const headers = [
+      "section",
+      "type_installation",
+      "types_pieces_presentes",
+      "champs_parametres",
+      "marque",
+      "modele",
+      "piece_defaut_type",
+      "piece_defaut_modele",
+      "type_piece",
+      "parametre_cle",
+      "parametre_valeur",
+    ];
+
+    const typeRows = (types.data ?? []).map((type: any) => ({
+      section: "type_installation",
+      type_installation: type.name,
+      types_pieces_presentes: formatList(type.component_types ?? []),
+      champs_parametres: formatFields(type.custom_fields ?? []),
+      piece_defaut_type: formatList(
+        (defaultParts.data ?? [])
+          .filter((row: any) => row.type_id === type.id)
+          .map((row: any) => parts.data?.find((part: any) => part.id === row.part_id)?.name),
+      ),
+    }));
+
+    const modelRows = (models.data ?? []).map((model: any) => {
+      const brand = brands.data?.find((item: any) => item.id === model.brand_id);
+      const type = types.data?.find((item: any) => item.id === model.type_id);
+      return {
+        section: "marque_modele",
+        type_installation: type?.name ?? "",
+        types_pieces_presentes: formatList(type?.component_types ?? []),
+        champs_parametres: formatFields(type?.custom_fields ?? []),
+        marque: brand?.name ?? "",
+        modele: model.name,
+        piece_defaut_type: formatList(
+          (defaultParts.data ?? [])
+            .filter((row: any) => row.type_id === model.type_id)
+            .map((row: any) => parts.data?.find((part: any) => part.id === row.part_id)?.name),
+        ),
+        piece_defaut_modele: formatList(
+          (modelDefaultParts.data ?? [])
+            .filter((row: any) => row.model_id === model.id)
+            .map((row: any) => parts.data?.find((part: any) => part.id === row.part_id)?.name),
+        ),
+      };
+    });
+
+    const partCategoryRows = (partCategories.data ?? []).map((category: any) => ({
+      section: "type_piece",
+      type_piece: category.name,
+    }));
+
+    const settingsRows = (settings.data ?? []).map((setting: any) => ({
+      section: "parametre_application",
+      parametre_cle: setting.key,
+      parametre_valeur:
+        typeof setting.value === "string" ? setting.value : JSON.stringify(setting.value ?? {}),
+    }));
+
+    downloadCsv(
+      "parametres_portes_marques_modeles.csv",
+      [...typeRows, ...modelRows, ...partCategoryRows, ...settingsRows],
+      headers,
+    );
+  };
+
   return (
     <div>
-      <PageHeader title="Paramètres" description="Types d'installation, marques et modèles" />
+      <PageHeader
+        title="Paramètres"
+        description="Types d'installation, marques et modèles"
+        actions={
+          <Button variant="outline" onClick={exportDoorSettings}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV portes
+          </Button>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
