@@ -89,7 +89,7 @@ function TicketDetail() {
   });
 
   const [expandedIntervention, setExpandedIntervention] = useState<string | null>(null);
-  const [selectedPartType, setSelectedPartType] = useState("");
+  const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
 
   const invalidate = () =>
     [
@@ -130,9 +130,22 @@ function TicketDetail() {
   const componentTypes = Array.isArray(installationType?.component_types)
     ? installationType.component_types
     : [];
-  const availablePartTypes = componentTypes.length
-    ? componentTypes.map((name: unknown) => String(name))
-    : partCategories.map((category: any) => String(category.name));
+  const availablePartTypes = [
+    ...new Set(
+      (componentTypes.length
+        ? componentTypes.map((name: unknown) => String(name))
+        : partCategories.map((category: any) => String(category.name))
+      ).filter(Boolean),
+    ),
+  ];
+
+  const formatPartTypeList = (value: unknown) => {
+    const values = Array.isArray(value) ? value : typeof value === "string" && value ? [value] : [];
+    return values
+      .map((item) => String(item))
+      .filter(Boolean)
+      .join(", ");
+  };
 
   const assign = async (intervention: any) => {
     const user = await currentUserId();
@@ -173,6 +186,7 @@ function TicketDetail() {
     const owner_id = await currentUserId();
     const ok = fd.get("reparation_reussie") === "true";
     const partId = fd.get("part_id");
+    const problemPartTypes = fd.getAll("problem_part_types").map((value) => String(value));
     const successParts = partId
       ? [{ part_id: partId, quantity: Number(fd.get("quantity") || 1) }]
       : [];
@@ -189,8 +203,10 @@ function TicketDetail() {
       reparation_reussie: fd.get("reparation_reussie") ? ok : null,
       besoin_devis: fd.get("besoin_devis") === "on",
       besoin_commande_pieces: fd.get("besoin_commande_pieces") === "on",
+      pieces_defectueuses: problemPartTypes.map((type) => ({ type })),
+      pieces_remplacees: problemPartTypes.map((type) => ({ type, quantity: 1 })),
       pieces_remplacees_succes: successParts,
-      problem_part_type: fd.get("problem_part_type") || null,
+      problem_part_type: problemPartTypes[0] ?? null,
     };
     const { error } = await (supabase.from("intervention_reports" as any) as any).insert(report);
     if (error) return toast.error(error.message);
@@ -208,7 +224,7 @@ function TicketDetail() {
       ok ? "Réparation réussie" : "Rapport traité",
     );
     e.currentTarget.reset();
-    setSelectedPartType("");
+    setSelectedPartTypes([]);
     invalidate();
     toast.success("Rapport créé");
   };
@@ -223,6 +239,26 @@ function TicketDetail() {
       const groupTicketIds = new Set<string>();
       groupTicketIds.add(ticketId);
 
+      // Find the diagnostic report to get the reported faulty/replacement part types
+      const diagnosticReport = ticketReports.find((r: any) => {
+        const intervention = ticketInterventions.find((i: any) => i.id === r.intervention_id);
+        return intervention?.type === "diagnostic";
+      });
+
+      const reportedPartTypes = new Set<string>(
+        [
+          ...(Array.isArray(diagnosticReport?.pieces_defectueuses)
+            ? diagnosticReport.pieces_defectueuses.map((piece: any) => piece?.type)
+            : []),
+          ...(Array.isArray(diagnosticReport?.pieces_remplacees)
+            ? diagnosticReport.pieces_remplacees.map((piece: any) => piece?.type)
+            : []),
+          diagnosticReport?.problem_part_type,
+        ]
+          .map((value) => String(value ?? ""))
+          .filter(Boolean),
+      );
+
       // Create quote
       const { data: quote, error: quoteError } = await supabase
         .from("quotes")
@@ -233,7 +269,15 @@ function TicketDetail() {
           site_id: ticket.site_id,
           installation_id: ticket.installation_id,
           vat_rate: 20,
-          notes: `Devis créé depuis le ticket ${ticket.ticket_number}`,
+          notes: [
+            `Devis créé depuis le ticket ${ticket.ticket_number}`,
+            diagnosticReport?.constat ? `Problèmes signalés : ${diagnosticReport.constat}` : null,
+            reportedPartTypes.size > 0
+              ? `Pièces à remplacer : ${Array.from(reportedPartTypes).join(", ")}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
         })
         .select()
         .single();
@@ -259,16 +303,8 @@ function TicketDetail() {
       );
       if (qtError) throw qtError;
 
-      // Find the diagnostic report to get the problem part type
-      const diagnosticReport = ticketReports.find((r: any) => {
-        const intervention = ticketInterventions.find((i: any) => i.id === r.intervention_id);
-        return intervention?.type === "diagnostic";
-      });
-
-      const problemPartType = diagnosticReport?.problem_part_type;
-
-      // Add pre-filled parts if problem part type is specified
-      if (problemPartType && installation.id) {
+      // Add pre-filled parts if problem part types are specified
+      if (reportedPartTypes.size > 0 && installation.id) {
         const presentParts = installationParts.filter(
           (p: any) => p.installation_id === installation.id,
         );
@@ -276,7 +312,7 @@ function TicketDetail() {
         const quoteItems = presentParts
           .map((ip: any) => {
             const part = parts.find((p: any) => p.id === ip.part_id);
-            if (!part || part.category !== problemPartType) return null;
+            if (!part || !reportedPartTypes.has(String(part.category))) return null;
 
             return {
               owner_id,
@@ -527,18 +563,29 @@ function TicketDetail() {
                             <Label className="text-xs font-semibold text-orange-900">
                               ⚠️ Type de pièce défaillante (pour pré-remplir le devis)
                             </Label>
-                            <Select value={selectedPartType} onValueChange={setSelectedPartType}>
-                              <SelectTrigger className="mt-2" name="problem_part_type">
-                                <SelectValue placeholder="Sélectionner le type de pièce en panne" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {availablePartTypes.map((type) => (
-                                  <SelectItem key={type} value={type}>
-                                    {type}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              {availablePartTypes.map((type) => (
+                                <label
+                                  key={type}
+                                  className="flex items-center gap-2 rounded border bg-background px-2 py-1 text-sm"
+                                >
+                                  <input
+                                    name="problem_part_types"
+                                    type="checkbox"
+                                    value={type}
+                                    checked={selectedPartTypes.includes(type)}
+                                    onChange={(event) =>
+                                      setSelectedPartTypes((current) =>
+                                        event.target.checked
+                                          ? [...current, type]
+                                          : current.filter((item) => item !== type),
+                                      )
+                                    }
+                                  />
+                                  {type}
+                                </label>
+                              ))}
+                            </div>
                           </div>
                         )}
 
@@ -595,9 +642,17 @@ function TicketDetail() {
                           <p>
                             <b>Conclusion :</b> {report.conclusion}
                           </p>
-                          {report.problem_part_type && (
+                          {(report.problem_part_type ||
+                            (Array.isArray(report.pieces_defectueuses) &&
+                              report.pieces_defectueuses.length > 0)) && (
                             <p>
-                              <b>Type de pièce défaillante :</b> {report.problem_part_type}
+                              <b>Types de pièces défaillantes :</b>{" "}
+                              {formatPartTypeList(
+                                Array.isArray(report.pieces_defectueuses) &&
+                                  report.pieces_defectueuses.length > 0
+                                  ? report.pieces_defectueuses.map((piece: any) => piece?.type)
+                                  : report.problem_part_type,
+                              )}
                             </p>
                           )}
                         </div>

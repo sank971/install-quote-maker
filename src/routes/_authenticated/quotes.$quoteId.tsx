@@ -185,6 +185,13 @@ function QuoteDetail() {
     .filter(Boolean);
   const reportsByTicket = (ticketId: string) =>
     reports.filter((report: any) => report.ticket_id === ticketId);
+  const formatReportPieces = (value: unknown) => {
+    if (!Array.isArray(value)) return "";
+    return value
+      .map((piece: any) => piece?.type || piece?.name || piece?.designation || piece?.part_id)
+      .filter(Boolean)
+      .join(", ");
+  };
   const eventsByTicket = history.filter((event: any) =>
     linkedTickets.some((ticket: any) => ticket.id === event.ticket_id),
   );
@@ -1016,7 +1023,19 @@ function QuoteDetail() {
             )}
             {linkedTickets.length > 0 && (
               <div className="text-muted-foreground">
-                Tickets : {linkedTickets.map((ticket: any) => ticket.ticket_number).join(", ")}
+                Tickets :{" "}
+                {linkedTickets.map((ticket: any, index: number) => (
+                  <span key={ticket.id}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      to="/ticket/$ticketSlug"
+                      params={{ ticketSlug: ticket.ticket_number ?? ticket.id }}
+                      className="underline underline-offset-2"
+                    >
+                      {ticket.ticket_number}
+                    </Link>
+                  </span>
+                ))}
               </div>
             )}
             {contractTypeLabel && (
@@ -1181,14 +1200,26 @@ function QuoteDetail() {
               {linkedTickets.map((ticket: any) => (
                 <div key={ticket.id} className="rounded border border-border/60 p-2">
                   <div className="flex flex-wrap items-center gap-2 font-medium">
-                    {ticket.ticket_number} · {ticket.title}{" "}
-                    <Badge variant="secondary">{ticket.status}</Badge>
+                    <Link
+                      to="/ticket/$ticketSlug"
+                      params={{ ticketSlug: ticket.ticket_number ?? ticket.id }}
+                      className="underline underline-offset-2"
+                    >
+                      {ticket.ticket_number}
+                    </Link>{" "}
+                    · {ticket.title} <Badge variant="secondary">{ticket.status}</Badge>
                   </div>
-                  {reportsByTicket(ticket.id).map((report: any) => (
-                    <p key={report.id} className="mt-1 text-xs text-muted-foreground">
-                      Rapport / constat : {report.constat}
-                    </p>
-                  ))}
+                  {reportsByTicket(ticket.id).map((report: any) => {
+                    const faultyPieces = formatReportPieces(report.pieces_defectueuses);
+                    const replacementPieces = formatReportPieces(report.pieces_remplacees);
+                    return (
+                      <div key={report.id} className="mt-1 space-y-1 text-xs text-muted-foreground">
+                        <p>Problèmes signalés : {report.constat}</p>
+                        {faultyPieces && <p>Types de pièces en défaut : {faultyPieces}</p>}
+                        {replacementPieces && <p>Pièces à remplacer : {replacementPieces}</p>}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
