@@ -24,7 +24,34 @@ export function downloadCsv(filename: string, rows: CsvRow[], headers: string[])
   URL.revokeObjectURL(url);
 }
 
+const normalizeCsvKey = (key: string) =>
+  key
+    .replace(/^\ufeff/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const detectDelimiter = (text: string) => {
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim()) ?? "";
+  let quoted = false;
+  let semicolons = 0;
+  let commas = 0;
+  for (let i = 0; i < firstLine.length; i += 1) {
+    const char = firstLine[i];
+    const next = firstLine[i + 1];
+    if (quoted && char === '"' && next === '"') i += 1;
+    else if (char === '"') quoted = !quoted;
+    else if (!quoted && char === ";") semicolons += 1;
+    else if (!quoted && char === ",") commas += 1;
+  }
+  return semicolons >= commas ? ";" : ",";
+};
+
 export function parseCsv(text: string): CsvRow[] {
+  const delimiter = detectDelimiter(text);
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -44,7 +71,7 @@ export function parseCsv(text: string): CsvRow[] {
       }
     } else if (char === '"') {
       quoted = true;
-    } else if (char === ";" || char === ",") {
+    } else if (char === delimiter) {
       row.push(cell.trim());
       cell = "";
     } else if (char === "\n") {
@@ -62,7 +89,9 @@ export function parseCsv(text: string): CsvRow[] {
   const [headers = [], ...data] = rows.filter((r) => r.some(Boolean));
   return data.map((values) =>
     headers.reduce<CsvRow>((acc, header, index) => {
-      acc[header.replace(/^\ufeff/, "").trim()] = values[index] ?? "";
+      const cleanHeader = header.replace(/^\ufeff/, "").trim();
+      acc[cleanHeader] = values[index] ?? "";
+      acc[normalizeCsvKey(cleanHeader)] = values[index] ?? "";
       return acc;
     }, {}),
   );
@@ -70,7 +99,7 @@ export function parseCsv(text: string): CsvRow[] {
 
 export function pick(row: CsvRow, ...keys: string[]) {
   for (const key of keys) {
-    const value = row[key];
+    const value = row[key] ?? row[normalizeCsvKey(key)];
     if (value) return value.trim();
   }
   return "";

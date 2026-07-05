@@ -70,8 +70,9 @@ function SuppliersPage() {
       const { data: userData } = await supabase.auth.getUser();
       const owner_id = userData.user?.id;
       if (!owner_id) return toast.error("Non authentifié");
+      const supplierCache = new Map(suppliers.map((s: any) => [s.name.toLowerCase(), s]));
       for (const row of rows) {
-        const name = pick(row, "nom", "name");
+        const name = pick(row, "nom", "name", "fournisseur", "fournisseur_nom", "supplier_name");
         if (!name) continue;
         const payload = {
           owner_id,
@@ -84,10 +85,29 @@ function SuppliersPage() {
           bic: pick(row, "bic") || null,
           notes: pick(row, "notes") || null,
         };
-        const existing = suppliers.find((s: any) => s.name.toLowerCase() === name.toLowerCase());
-        if (existing)
-          await (supabase.from("suppliers") as any).update(payload).eq("id", existing.id);
-        else await (supabase.from("suppliers") as any).insert(payload);
+        const existing = supplierCache.get(name.toLowerCase());
+        if (existing) {
+          const { data, error } = await (supabase.from("suppliers") as any)
+            .update(payload)
+            .eq("id", existing.id)
+            .select()
+            .single();
+          if (error) {
+            console.error("Erreur import fournisseur", error);
+            return toast.error(`Impossible de mettre à jour le fournisseur ${name}`);
+          }
+          supplierCache.set(name.toLowerCase(), data);
+        } else {
+          const { data, error } = await (supabase.from("suppliers") as any)
+            .insert(payload)
+            .select()
+            .single();
+          if (error) {
+            console.error("Erreur import fournisseur", error);
+            return toast.error(`Impossible de créer le fournisseur ${name}`);
+          }
+          supplierCache.set(name.toLowerCase(), data);
+        }
       }
       qc.invalidateQueries({ queryKey: ["suppliers"] });
       toast.success("Fournisseurs importés");
