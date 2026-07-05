@@ -83,6 +83,7 @@ function TicketDetail() {
   const { data: types = [] } = useList<any>("installation_types");
   const { data: models = [] } = useList<any>("models");
   const { data: installationParts = [] } = useList<any>("installation_parts");
+  const { data: modelCompat = [] } = useList<any>("part_model_compat");
   const { data: partCategories = [] } = useList<any>("part_categories", {
     orderBy: "name",
     ascending: true,
@@ -101,6 +102,8 @@ function TicketDetail() {
       "part_orders",
       "history_events",
       "quote_tickets",
+      "installation_parts",
+      "part_model_compat",
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
 
   if (!ticket) return <p className="text-muted-foreground">Chargement...</p>;
@@ -433,6 +436,63 @@ function TicketDetail() {
     toast.success("Intervention de réparation créée");
   };
 
+  const addReplacedPartsToInstallationCompatibility = async () => {
+    if (!installation?.id) return;
+
+    const owner_id = await currentUserId();
+    const replacedPartIds = new Set<string>();
+
+    ticketReports.forEach((report: any) => {
+      if (!Array.isArray(report.pieces_remplacees_succes)) return;
+      report.pieces_remplacees_succes.forEach((piece: any) => {
+        if (piece?.part_id) replacedPartIds.add(String(piece.part_id));
+      });
+    });
+
+    if (replacedPartIds.size === 0) return;
+
+    const newInstallationParts = Array.from(replacedPartIds)
+      .filter(
+        (partId) =>
+          !installationParts.some(
+            (row: any) => row.installation_id === installation.id && row.part_id === partId,
+          ),
+      )
+      .map((partId) => ({
+        owner_id,
+        installation_id: installation.id,
+        part_id: partId,
+        quantity: 1,
+      }));
+
+    if (newInstallationParts.length > 0) {
+      const { error } = await (supabase.from("installation_parts" as any) as any).insert(
+        newInstallationParts,
+      );
+      if (error) throw error;
+    }
+
+    if (!installation.model_id) return;
+
+    const newModelCompat = Array.from(replacedPartIds)
+      .filter(
+        (partId) =>
+          !modelCompat.some(
+            (row: any) => row.model_id === installation.model_id && row.part_id === partId,
+          ),
+      )
+      .map((partId) => ({
+        owner_id,
+        part_id: partId,
+        model_id: installation.model_id,
+      }));
+
+    if (newModelCompat.length > 0) {
+      const { error } = await supabase.from("part_model_compat").insert(newModelCompat);
+      if (error) throw error;
+    }
+  };
+
   const close = async () => {
     const c = canCloseTicket(
       ticket,
@@ -442,9 +502,15 @@ function TicketDetail() {
       ticketPartOrders,
     );
     if (!c.allowed) return toast.error(`Clôture impossible : ${c.reasons.join(", ")}`);
-    await setTicketStatus(ticket, "cloture", "ticket_closed", "Ticket clôturé");
-    invalidate();
-    toast.success("Ticket clôturé");
+
+    try {
+      await addReplacedPartsToInstallationCompatibility();
+      await setTicketStatus(ticket, "cloture", "ticket_closed", "Ticket clôturé");
+      invalidate();
+      toast.success("Ticket clôturé");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   };
 
   return (
