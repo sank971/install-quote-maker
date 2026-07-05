@@ -24,6 +24,7 @@ interface Item {
   reference?: string;
   category?: string;
   quantity: number;
+  length_meters?: number;
   unit_price: number;
   unit_cost: number;
   save_as_part?: boolean;
@@ -369,7 +370,8 @@ function NewQuote() {
       description: details ? `${p.name} — ${details}` : p.name,
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
-      quantity: p.pricing_unit === "linear_meter" && length > 0 ? length : 1,
+      quantity: 1,
+      length_meters: p.pricing_unit === "linear_meter" && length > 0 ? length : Number(p.length_meters ?? 0) || undefined,
       unit_price: negotiatedKitPrice
         ? Number(negotiatedKitPrice.negotiated_price)
         : Number(p.sale_price) * (1 - discount),
@@ -514,7 +516,8 @@ function NewQuote() {
       );
     });
 
-  const partsHT = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const getItemBillableQuantity = (i: Item) => i.quantity * (i.pricing_unit === "linear_meter" ? Number(i.length_meters || 0) || 1 : 1);
+  const partsHT = items.reduce((s, i) => s + i.unit_price * getItemBillableQuantity(i), 0);
   const laborHT = laborHours * effectiveTravelCount * effectiveLaborRate;
   const feesHT =
     effectiveTravelFee +
@@ -526,7 +529,7 @@ function NewQuote() {
   const totalHT = partsHT + laborHT + feesHT;
   const vat = totalHT * (vatRate / 100);
   const totalTTC = totalHT + vat;
-  const costsTotal = items.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
+  const costsTotal = items.reduce((s, i) => s + i.unit_cost * getItemBillableQuantity(i), 0);
   const margin = partsHT - costsTotal;
   const marginPct = partsHT > 0 ? (margin / partsHT) * 100 : 0;
   const hasBillableLine = items.length > 0 || laborHours > 0 || feesHT > 0;
@@ -628,6 +631,7 @@ function NewQuote() {
           installation_id: i.installation_id ?? null,
           description: i.description,
           quantity: i.quantity,
+          length_meters: i.pricing_unit === "linear_meter" ? i.length_meters ?? null : null,
           unit_price: i.unit_price,
           unit_cost: i.unit_cost,
           position: idx,
@@ -935,7 +939,7 @@ function NewQuote() {
               )}
               {items.map((i) => (
                 <div key={i.key} className="rounded-md border border-border/60 p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_80px_100px_100px_40px] sm:items-center">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_80px_90px_100px_100px_40px] sm:items-center">
                     <Input
                       value={i.description}
                       onChange={(e) => update(i.key, { description: e.target.value })}
@@ -968,6 +972,17 @@ function NewQuote() {
                       placeholder={i.pricing_unit === "linear_meter" ? "ml" : "Qté"}
                       title={i.pricing_unit === "linear_meter" ? "Mètres linéaires" : "Quantité"}
                     />
+                    {i.pricing_unit === "linear_meter" && (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={i.length_meters ?? ""}
+                        onChange={(e) => update(i.key, { length_meters: Number(e.target.value) })}
+                        placeholder="Long. ml"
+                        title="Longueur unitaire en mètres linéaires"
+                      />
+                    )}
                     <Input
                       type="number"
                       step="0.01"
