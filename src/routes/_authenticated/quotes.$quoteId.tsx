@@ -9,6 +9,7 @@ import {
   Send,
   ThumbsUp,
   PackageCheck,
+  Boxes,
   Trash2,
   Pencil,
   Save,
@@ -45,6 +46,12 @@ type EditableItem = {
   unit_price: number;
   unit_cost: number;
   position: number;
+  part_id?: string;
+  installation_id?: string;
+  reference?: string;
+  category?: string;
+  parent_part_id?: string;
+  pricing_unit?: string;
 };
 
 function QuoteDetail() {
@@ -75,6 +82,22 @@ function QuoteDetail() {
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
   const { data: contracts = [] } = useList<any>("contracts");
+  const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
+  const { data: models = [] } = useList<any>("models");
+  const { data: types = [] } = useList<any>("installation_types");
+  const { data: modelCompat = [] } = useList<any>("part_model_compat");
+  const { data: typeCompat = [] } = useList<any>("part_type_compat");
+  const { data: installationParts = [] } = useList<any>("installation_parts");
+  const { data: partComponents = [] } = useList<any>("part_components", {
+    orderBy: "position",
+    ascending: true,
+  });
+  const { data: supplierParts = [] } = useList<any>("supplier_parts");
+  const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
+  const { data: partCategories = [] } = useList<any>("part_categories", {
+    orderBy: "name",
+    ascending: true,
+  });
   const { data: quoteTickets = [] } = useList<any>("quote_tickets", {
     filter: (q: any) => q.eq("quote_id", quoteId),
     key: ["quote_tickets", quoteId],
@@ -87,6 +110,8 @@ function QuoteDetail() {
   const [editQuote, setEditQuote] = useState<any>({});
   const [editItems, setEditItems] = useState<EditableItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editInstallationIds, setEditInstallationIds] = useState<string[]>([]);
+  const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
 
   useEffect(() => {
     if (!quote || isEditing) return;
@@ -102,6 +127,11 @@ function QuoteDetail() {
       lifting_equipment_fee: Number(quote.lifting_equipment_fee ?? 0),
       vat_rate: Number(quote.vat_rate ?? 20),
       notes: quote.notes ?? "",
+      client_id: quote.client_id ?? "",
+      site_id: quote.site_id ?? "",
+      contract_id: quote.contract_id ?? "",
+      intervention_reason: quote.intervention_reason ?? "standard_repair",
+      is_on_call: Boolean(quote.is_on_call),
     });
   }, [quote, isEditing]);
 
@@ -112,6 +142,10 @@ function QuoteDetail() {
         id: item.id,
         key: item.id,
         description: item.description ?? "",
+        part_id: item.part_id ?? undefined,
+        installation_id: item.installation_id ?? undefined,
+        reference: item.reference ?? "",
+        category: item.category ?? "",
         quantity: Number(item.quantity ?? 1),
         unit_price: Number(item.unit_price ?? 0),
         unit_cost: Number(item.unit_cost ?? 0),
@@ -119,6 +153,16 @@ function QuoteDetail() {
       })),
     );
   }, [items, isEditing]);
+
+  useEffect(() => {
+    if (!quote || isEditing) return;
+    const ids = quoteInstallations.length
+      ? quoteInstallations.map((row: any) => row.installation_id)
+      : quote.installation_id
+        ? [quote.installation_id]
+        : [];
+    setEditInstallationIds(ids);
+  }, [quote, quoteInstallations, isEditing]);
 
   if (!quote) return <p className="text-muted-foreground">Chargement...</p>;
 
@@ -149,6 +193,164 @@ function QuoteDetail() {
       .filter((ticket: any) => ticket.installation_id === installationId)
       .map((ticket: any) => ticket.ticket_number);
 
+  const editClientSites = sites.filter((siteRow: any) => siteRow.client_id === editQuote.client_id);
+  const editSiteInstalls = installs.filter(
+    (installRow: any) => installRow.site_id === editQuote.site_id,
+  );
+  const editSelectedInstallations = installs.filter((installRow: any) =>
+    editInstallationIds.includes(installRow.id),
+  );
+  const editInstallationId = editInstallationIds[0] ?? "";
+  const editInstallation = editSelectedInstallations[0];
+  const editContract = contracts.find(
+    (contractRow: any) => contractRow.id === editQuote.contract_id,
+  );
+  const editContractDiscountPct = Number(editContract?.parts_discount_pct ?? 0);
+  const kits = parts.filter((part: any) => part.is_kit);
+  const normalizeName = (value: unknown) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+  const editPresentPartIds = new Set(
+    installationParts
+      .filter((row: any) => editInstallationIds.includes(row.installation_id))
+      .map((row: any) => row.part_id),
+  );
+  const installationModel = models.find((model: any) => model.id === editInstallation?.model_id);
+  const effectiveTypeId = editInstallation?.type_id || installationModel?.type_id;
+  const installationType = types.find((type: any) => type.id === effectiveTypeId);
+  const componentTypeNames = Array.isArray(installationType?.component_types)
+    ? installationType.component_types.map((name: unknown) => String(name))
+    : [];
+  const availablePartTypes = [
+    ...new Set(
+      (componentTypeNames.length
+        ? componentTypeNames
+        : partCategories.map((category: any) => String(category.name))
+      ).filter(Boolean),
+    ),
+  ] as string[];
+  const compatibilityPartIds = new Set<string>();
+  if (editInstallation?.model_id) {
+    modelCompat
+      .filter((row: any) => row.model_id === editInstallation.model_id)
+      .forEach((row: any) => compatibilityPartIds.add(row.part_id));
+  }
+  if (effectiveTypeId) {
+    typeCompat
+      .filter((row: any) => row.type_id === effectiveTypeId)
+      .forEach((row: any) => compatibilityPartIds.add(row.part_id));
+  }
+  if (editInstallation?.id) {
+    installationParts
+      .filter((row: any) => row.installation_id === editInstallation.id)
+      .forEach((row: any) => compatibilityPartIds.add(row.part_id));
+  }
+  const componentTypes = new Set(componentTypeNames.map((name) => normalizeName(name)));
+  const selectedTypes = new Set(selectedPartTypes.map((name) => normalizeName(name)));
+  const compatibleParts = (!editInstallation?.model_id && !editInstallation?.type_id
+    ? parts
+    : parts.filter((part: any) => {
+        const category = normalizeName(part.category);
+        const matchesSelectedType = selectedTypes.size === 0 || selectedTypes.has(category);
+        const matchesCompatibility =
+          compatibilityPartIds.has(part.id) || (Boolean(category) && componentTypes.has(category));
+        return matchesSelectedType && matchesCompatibility;
+      })) as any[];
+  const cheapestCost = (partId: string) => {
+    const offers = supplierParts.filter((row: any) => row.part_id === partId);
+    if (offers.length === 0) return 0;
+    return Math.min(
+      ...offers.map((offer: any) => Number(offer.purchase_price) + Number(offer.shipping_cost)),
+    );
+  };
+  const buildEditPartItem = (
+    partId: string,
+    patch: Partial<EditableItem> = {},
+    sourceInstallationId = editInstallationId,
+  ): EditableItem | null => {
+    const part = parts.find((row: any) => row.id === partId);
+    if (!part) return null;
+    const installedPart = installationParts.find(
+      (row: any) => row.installation_id === sourceInstallationId && row.part_id === partId,
+    );
+    const length = Number(installedPart?.length_meters ?? 0);
+    const details = [
+      part.pricing_unit === "linear_meter" && length > 0 ? `${length} ml` : null,
+      installedPart?.dimensions,
+      installedPart?.color,
+      installedPart?.notes,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const negotiatedKitPrice =
+      part.is_kit && editQuote.contract_id
+        ? contractKitPrices.find(
+            (row: any) => row.contract_id === editQuote.contract_id && row.kit_part_id === part.id,
+          )
+        : null;
+    const discount = editContract?.parts_discount_pct
+      ? Number(editContract.parts_discount_pct) / 100
+      : 0;
+    const componentCost = part.is_kit
+      ? partComponents
+          .filter((component: any) => component.parent_part_id === part.id)
+          .reduce(
+            (sum: number, component: any) =>
+              sum + cheapestCost(component.component_part_id) * (Number(component.quantity) || 1),
+            0,
+          )
+      : null;
+    return {
+      key: crypto.randomUUID(),
+      part_id: part.id,
+      installation_id: sourceInstallationId || undefined,
+      description: details ? `${part.name} — ${details}` : part.name,
+      reference: installedPart?.reference_override || part.reference || "",
+      category: installedPart?.component_type || part.category || "",
+      quantity: part.pricing_unit === "linear_meter" && length > 0 ? length : 1,
+      unit_price: negotiatedKitPrice
+        ? Number(negotiatedKitPrice.negotiated_price)
+        : Number(part.sale_price) * (1 - discount),
+      unit_cost: componentCost ?? cheapestCost(part.id),
+      pricing_unit: part.pricing_unit ?? "unit",
+      position: editItems.length,
+      ...patch,
+    };
+  };
+  const addEditPart = (partId: string, sourceInstallationId = editInstallationId) => {
+    const item = buildEditPartItem(partId, {}, sourceInstallationId);
+    if (item) setEditItems((current) => [...current, item]);
+  };
+  const addEditPresentParts = () => {
+    const existingPartIds = new Set(editItems.map((item) => item.part_id).filter(Boolean));
+    installationParts
+      .filter((row: any) => editInstallationIds.includes(row.installation_id))
+      .filter((row: any) => !existingPartIds.has(row.part_id))
+      .forEach((row: any) => addEditPart(row.part_id, row.installation_id));
+  };
+  const addEditComponentToQuote = (parentItem: EditableItem, component: any) => {
+    const componentItem = buildEditPartItem(
+      component.component_part_id,
+      {
+        parent_part_id: parentItem.part_id,
+        quantity: Number(component.quantity) || 1,
+      },
+      parentItem.installation_id ?? editInstallationId,
+    );
+    if (!componentItem) return;
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    setEditItems((current) => [
+      ...current,
+      {
+        ...componentItem,
+        description: parentName
+          ? `${parentName} > ${componentItem.description}`
+          : componentItem.description,
+      },
+    ]);
+  };
+
   const changeQuoteStatus = async (status: string) => {
     const { error } = await (supabase.from("quotes" as any) as any)
       .update({ status })
@@ -170,6 +372,8 @@ function QuoteDetail() {
       {
         key: crypto.randomUUID(),
         description: "",
+        reference: "",
+        category: "",
         quantity: 1,
         unit_price: 0,
         unit_cost: 0,
@@ -184,6 +388,12 @@ function QuoteDetail() {
       const owner_id = user.user!.id;
       const { error } = await (supabase.from("quotes" as any) as any)
         .update({
+          client_id: editQuote.client_id,
+          site_id: editQuote.site_id || null,
+          installation_id: editInstallationId || null,
+          contract_id: editQuote.contract_id || null,
+          intervention_reason: editQuote.intervention_reason,
+          is_on_call: editQuote.is_on_call,
           labor_hours: editQuote.labor_hours,
           labor_rate: editQuote.labor_rate,
           travel_count: editQuote.travel_count,
@@ -199,6 +409,26 @@ function QuoteDetail() {
         .eq("id", quoteId);
       if (error) throw error;
 
+      const { error: deleteInstallationsError } = await (
+        supabase.from("quote_installations" as any) as any
+      )
+        .delete()
+        .eq("quote_id", quoteId);
+      if (deleteInstallationsError) throw deleteInstallationsError;
+      if (editInstallationIds.length > 0) {
+        const { error: insertInstallationsError } = await (
+          supabase.from("quote_installations" as any) as any
+        ).insert(
+          editInstallationIds.map((id, position) => ({
+            owner_id,
+            quote_id: quoteId,
+            installation_id: id,
+            position,
+          })),
+        );
+        if (insertInstallationsError) throw insertInstallationsError;
+      }
+
       const keptIds = editItems.map((item) => item.id).filter(Boolean);
       const deletedIds = items
         .map((item: any) => item.id)
@@ -212,6 +442,8 @@ function QuoteDetail() {
 
       for (const [position, item] of editItems.entries()) {
         const row = {
+          part_id: item.part_id ?? null,
+          installation_id: item.installation_id ?? editInstallationId ?? null,
           description: item.description,
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -227,8 +459,6 @@ function QuoteDetail() {
           const { error: itemError } = await supabase.from("quote_items").insert({
             owner_id,
             quote_id: quoteId,
-            part_id: null,
-            installation_id: quote.installation_id ?? null,
             ...row,
           });
           if (itemError) throw itemError;
@@ -238,6 +468,7 @@ function QuoteDetail() {
       qc.invalidateQueries({ queryKey: ["quotes"] });
       qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
       qc.invalidateQueries({ queryKey: ["quote_items", "byQuote", quoteId] });
+      qc.invalidateQueries({ queryKey: ["quote_installations", quoteId] });
       setIsEditing(false);
       toast.success("Devis modifié");
     } catch (e: any) {
@@ -377,6 +608,107 @@ function QuoteDetail() {
       {isEditing && (
         <Card className="mb-6 print:hidden">
           <CardContent className="space-y-5 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Client *</Label>
+                <select
+                  value={editQuote.client_id ?? ""}
+                  onChange={(event) => {
+                    setEditQuote((current: any) => ({
+                      ...current,
+                      client_id: event.target.value,
+                      site_id: "",
+                    }));
+                    setEditInstallationIds([]);
+                    setSelectedPartTypes([]);
+                  }}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">—</option>
+                  {clients.map((clientRow: any) => (
+                    <option key={clientRow.id} value={clientRow.id}>
+                      {clientRow.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Site</Label>
+                <select
+                  value={editQuote.site_id ?? ""}
+                  onChange={(event) => {
+                    setEditQuote((current: any) => ({ ...current, site_id: event.target.value }));
+                    setEditInstallationIds([]);
+                    setSelectedPartTypes([]);
+                  }}
+                  disabled={!editQuote.client_id}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">—</option>
+                  {editClientSites.map((siteRow: any) => (
+                    <option key={siteRow.id} value={siteRow.id}>
+                      {siteRow.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Installations</Label>
+                <div className="rounded-md border border-input p-2 space-y-1">
+                  {editSiteInstalls.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">—</div>
+                  ) : (
+                    editSiteInstalls.map((installRow: any) => {
+                      const checked = editInstallationIds.includes(installRow.id);
+                      return (
+                        <label key={installRow.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setEditInstallationIds((current) =>
+                                checked
+                                  ? current.filter((id) => id !== installRow.id)
+                                  : [...current, installRow.id],
+                              );
+                              setSelectedPartTypes([]);
+                              if (!checked && installRow.contract_id) {
+                                setEditQuote((current: any) => ({
+                                  ...current,
+                                  contract_id: installRow.contract_id,
+                                }));
+                              }
+                            }}
+                          />
+                          <span>{installRow.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label>Contrat appliqué</Label>
+                <select
+                  value={editQuote.contract_id ?? ""}
+                  onChange={(event) =>
+                    setEditQuote((current: any) => ({
+                      ...current,
+                      contract_id: event.target.value,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">Aucun</option>
+                  {contracts.map((contractRow: any) => (
+                    <option key={contractRow.id} value={contractRow.id}>
+                      {contractRow.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-4">
               {[
                 ["labor_hours", "Heures", "0.25"],
@@ -405,6 +737,36 @@ function QuoteDetail() {
                   />
                 </div>
               ))}
+              <div>
+                <Label>Motif d’intervention</Label>
+                <select
+                  value={editQuote.intervention_reason ?? "standard_repair"}
+                  onChange={(event) =>
+                    setEditQuote((current: any) => ({
+                      ...current,
+                      intervention_reason: event.target.value,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="standard_repair">Réparation hors casse</option>
+                  <option value="damage_vandalism">Casse / vandalisme</option>
+                  <option value="new_installation">Nouvelle installation</option>
+                </select>
+              </div>
+              <label className="flex items-end gap-2 pb-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editQuote.is_on_call)}
+                  onChange={(event) =>
+                    setEditQuote((current: any) => ({
+                      ...current,
+                      is_on_call: event.target.checked,
+                    }))
+                  }
+                />
+                Astreinte
+              </label>
               <div className="sm:col-span-4">
                 <Label>Notes</Label>
                 <Textarea
@@ -418,57 +780,196 @@ function QuoteDetail() {
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Lignes du devis</h3>
+                <h3 className="text-sm font-semibold">Pièces et lignes du devis</h3>
                 <Button type="button" variant="outline" size="sm" onClick={addEditItem}>
                   <Plus className="mr-1 h-4 w-4" /> Ligne libre
                 </Button>
               </div>
-              {editItems.map((item) => (
-                <div key={item.key} className="grid gap-2 sm:grid-cols-[1fr_90px_110px_110px_40px]">
-                  <Input
-                    value={item.description}
-                    onChange={(event) =>
-                      updateEditItem(item.key, { description: event.target.value })
+              {availablePartTypes.length > 0 && (
+                <div className="flex flex-wrap gap-2 rounded-md border border-border/60 p-3">
+                  {availablePartTypes.map((type) => {
+                    const checked = selectedPartTypes.includes(type);
+                    return (
+                      <label
+                        key={type}
+                        className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setSelectedPartTypes((current) =>
+                              checked
+                                ? current.filter((name) => name !== type)
+                                : [...current, type],
+                            )
+                          }
+                        />
+                        {type}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <select
+                  onChange={(event) => {
+                    if (event.target.value) {
+                      addEditPart(event.target.value);
+                      event.target.value = "";
                     }
-                    placeholder="Description"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.quantity}
-                    onChange={(event) =>
-                      updateEditItem(item.key, { quantity: Number(event.target.value) })
-                    }
-                    placeholder="Qté"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.unit_price}
-                    onChange={(event) =>
-                      updateEditItem(item.key, { unit_price: Number(event.target.value) })
-                    }
-                    placeholder="PU HT"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.unit_cost}
-                    onChange={(event) =>
-                      updateEditItem(item.key, { unit_cost: Number(event.target.value) })
-                    }
-                    placeholder="Coût"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setEditItems((current) => current.filter((row) => row.key !== item.key))
-                    }
+                  }}
+                  className="flex h-9 flex-1 min-w-[220px] rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">+ Ajouter une pièce présente / compatible</option>
+                  {compatibleParts.map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {editPresentPartIds.has(part.id) ? "✓ " : ""}
+                      {part.name} — {Number(part.sale_price).toFixed(2)}€
+                    </option>
+                  ))}
+                </select>
+                {kits.length > 0 && (
+                  <select
+                    onChange={(event) => {
+                      if (event.target.value) {
+                        addEditPart(event.target.value);
+                        event.target.value = "";
+                      }
+                    }}
+                    className="flex h-9 min-w-[180px] rounded-md border border-input bg-transparent px-3 text-sm"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    <option value="">+ Ajouter un kit</option>
+                    {kits.map((kit: any) => (
+                      <option key={kit.id} value={kit.id}>
+                        {kit.name} — {Number(kit.sale_price).toFixed(2)}€
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addEditPresentParts}
+                  disabled={editInstallationIds.length === 0}
+                >
+                  Ajouter présentes
+                </Button>
+              </div>
+              {editItems.map((item) => (
+                <div key={item.key} className="rounded-md border border-border/60 p-3">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_90px_110px_110px_40px]">
+                    <Input
+                      value={item.description}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { description: event.target.value })
+                      }
+                      placeholder="Description"
+                    />
+                    <Input
+                      value={item.reference ?? ""}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { reference: event.target.value })
+                      }
+                      placeholder="Référence"
+                      disabled={Boolean(item.part_id)}
+                    />
+                    <select
+                      value={item.category ?? ""}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { category: event.target.value })
+                      }
+                      disabled={Boolean(item.part_id)}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    >
+                      <option value="">Type</option>
+                      {partCategories.map((category: any) => (
+                        <option key={category.id} value={category.name}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={item.quantity}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { quantity: Number(event.target.value) })
+                      }
+                      placeholder="Qté"
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={item.unit_price}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { unit_price: Number(event.target.value) })
+                      }
+                      placeholder="PU HT"
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={item.unit_cost}
+                      onChange={(event) =>
+                        updateEditItem(item.key, { unit_cost: Number(event.target.value) })
+                      }
+                      placeholder="Coût"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        setEditItems((current) => current.filter((row) => row.key !== item.key))
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {partComponents.some(
+                    (component: any) => component.parent_part_id === item.part_id,
+                  ) && (
+                    <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
+                      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <Boxes className="h-3.5 w-3.5" /> Pièces composantes à remplacer
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {partComponents
+                          .filter((component: any) => component.parent_part_id === item.part_id)
+                          .map((component: any) => {
+                            const componentPart = parts.find(
+                              (part: any) => part.id === component.component_part_id,
+                            );
+                            const alreadyAdded = editItems.some(
+                              (row) =>
+                                row.parent_part_id === item.part_id &&
+                                row.part_id === component.component_part_id,
+                            );
+                            return (
+                              <Button
+                                key={component.component_part_id}
+                                type="button"
+                                variant={alreadyAdded ? "secondary" : "outline"}
+                                size="sm"
+                                disabled={alreadyAdded}
+                                className="justify-start"
+                                onClick={() => addEditComponentToQuote(item, component)}
+                              >
+                                {alreadyAdded ? "✓ " : "+ "}
+                                {componentPart?.name ?? "Pièce inconnue"} · Qté {component.quantity}
+                              </Button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                  {editContractDiscountPct > 0 && item.part_id && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Réduction contrat appliquée : {editContractDiscountPct.toFixed(2)}%
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
