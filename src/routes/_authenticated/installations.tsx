@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Wrench, Pencil, Trash2, Package, AlertCircle } from "lucide-react";
+import { Plus, Search, Wrench, Pencil, Trash2, Package, AlertCircle, Calculator } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -27,6 +27,8 @@ type InstalledPartDraft = {
   reference_override?: string;
   notes?: string;
   length_meters?: number | string;
+  width_meters?: number | string;
+  weight_kg?: number | string;
 };
 
 export const Route = createFileRoute("/_authenticated/installations")({
@@ -73,6 +75,8 @@ function InstallationsList() {
   const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
   const [partDrafts, setPartDrafts] = useState<Record<string, InstalledPartDraft>>({});
+  const [configOpen, setConfigOpen] = useState<any>(null);
+  const [configForm, setConfigForm] = useState({ width_meters: "", height_meters: "", blade_part_id: "", winding_direction: "interieur" });
 
   // Requirements state
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
@@ -128,11 +132,51 @@ function InstallationsList() {
             reference_override: x.reference_override ?? "",
             notes: x.notes ?? "",
             length_meters: x.length_meters ?? "",
+            width_meters: x.width_meters ?? "",
+            weight_kg: x.weight_kg ?? "",
           },
         ]),
     );
     setPartDrafts(drafts);
     setPartsOpen(installation);
+  };
+
+  const openConfigurator = (installation: any) => {
+    setConfigOpen(installation);
+    setConfigForm({
+      width_meters: installation.characteristics?.largeur ?? installation.characteristics?.width ?? "",
+      height_meters: installation.characteristics?.hauteur ?? installation.characteristics?.height ?? "",
+      blade_part_id: "",
+      winding_direction: installation.characteristics?.sens_enroulement ?? "interieur",
+    });
+  };
+
+  const saveConfiguratorParts = async () => {
+    if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
+    const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
+    const width = Number(configForm.width_meters) || 0;
+    const height = Number(configForm.height_meters) || 0;
+    const bladeHeight = Number(blade?.width_meters || 0);
+    const bladeCount = bladeHeight > 0 && height > 0 ? Math.ceil(height / bladeHeight) : 1;
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+    const { error } = await (supabase.from("installation_parts" as any) as any).upsert(
+      {
+        owner_id,
+        installation_id: configOpen.id,
+        part_id: configForm.blade_part_id,
+        component_type: blade?.category ?? "Lame",
+        length_meters: width || null,
+        width_meters: height || null,
+        weight_kg: blade?.weight_kg && bladeCount ? Number(blade.weight_kg) * bladeCount : null,
+        notes: `Configurateur: ${bladeCount} lame(s) de ${width || "?"} ml · enroulement ${configForm.winding_direction}. À ajouter au devis en quantité ${bladeCount} × ${width || "?"} ml.`,
+      },
+      { onConflict: "installation_id,part_id" },
+    );
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["installation_parts"] });
+    toast.success(`${bladeCount} lame(s) calculée(s) et ajoutée(s) à l'installation`);
+    setConfigOpen(null);
   };
 
   const openRequirementsDialog = (installation: any) => {
@@ -182,8 +226,16 @@ function InstallationsList() {
           reference_override: partDrafts[partId]?.reference_override || null,
           notes: partDrafts[partId]?.notes || null,
           length_meters:
-            parts.find((p: any) => p.id === partId)?.pricing_unit === "linear_meter"
+            partDrafts[partId]?.length_meters !== "" && partDrafts[partId]?.length_meters !== undefined
               ? Number(partDrafts[partId]?.length_meters || 0)
+              : null,
+          width_meters:
+            partDrafts[partId]?.width_meters !== "" && partDrafts[partId]?.width_meters !== undefined
+              ? Number(partDrafts[partId]?.width_meters || 0)
+              : null,
+          weight_kg:
+            partDrafts[partId]?.weight_kg !== "" && partDrafts[partId]?.weight_kg !== undefined
+              ? Number(partDrafts[partId]?.weight_kg || 0)
               : null,
         });
     if (error) return toast.error(error.message);
@@ -200,8 +252,16 @@ function InstallationsList() {
         reference_override: draft.reference_override || null,
         notes: draft.notes || null,
         length_meters:
-          parts.find((p: any) => p.id === partId)?.pricing_unit === "linear_meter"
+          draft.length_meters !== "" && draft.length_meters !== undefined
             ? Number(draft.length_meters || 0)
+            : null,
+        width_meters:
+          draft.width_meters !== "" && draft.width_meters !== undefined
+            ? Number(draft.width_meters || 0)
+            : null,
+        weight_kg:
+          draft.weight_kg !== "" && draft.weight_kg !== undefined
+            ? Number(draft.weight_kg || 0)
             : null,
       })
       .eq("installation_id", installationId)
@@ -457,9 +517,9 @@ function InstallationsList() {
                               {[
                                 x.part.name,
                                 x.reference_override || x.part.reference,
-                                x.part.pricing_unit === "linear_meter" && x.length_meters
-                                  ? `${Number(x.length_meters)} ml`
-                                  : null,
+                                x.length_meters ? `L ${Number(x.length_meters)} m` : null,
+                                x.width_meters ? `l ${Number(x.width_meters)} m` : null,
+                                x.weight_kg ? `${Number(x.weight_kg)} kg` : null,
                                 x.dimensions,
                                 x.color,
                               ]
@@ -513,6 +573,9 @@ function InstallationsList() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button variant="ghost" size="icon" onClick={() => openConfigurator(i)} title="Configurateur">
+                      <Calculator className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openPartsDialog(i)}>
                       <Package className="h-4 w-4" />
                     </Button>
@@ -755,18 +818,36 @@ function InstallationsList() {
                                 }
                                 placeholder="Référence spécifique"
                               />
-                              {part.pricing_unit === "linear_meter" && (
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={partDrafts[part.id]?.length_meters ?? ""}
-                                  onChange={(e) =>
-                                    updatePartDraft(part.id, { length_meters: e.target.value })
-                                  }
-                                  placeholder="Taille en mètres linéaires"
-                                />
-                              )}
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={partDrafts[part.id]?.length_meters ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { length_meters: e.target.value })
+                                }
+                                placeholder={part.pricing_unit === "linear_meter" ? "Longueur chiffrée (ml)" : "Longueur (m)"}
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={partDrafts[part.id]?.width_meters ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { width_meters: e.target.value })
+                                }
+                                placeholder="Largeur (m)"
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={partDrafts[part.id]?.weight_kg ?? ""}
+                                onChange={(e) =>
+                                  updatePartDraft(part.id, { weight_kg: e.target.value })
+                                }
+                                placeholder="Poids (kg)"
+                              />
                               <Input
                                 value={partDrafts[part.id]?.dimensions ?? ""}
                                 onChange={(e) =>
@@ -808,6 +889,41 @@ function InstallationsList() {
               )}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Configurator dialog */}
+      <Dialog open={!!configOpen} onOpenChange={(o) => !o && setConfigOpen(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Configurateur : {configOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Calcule une lame de rideau métallique en quantité × mètre linéaire à partir des dimensions de l'installation.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label>Largeur / longueur lame (m)</Label><Input type="number" step="0.01" min="0" value={configForm.width_meters} onChange={(e) => setConfigForm({ ...configForm, width_meters: e.target.value })} /></div>
+              <div><Label>Hauteur rideau (m)</Label><Input type="number" step="0.01" min="0" value={configForm.height_meters} onChange={(e) => setConfigForm({ ...configForm, height_meters: e.target.value })} /></div>
+            </div>
+            <div>
+              <Label>Type de lame</Label>
+              <select value={configForm.blade_part_id} onChange={(e) => setConfigForm({ ...configForm, blade_part_id: e.target.value })} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <option value="">—</option>
+                {getCompatibleParts(configOpen).filter((part: any) => String(part.category ?? part.name).toLowerCase().includes("lame")).map((part: any) => (
+                  <option key={part.id} value={part.id}>{part.name} · {Number(part.sale_price).toFixed(2)}€/ml</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Sens d'enroulement</Label>
+              <select value={configForm.winding_direction} onChange={(e) => setConfigForm({ ...configForm, winding_direction: e.target.value })} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <option value="interieur">Intérieur</option><option value="exterieur">Extérieur</option>
+              </select>
+            </div>
+            <div className="rounded-md bg-muted p-3 text-sm">
+              Résultat estimé : {(() => { const blade = parts.find((part: any) => part.id === configForm.blade_part_id); const h = Number(configForm.height_meters) || 0; const bh = Number(blade?.width_meters || 0); return bh > 0 && h > 0 ? `${Math.ceil(h / bh)} lame(s) × ${Number(configForm.width_meters) || 0} ml` : "renseignez la hauteur de la lame dans la fiche pièce (largeur)"; })()}
+            </div>
+          </div>
+          <DialogFooter><Button type="button" variant="ghost" onClick={() => setConfigOpen(null)}>Annuler</Button><Button onClick={saveConfiguratorParts}>Ajouter aux pièces présentes</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
