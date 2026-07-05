@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useList, useOne } from "@/lib/db-hooks";
+import { useList, useOneByRouteParam } from "@/lib/db-hooks";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ClipboardList, History, Package } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/installations/$installationId")({
+export const Route = createFileRoute("/_authenticated/installation/$installationSlug")({
   component: InstallationDetail,
 });
 
@@ -15,8 +15,13 @@ function formatDate(value?: string | null) {
 }
 
 function InstallationDetail() {
-  const { installationId } = Route.useParams();
-  const { data: installation } = useOne<any>("installations", installationId);
+  const { installationSlug } = Route.useParams();
+  const { data: installation } = useOneByRouteParam<any>(
+    "installations",
+    installationSlug,
+    "installation_number",
+  );
+  const installationId = installation?.id;
   const { data: sites = [] } = useList<any>("sites");
   const { data: clients = [] } = useList<any>("clients");
   const { data: types = [] } = useList<any>("installation_types", {
@@ -30,21 +35,25 @@ function InstallationDetail() {
     filter: (q) => q.eq("installation_id", installationId),
     orderBy: "date",
     key: ["interventions", "byInstallation", installationId],
+    enabled: !!installationId,
   });
   const { data: quotes = [] } = useList<any>("quotes", {
     filter: (q) => q.eq("installation_id", installationId),
     orderBy: "issued_at",
     key: ["quotes", "byInstallation", installationId],
+    enabled: !!installationId,
   });
   const { data: quoteItems = [] } = useList<any>("quote_items");
   const { data: allQuotes = [] } = useList<any>("quotes");
   const { data: quoteInstallations = [] } = useList<any>("quote_installations", {
     filter: (q) => q.eq("installation_id", installationId),
     key: ["quote_installations", "byInstallation", installationId],
+    enabled: !!installationId,
   });
   const { data: tickets = [] } = useList<any>("tickets", {
     filter: (q) => q.eq("installation_id", installationId),
     key: ["tickets", "byInstallation", installationId],
+    enabled: !!installationId,
   });
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
@@ -91,8 +100,8 @@ function InstallationDetail() {
     <div>
       {site ? (
         <Link
-          to="/sites/$siteId"
-          params={{ siteId: site.id }}
+          to="/site/$siteSlug"
+          params={{ siteSlug: site.site_number ?? site.id }}
           className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" /> {site.name}

@@ -35,7 +35,7 @@ export const Route = createFileRoute("/_authenticated/installations")({
 
 function Page() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isDetailRoute = pathname.startsWith("/installations/");
+  const isDetailRoute = pathname.startsWith("/installation/");
 
   return isDetailRoute ? <Outlet /> : <InstallationsList />;
 }
@@ -73,7 +73,7 @@ function InstallationsList() {
   const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
   const [partDrafts, setPartDrafts] = useState<Record<string, InstalledPartDraft>>({});
-  
+
   // Requirements state
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
   const [requirementsForm, setRequirementsForm] = useState<any>({});
@@ -136,7 +136,9 @@ function InstallationsList() {
   };
 
   const openRequirementsDialog = (installation: any) => {
-    const existing = installationRequirements.find((r: any) => r.installation_id === installation.id);
+    const existing = installationRequirements.find(
+      (r: any) => r.installation_id === installation.id,
+    );
     setRequirementsForm({
       installation_id: installation.id,
       requires_multiple_technicians: existing?.requires_multiple_technicians ?? false,
@@ -214,7 +216,7 @@ function InstallationsList() {
     const owner_id = userData.user!.id;
 
     const existing = installationRequirements.find(
-      (r: any) => r.installation_id === requirementsForm.installation_id
+      (r: any) => r.installation_id === requirementsForm.installation_id,
     );
 
     const payload = {
@@ -237,7 +239,7 @@ function InstallationsList() {
       if (error) return toast.error(error.message);
     } else {
       const { error } = await (supabase.from("installation_requirements" as any) as any).insert(
-        payload
+        payload,
       );
       if (error) return toast.error(error.message);
     }
@@ -378,8 +380,10 @@ function InstallationsList() {
             const brand = brands.find((b: any) => b.id === i.brand_id);
             const model = models.find((m: any) => m.id === i.model_id);
             const presentParts = getPresentParts(i.id);
-            const requirements = installationRequirements.find((r: any) => r.installation_id === i.id);
-            
+            const requirements = installationRequirements.find(
+              (r: any) => r.installation_id === i.id,
+            );
+
             return (
               <Card key={i.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -389,8 +393,10 @@ function InstallationsList() {
                     </div>
                     <div className="flex-1">
                       <Link
-                        to="/installations/$installationId"
-                        params={{ installationId: i.id }}
+                        to="/installation/$installationSlug"
+                        params={{
+                          installationSlug: i.installation_number?.replace("/", "-") ?? i.id,
+                        }}
                         className="font-medium hover:underline"
                       >
                         {i.installation_number ? `${i.installation_number} · ` : ""}
@@ -404,7 +410,7 @@ function InstallationsList() {
                           Pièces: {type.component_types.join(", ")}
                         </div>
                       ) : null}
-                      
+
                       {/* Special requirements indicator */}
                       {requirements && (
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -427,17 +433,20 @@ function InstallationsList() {
                             </span>
                           )}
                           {requirements.price_adjustment_pct !== 0 && (
-                            <span className={`rounded px-2 py-0.5 text-xs flex items-center gap-1 ${
-                              requirements.price_adjustment_pct > 0 
-                                ? "bg-red-100 text-red-800" 
-                                : "bg-green-100 text-green-800"
-                            }`}>
-                              {requirements.price_adjustment_pct > 0 ? "+" : ""}{requirements.price_adjustment_pct}% prix
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs flex items-center gap-1 ${
+                                requirements.price_adjustment_pct > 0
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-green-100 text-green-800"
+                              }`}
+                            >
+                              {requirements.price_adjustment_pct > 0 ? "+" : ""}
+                              {requirements.price_adjustment_pct}% prix
                             </span>
                           )}
                         </div>
                       )}
-                      
+
                       {presentParts.length ? (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {presentParts.slice(0, 4).map((x: any) => (
@@ -492,8 +501,8 @@ function InstallationsList() {
                         </Link>
                         {" · "}
                         <Link
-                          to="/sites/$siteId"
-                          params={{ siteId: site?.id }}
+                          to="/site/$siteSlug"
+                          params={{ siteSlug: site?.site_number ?? site?.id }}
                           className="hover:underline"
                         >
                           {site?.site_number ? `${site.site_number} · ` : ""}
