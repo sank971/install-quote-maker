@@ -14,7 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, MapPin, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { Search, MapPin, ChevronRight, Pencil, Trash2, Download, Upload } from "lucide-react";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/sites")({
   component: SitesPage,
@@ -32,9 +36,89 @@ function SitesList() {
   const { data: clients = [] } = useList<any>("clients");
   const upsert = useUpsert("sites");
   const remove = useRemove("sites");
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
+
+  const exportSites = () =>
+    downloadCsv(
+      "sites_installations.csv",
+      sites.map((site: any) => {
+        const client = clients.find((c: any) => c.id === site.client_id);
+        return {
+          numero_site: site.site_number,
+          nom_site: site.name,
+          adresse: site.address,
+          email_site: site.email,
+          contact_site: site.contact_name,
+          telephone_site: site.contact_phone,
+          numero_client: client?.client_number,
+          nom_client: client?.name,
+          notes: site.notes,
+        };
+      }),
+      [
+        "numero_site",
+        "nom_site",
+        "adresse",
+        "email_site",
+        "contact_site",
+        "telephone_site",
+        "numero_client",
+        "nom_client",
+        "notes",
+      ],
+    );
+
+  const importSites = () =>
+    importCsvFile(async (rows) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      const clientCache = new Map(
+        clients.map((c: any) => [c.client_number || c.name.toLowerCase(), c]),
+      );
+      for (const row of rows) {
+        const siteName = pick(row, "nom_site", "site_name", "nom");
+        if (!siteName) continue;
+        const clientNumber = pick(row, "numero_client", "client_number");
+        const clientName = pick(row, "nom_client", "client_name");
+        let client =
+          (clientNumber && clientCache.get(clientNumber)) ||
+          (clientName && clientCache.get(clientName.toLowerCase()));
+        if (!client && clientName) {
+          const { data } = await (supabase.from("clients") as any)
+            .insert({ owner_id, name: clientName })
+            .select()
+            .single();
+          client = data;
+          clientCache.set(client.name.toLowerCase(), client);
+        }
+        if (!client) continue;
+        const payload = {
+          owner_id,
+          client_id: client.id,
+          name: siteName,
+          address: pick(row, "adresse", "address") || null,
+          email: pick(row, "email_site", "email") || null,
+          contact_name: pick(row, "contact_site", "contact_name") || null,
+          contact_phone: pick(row, "telephone_site", "contact_phone") || null,
+          notes: pick(row, "notes") || null,
+        };
+        const number = pick(row, "numero_site", "site_number");
+        const existing = sites.find(
+          (s: any) =>
+            (number && s.site_number === number) ||
+            (s.client_id === client.id && s.name.toLowerCase() === siteName.toLowerCase()),
+        );
+        if (existing) await (supabase.from("sites") as any).update(payload).eq("id", existing.id);
+        else await (supabase.from("sites") as any).insert(payload);
+      }
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["sites"] });
+      toast.success("Sites importés");
+    });
 
   const filtered = sites.filter((s) => {
     const client = clients.find((c) => c.id === s.client_id);
@@ -63,7 +147,22 @@ function SitesList() {
 
   return (
     <div>
-      <PageHeader title="Sites" description="Tous les sites, tous clients confondus" />
+      <PageHeader
+        title="Sites"
+        description="Tous les sites, tous clients confondus"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportSites}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importSites}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+          </div>
+        }
+      />
       <div className="mb-4 relative max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -88,7 +187,10 @@ function SitesList() {
                         <MapPin className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="truncate font-medium">{s.site_number ? `${s.site_number} · ` : ""}{s.name}</div>
+                        <div className="truncate font-medium">
+                          {s.site_number ? `${s.site_number} · ` : ""}
+                          {s.name}
+                        </div>
                         <div className="truncate text-xs text-muted-foreground">
                           {client?.name} · {s.address || "—"}
                         </div>

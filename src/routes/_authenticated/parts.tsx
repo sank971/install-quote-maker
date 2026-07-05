@@ -14,10 +14,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Package, Pencil, Trash2, Link as LinkIcon, Boxes } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Package,
+  Pencil,
+  Trash2,
+  Link as LinkIcon,
+  Boxes,
+  Download,
+  Upload,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 export const Route = createFileRoute("/_authenticated/parts")({
   component: PartsPage,
@@ -43,6 +54,8 @@ function PartsPage() {
     orderBy: "name",
     ascending: true,
   });
+  const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
+  const { data: supplierParts = [] } = useList<any>("supplier_parts");
   const { data: partCategories = [] } = useList<any>("part_categories", {
     orderBy: "name",
     ascending: true,
@@ -62,6 +75,122 @@ function PartsPage() {
   });
   const [selectedComponentPartIds, setSelectedComponentPartIds] = useState<string[]>([]);
   const [selectedCompatTypeIds, setSelectedCompatTypeIds] = useState<string[]>([]);
+
+  const exportPartsSuppliers = () => {
+    const rows = parts.flatMap((part: any) => {
+      const brand = brands.find((b: any) => b.id === part.brand_id);
+      const links = supplierParts.filter((sp: any) => sp.part_id === part.id);
+      const base = {
+        piece_nom: part.name,
+        piece_reference: part.reference,
+        piece_categorie: part.category,
+        marque: brand?.name,
+        description: part.description,
+        prix_vente: part.sale_price,
+        unite_chiffrage: part.pricing_unit,
+      };
+      if (links.length === 0) return [{ ...base }];
+      return links.map((link: any) => {
+        const supplier = suppliers.find((s: any) => s.id === link.supplier_id);
+        return {
+          ...base,
+          fournisseur_nom: supplier?.name,
+          fournisseur_email: supplier?.email,
+          fournisseur_telephone: supplier?.phone,
+          ref_fournisseur: link.supplier_ref,
+          prix_achat: link.purchase_price,
+          frais_port: link.shipping_cost,
+          delai_jours: link.lead_time_days,
+        };
+      });
+    });
+    downloadCsv("pieces_fournisseurs.csv", rows, [
+      "piece_nom",
+      "piece_reference",
+      "piece_categorie",
+      "marque",
+      "description",
+      "prix_vente",
+      "unite_chiffrage",
+      "fournisseur_nom",
+      "fournisseur_email",
+      "fournisseur_telephone",
+      "ref_fournisseur",
+      "prix_achat",
+      "frais_port",
+      "delai_jours",
+    ]);
+  };
+
+  const importPartsSuppliers = () =>
+    importCsvFile(async (rows) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      const partCache = new Map(
+        parts.map((p: any) => [`${(p.reference || "").toLowerCase()}|${p.name.toLowerCase()}`, p]),
+      );
+      const supplierCache = new Map(suppliers.map((s: any) => [s.name.toLowerCase(), s]));
+      for (const row of rows) {
+        const partName = pick(row, "piece_nom", "part_name", "nom");
+        if (!partName) continue;
+        const reference = pick(row, "piece_reference", "reference");
+        const partKey = `${reference.toLowerCase()}|${partName.toLowerCase()}`;
+        let part = partCache.get(partKey);
+        const partPayload = {
+          owner_id,
+          name: partName,
+          reference: reference || null,
+          category: pick(row, "piece_categorie", "category") || null,
+          description: pick(row, "description") || null,
+          sale_price: Number(pick(row, "prix_vente", "sale_price") || 0),
+          pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
+        };
+        if (part) await (supabase.from("parts") as any).update(partPayload).eq("id", part.id);
+        else {
+          const { data } = await (supabase.from("parts") as any)
+            .insert(partPayload)
+            .select()
+            .single();
+          part = data;
+          partCache.set(partKey, part);
+        }
+        const supplierName = pick(row, "fournisseur_nom", "supplier_name");
+        if (!supplierName || !part) continue;
+        let supplier = supplierCache.get(supplierName.toLowerCase());
+        const supplierPayload = {
+          owner_id,
+          name: supplierName,
+          email: pick(row, "fournisseur_email") || null,
+          phone: pick(row, "fournisseur_telephone") || null,
+        };
+        if (!supplier) {
+          const { data } = await (supabase.from("suppliers") as any)
+            .insert(supplierPayload)
+            .select()
+            .single();
+          supplier = data;
+          supplierCache.set(supplierName.toLowerCase(), supplier);
+        }
+        await (supabase.from("supplier_parts") as any).upsert(
+          {
+            owner_id,
+            supplier_id: supplier.id,
+            part_id: part.id,
+            supplier_ref: pick(row, "ref_fournisseur") || null,
+            purchase_price: Number(pick(row, "prix_achat") || 0),
+            shipping_cost: Number(pick(row, "frais_port") || 0),
+            lead_time_days: pick(row, "delai_jours") ? Number(pick(row, "delai_jours")) : null,
+            price_updated_at: new Date().toISOString(),
+          },
+          { onConflict: "supplier_id,part_id" },
+        );
+      }
+      qc.invalidateQueries({ queryKey: ["parts"] });
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["supplier_parts"] });
+      toast.success("Pièces et fournisseurs importés");
+    });
 
   const filtered = parts.filter((p) =>
     [p.name, p.reference, p.category]
@@ -154,9 +283,7 @@ function PartsPage() {
     setSelectedComponentPartIds([]);
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success(
-      componentsToAdd.length > 1
-        ? `${componentsToAdd.length} accessoires liés`
-        : "Accessoire lié",
+      componentsToAdd.length > 1 ? `${componentsToAdd.length} accessoires liés` : "Accessoire lié",
     );
   };
 
@@ -206,10 +333,20 @@ function PartsPage() {
         title="Pièces"
         description="Bibliothèque de pièces et compatibilités"
         actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouvelle pièce
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportPartsSuppliers}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importPartsSuppliers}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouvelle pièce
+            </Button>
+          </div>
         }
       />
       <div className="mb-4 relative max-w-md">
@@ -412,7 +549,8 @@ function PartsPage() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Liez une ou plusieurs pièces en tant qu’accessoires de cette pièce. Exemple : un moteur
-            peut être lié à ses accessoires, kits ou organes complémentaires nécessaires dans un devis.
+            peut être lié à ses accessoires, kits ou organes complémentaires nécessaires dans un
+            devis.
           </p>
           <div className="space-y-2">
             {partComponents
