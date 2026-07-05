@@ -102,9 +102,8 @@ function TicketsPage() {
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
 
   const createTicket = useMutation({
-    mutationFn: async (e: any) => {
-      e.preventDefault();
-      const fd = new FormData(e.currentTarget);
+    mutationFn: async (form: HTMLFormElement) => {
+      const fd = new FormData(form);
       const owner_id = await currentUserId();
       const site = sites.find((s: any) => s.id === selectedSiteId);
       if (!site) throw new Error("Sélectionnez d’abord un client ou un site");
@@ -160,7 +159,7 @@ function TicketsPage() {
         if (!ticket) throw new Error("Le ticket n’a pas pu être créé");
       }
       const ticketCount = selectedInstallationIds.length;
-      (e.target as HTMLFormElement).reset();
+      form.reset();
       setSelectedInstallationIds([]);
       return ticketCount;
     },
@@ -374,7 +373,13 @@ function TicketsPage() {
           <CardTitle className="text-base">Créer un ticket</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => createTicket.mutate(e)} className="grid gap-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createTicket.mutate(e.currentTarget);
+            }}
+            className="grid gap-4"
+          >
             <div className="grid gap-2">
               <Label>1. Rechercher puis choisir le client ou le site</Label>
               <Input
