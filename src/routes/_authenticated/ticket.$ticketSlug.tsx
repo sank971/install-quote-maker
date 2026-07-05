@@ -75,6 +75,8 @@ function TicketDetail() {
   const { data: reports = [] } = useList<any>("intervention_reports");
   const { data: quotes = [] } = useList<any>("quotes");
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
+  const { data: allTickets = [] } = useList<any>("tickets");
+  const { data: groupTickets = [] } = useList<any>("ticket_group_tickets");
   const { data: purchaseOrders = [] } = useList<any>("purchase_orders");
   const { data: partOrders = [] } = useList<any>("part_orders");
   const { data: history = [] } = useList<any>("history_events");
@@ -102,6 +104,7 @@ function TicketDetail() {
       "part_orders",
       "history_events",
       "quote_tickets",
+      "ticket_group_tickets",
       "installation_parts",
       "part_model_compat",
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
@@ -111,10 +114,30 @@ function TicketDetail() {
   const site = sites.find((s: any) => s.id === ticket.site_id);
   const client = clients.find((c: any) => c.id === ticket.client_id);
   const installation = installations.find((i: any) => i.id === ticket.installation_id);
+  const currentGroupIds = new Set(
+    groupTickets.filter((row: any) => row.ticket_id === ticketId).map((row: any) => row.group_id),
+  );
+  const linkedTicketIds = new Set<string>([ticketId]);
+  groupTickets
+    .filter((row: any) => currentGroupIds.has(row.group_id))
+    .forEach((row: any) => linkedTicketIds.add(row.ticket_id));
+  const relatedTickets = Array.from(linkedTicketIds)
+    .map((id) => (id === ticketId ? ticket : allTickets.find((item: any) => item.id === id)))
+    .filter(Boolean);
+  const hasRelatedTickets = relatedTickets.length > 1;
+  const currentRelatedIndex = relatedTickets.findIndex((item: any) => item.id === ticketId);
+  const previousRelatedTicket =
+    currentRelatedIndex > 0 ? relatedTickets[currentRelatedIndex - 1] : null;
+  const nextRelatedTicket =
+    currentRelatedIndex >= 0 && currentRelatedIndex < relatedTickets.length - 1
+      ? relatedTickets[currentRelatedIndex + 1]
+      : null;
 
   // Get related data
   const ticketInterventions = interventions.filter((i: any) => i.ticket_id === ticketId);
   const ticketReports = reports.filter((r: any) => r.ticket_id === ticketId);
+  const relatedInterventions = interventions.filter((i: any) => linkedTicketIds.has(i.ticket_id));
+  const relatedReports = reports.filter((r: any) => linkedTicketIds.has(r.ticket_id));
   const ticketQuotes = quotes.filter((q: any) => q.ticket_id === ticketId);
   const ticketPOs = purchaseOrders.filter((p: any) => p.ticket_id === ticketId);
   const ticketPartOrders = partOrders.filter((p: any) => p.ticket_id === ticketId);
@@ -214,17 +237,25 @@ function TicketDetail() {
     const { error } = await (supabase.from("intervention_reports" as any) as any).insert(report);
     if (error) return toast.error(error.message);
 
-    await setTicketStatus(
-      ticket,
-      report.besoin_devis
-        ? "devis_a_creer"
-        : report.besoin_commande_pieces
-          ? "en_attente_pieces"
-          : ok
-            ? "termine"
-            : "probleme_persistant",
-      ok ? "repair_success" : "repair_failed",
-      ok ? "Réparation réussie" : "Rapport traité",
+    const nextStatus = report.besoin_devis
+      ? "devis_a_creer"
+      : report.besoin_commande_pieces
+        ? "en_attente_pieces"
+        : ok
+          ? "termine"
+          : "probleme_persistant";
+    await Promise.all(
+      relatedTickets.map((relatedTicket: any) =>
+        setTicketStatus(
+          relatedTicket,
+          nextStatus,
+          ok ? "repair_success" : "repair_failed",
+          ok ? "Réparation réussie" : "Rapport traité",
+          hasRelatedTickets
+            ? `Statut synchronisé depuis le rapport du ticket ${ticket.ticket_number}`
+            : undefined,
+        ),
+      ),
     );
     e.currentTarget.reset();
     setSelectedPartTypes([]);
@@ -238,28 +269,38 @@ function TicketDetail() {
     try {
       const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-      // Get linked tickets with the same installation
-      const groupTicketIds = new Set<string>();
-      groupTicketIds.add(ticketId);
+      const quoteTicketsToLink = relatedTickets.length > 0 ? relatedTickets : [ticket];
+      const quoteInstallationIds = [
+        ...new Set(quoteTicketsToLink.map((item: any) => item.installation_id).filter(Boolean)),
+      ];
 
-      // Find the diagnostic report to get the reported faulty/replacement part types
-      const diagnosticReport = ticketReports.find((r: any) => {
-        const intervention = ticketInterventions.find((i: any) => i.id === r.intervention_id);
-        return intervention?.type === "diagnostic";
+      const diagnosticReports = relatedReports.filter((report: any) => {
+        const intervention = relatedInterventions.find(
+          (item: any) => item.id === report.intervention_id,
+        );
+        return intervention?.type === "diagnostic" || report.besoin_devis;
       });
-
-      const reportedPartTypes = new Set<string>(
-        [
-          ...(Array.isArray(diagnosticReport?.pieces_defectueuses)
-            ? diagnosticReport.pieces_defectueuses.map((piece: any) => piece?.type)
+      const reportPartTypesByInstallation = new Map<string, Set<string>>();
+      diagnosticReports.forEach((report: any) => {
+        const values = [
+          ...(Array.isArray(report?.pieces_defectueuses)
+            ? report.pieces_defectueuses.map((piece: any) => piece?.type)
             : []),
-          ...(Array.isArray(diagnosticReport?.pieces_remplacees)
-            ? diagnosticReport.pieces_remplacees.map((piece: any) => piece?.type)
+          ...(Array.isArray(report?.pieces_remplacees)
+            ? report.pieces_remplacees.map((piece: any) => piece?.type)
             : []),
-          diagnosticReport?.problem_part_type,
+          report?.problem_part_type,
         ]
           .map((value) => String(value ?? ""))
-          .filter(Boolean),
+          .filter(Boolean);
+        if (!report.installation_id || values.length === 0) return;
+        const current =
+          reportPartTypesByInstallation.get(report.installation_id) ?? new Set<string>();
+        values.forEach((value) => current.add(value));
+        reportPartTypesByInstallation.set(report.installation_id, current);
+      });
+      const reportedPartTypes = new Set(
+        Array.from(reportPartTypesByInstallation.values()).flatMap((values) => Array.from(values)),
       );
 
       // Create quote
@@ -273,8 +314,17 @@ function TicketDetail() {
           installation_id: ticket.installation_id,
           vat_rate: 20,
           notes: [
-            `Devis créé depuis le ticket ${ticket.ticket_number}`,
-            diagnosticReport?.constat ? `Problèmes signalés : ${diagnosticReport.constat}` : null,
+            hasRelatedTickets
+              ? `Devis global créé depuis les tickets ${quoteTicketsToLink
+                  .map((item: any) => item.ticket_number)
+                  .join(", ")}`
+              : `Devis créé depuis le ticket ${ticket.ticket_number}`,
+            diagnosticReports.length > 0
+              ? `Problèmes signalés : ${diagnosticReports
+                  .map((report: any) => report.constat)
+                  .filter(Boolean)
+                  .join(" | ")}`
+              : null,
             reportedPartTypes.size > 0
               ? `Pièces à remplacer : ${Array.from(reportedPartTypes).join(", ")}`
               : null,
@@ -287,49 +337,54 @@ function TicketDetail() {
 
       if (quoteError) throw quoteError;
 
-      // Add installation to quote
-      const { error: qiError } = await (supabase.from("quote_installations" as any) as any).insert({
-        owner_id,
-        quote_id: quote.id,
-        installation_id: ticket.installation_id,
-        position: 0,
-      });
+      // Add all linked ticket installations to quote
+      const { error: qiError } = await (supabase.from("quote_installations" as any) as any).insert(
+        quoteInstallationIds.map((installationId, position) => ({
+          owner_id,
+          quote_id: quote.id,
+          installation_id: installationId,
+          position,
+        })),
+      );
       if (qiError) throw qiError;
 
       // Link quote to ticket
       const { error: qtError } = await (supabase.from("quote_tickets" as any) as any).insert(
-        Array.from(groupTicketIds).map((tickId) => ({
+        quoteTicketsToLink.map((linkedTicket: any) => ({
           owner_id,
           quote_id: quote.id,
-          ticket_id: tickId,
+          ticket_id: linkedTicket.id,
         })),
       );
       if (qtError) throw qtError;
 
-      // Add pre-filled parts if problem part types are specified
-      if (reportedPartTypes.size > 0 && installation.id) {
-        const presentParts = installationParts.filter(
-          (p: any) => p.installation_id === installation.id,
+      // Add pre-filled parts from technician reports, installation by installation
+      if (reportedPartTypes.size > 0) {
+        const quoteItems = quoteInstallationIds.flatMap(
+          (linkedInstallationId, installationPosition) => {
+            const installationPartTypes = reportPartTypesByInstallation.get(linkedInstallationId);
+            if (!installationPartTypes?.size) return [];
+            return installationParts
+              .filter((p: any) => p.installation_id === linkedInstallationId)
+              .map((ip: any, partPosition: number) => {
+                const part = parts.find((p: any) => p.id === ip.part_id);
+                if (!part || !installationPartTypes.has(String(part.category))) return null;
+
+                return {
+                  owner_id,
+                  quote_id: quote.id,
+                  part_id: part.id,
+                  installation_id: linkedInstallationId,
+                  description: part.name,
+                  quantity: 1,
+                  unit_price: Number(part.sale_price || 0),
+                  unit_cost: 0,
+                  position: installationPosition * 100 + partPosition,
+                };
+              })
+              .filter(Boolean);
+          },
         );
-
-        const quoteItems = presentParts
-          .map((ip: any) => {
-            const part = parts.find((p: any) => p.id === ip.part_id);
-            if (!part || !reportedPartTypes.has(String(part.category))) return null;
-
-            return {
-              owner_id,
-              quote_id: quote.id,
-              part_id: part.id,
-              installation_id: installation.id,
-              description: part.name,
-              quantity: 1,
-              unit_price: Number(part.sale_price || 0),
-              unit_cost: 0,
-              position: 0,
-            };
-          })
-          .filter(Boolean);
 
         if (quoteItems.length > 0) {
           const { error: itemsError } = await supabase.from("quote_items").insert(quoteItems);
@@ -340,7 +395,7 @@ function TicketDetail() {
       qc.invalidateQueries({ queryKey: ["quotes"] });
       qc.invalidateQueries({ queryKey: ["quote_tickets"] });
 
-      toast.success("Devis créé avec succès");
+      toast.success(hasRelatedTickets ? "Devis global créé avec succès" : "Devis créé avec succès");
       navigate({ to: "/quotes/$quoteId", params: { quoteId: quote.id } });
     } catch (e: any) {
       toast.error(e.message);
@@ -562,6 +617,64 @@ function TicketDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {hasRelatedTickets && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-base">Tickets liés ({relatedTickets.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {previousRelatedTicket && (
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    to="/ticket/$ticketSlug"
+                    params={{ ticketSlug: previousRelatedTicket.ticket_number }}
+                  >
+                    ← {previousRelatedTicket.ticket_number}
+                  </Link>
+                </Button>
+              )}
+              {nextRelatedTicket && (
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    to="/ticket/$ticketSlug"
+                    params={{ ticketSlug: nextRelatedTicket.ticket_number }}
+                  >
+                    {nextRelatedTicket.ticket_number} →
+                  </Link>
+                </Button>
+              )}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {relatedTickets.map((relatedTicket: any) => (
+                <Link
+                  key={relatedTicket.id}
+                  to="/ticket/$ticketSlug"
+                  params={{ ticketSlug: relatedTicket.ticket_number }}
+                  className={`rounded-md border p-3 text-sm transition-colors hover:bg-accent/50 ${
+                    relatedTicket.id === ticketId ? "border-primary bg-primary/5" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <b>{relatedTicket.ticket_number}</b> · {relatedTicket.title}
+                      <div className="text-xs text-muted-foreground">
+                        {
+                          installations.find(
+                            (item: any) => item.id === relatedTicket.installation_id,
+                          )?.name
+                        }
+                      </div>
+                    </div>
+                    <Badge variant="secondary">{relatedTicket.status}</Badge>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Workflow */}
       <div className="space-y-6">
