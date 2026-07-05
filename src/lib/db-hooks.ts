@@ -38,7 +38,14 @@ export type TableName =
   | "intervention_reports"
   | "purchase_orders"
   | "part_orders"
-  | "part_order_items";
+  | "part_order_items"
+  | "part_family_fields"
+  | "calculation_formulas"
+  | "business_rules"
+  | "bom_templates"
+  | "bom_template_items"
+  | "part_compatibilities"
+  | "quote_calculation_logs";
 
 export function useList<T = any>(
   table: TableName,
