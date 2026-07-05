@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ function num(prefix: string) {
 
 function TicketsPage() {
   const qc = useQueryClient();
+  const [newTicketInstallationId, setNewTicketInstallationId] = useState("");
   const { data: tickets = [] } = useList<any>("tickets");
   const { data: clients = [] } = useList<any>("clients", { orderBy: "name", ascending: true });
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
