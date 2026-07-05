@@ -3,16 +3,49 @@ import { useOne, useList, useRemove } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, Printer, Send, ThumbsUp, PackageCheck, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Printer,
+  Send,
+  ThumbsUp,
+  PackageCheck,
+  Trash2,
+  Pencil,
+  Save,
+  X,
+  Plus,
+} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_authenticated/quotes/$quoteId")({
   component: QuoteDetail,
 });
+
+const QUOTE_STATUSES = [
+  { value: "brouillon", label: "Brouillon" },
+  { value: "envoye", label: "Envoyé" },
+  { value: "accepte", label: "Accepté" },
+  { value: "refuse", label: "Refusé" },
+  { value: "pieces_commandees", label: "Pièces commandées" },
+];
+
+type EditableItem = {
+  id?: string;
+  key: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number;
+  position: number;
+};
 
 function QuoteDetail() {
   const { quoteId } = Route.useParams();
@@ -50,6 +83,41 @@ function QuoteDetail() {
   const { data: reports = [] } = useList<any>("intervention_reports");
   const { data: history = [] } = useList<any>("history_events");
   const remove = useRemove("quotes");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editQuote, setEditQuote] = useState<any>({});
+  const [editItems, setEditItems] = useState<EditableItem[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!quote || isEditing) return;
+    setEditQuote({
+      labor_hours: Number(quote.labor_hours ?? 0),
+      labor_rate: Number(quote.labor_rate ?? 0),
+      travel_fee: Number(quote.travel_fee ?? 0),
+      shipping_fee: Number(quote.shipping_fee ?? 0),
+      waste_treatment_fee: Number(quote.waste_treatment_fee ?? 0),
+      oversized_shipping_fee: Number(quote.oversized_shipping_fee ?? 0),
+      dump_evacuation_fee: Number(quote.dump_evacuation_fee ?? 0),
+      lifting_equipment_fee: Number(quote.lifting_equipment_fee ?? 0),
+      vat_rate: Number(quote.vat_rate ?? 20),
+      notes: quote.notes ?? "",
+    });
+  }, [quote, isEditing]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    setEditItems(
+      items.map((item: any, index: number) => ({
+        id: item.id,
+        key: item.id,
+        description: item.description ?? "",
+        quantity: Number(item.quantity ?? 1),
+        unit_price: Number(item.unit_price ?? 0),
+        unit_cost: Number(item.unit_cost ?? 0),
+        position: Number(item.position ?? index),
+      })),
+    );
+  }, [items, isEditing]);
 
   if (!quote) return <p className="text-muted-foreground">Chargement...</p>;
 
@@ -80,6 +148,103 @@ function QuoteDetail() {
       .filter((ticket: any) => ticket.installation_id === installationId)
       .map((ticket: any) => ticket.ticket_number);
 
+  const changeQuoteStatus = async (status: string) => {
+    const { error } = await (supabase.from("quotes" as any) as any)
+      .update({ status })
+      .eq("id", quoteId);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["quotes"] });
+    qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
+    toast.success("Statut du devis mis à jour");
+  };
+
+  const updateEditItem = (key: string, patch: Partial<EditableItem>) =>
+    setEditItems((current) =>
+      current.map((item) => (item.key === key ? { ...item, ...patch } : item)),
+    );
+
+  const addEditItem = () =>
+    setEditItems((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        description: "",
+        quantity: 1,
+        unit_price: 0,
+        unit_cost: 0,
+        position: current.length,
+      },
+    ]);
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      const owner_id = user.user!.id;
+      const { error } = await (supabase.from("quotes" as any) as any)
+        .update({
+          labor_hours: editQuote.labor_hours,
+          labor_rate: editQuote.labor_rate,
+          travel_fee: editQuote.travel_fee,
+          shipping_fee: editQuote.shipping_fee,
+          waste_treatment_fee: editQuote.waste_treatment_fee,
+          oversized_shipping_fee: editQuote.oversized_shipping_fee,
+          dump_evacuation_fee: editQuote.dump_evacuation_fee,
+          lifting_equipment_fee: editQuote.lifting_equipment_fee,
+          vat_rate: editQuote.vat_rate,
+          notes: editQuote.notes || null,
+        })
+        .eq("id", quoteId);
+      if (error) throw error;
+
+      const keptIds = editItems.map((item) => item.id).filter(Boolean);
+      const deletedIds = items
+        .map((item: any) => item.id)
+        .filter((id: string) => !keptIds.includes(id));
+      if (deletedIds.length > 0) {
+        const { error: deleteError } = await (supabase.from("quote_items" as any) as any)
+          .delete()
+          .in("id", deletedIds);
+        if (deleteError) throw deleteError;
+      }
+
+      for (const [position, item] of editItems.entries()) {
+        const row = {
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          unit_cost: item.unit_cost,
+          position,
+        };
+        if (item.id) {
+          const { error: itemError } = await (supabase.from("quote_items" as any) as any)
+            .update(row)
+            .eq("id", item.id);
+          if (itemError) throw itemError;
+        } else {
+          const { error: itemError } = await supabase.from("quote_items").insert({
+            owner_id,
+            quote_id: quoteId,
+            part_id: null,
+            installation_id: quote.installation_id ?? null,
+            ...row,
+          });
+          if (itemError) throw itemError;
+        }
+      }
+
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
+      qc.invalidateQueries({ queryKey: ["quote_items", "byQuote", quoteId] });
+      setIsEditing(false);
+      toast.success("Devis modifié");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const updateGlobalStatus = async (quoteStatus: string, ticketStatus: string) => {
     const { error } = await (supabase.from("quotes" as any) as any)
       .update({ status: quoteStatus })
@@ -95,6 +260,7 @@ function QuoteDetail() {
       if (ticketError) return toast.error(ticketError.message);
     }
     qc.invalidateQueries({ queryKey: ["quotes"] });
+    qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
     qc.invalidateQueries({ queryKey: ["tickets"] });
     toast.success("Statuts mis à jour");
   };
@@ -146,6 +312,28 @@ function QuoteDetail() {
         description={`Émis le ${new Date(quote.issued_at).toLocaleDateString("fr-FR")}`}
         actions={
           <div className="print:hidden flex flex-wrap gap-2">
+            <select
+              value={quote.status ?? "brouillon"}
+              onChange={(event) => changeQuoteStatus(event.target.value)}
+              className="flex h-9 rounded-md border border-input bg-background px-3 text-sm"
+              aria-label="Statut du devis"
+            >
+              {QUOTE_STATUSES.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label}
+                </option>
+              ))}
+            </select>
+            <Button variant="outline" onClick={() => setIsEditing((current) => !current)}>
+              {isEditing ? <X className="mr-2 h-4 w-4" /> : <Pencil className="mr-2 h-4 w-4" />}
+              {isEditing ? "Annuler" : "Modifier"}
+            </Button>
+            {isEditing && (
+              <Button onClick={saveEdit} disabled={saving}>
+                <Save className="mr-2 h-4 w-4" />
+                {saving ? "Enregistrement..." : "Enregistrer"}
+              </Button>
+            )}
             {linkedTickets.length > 0 && (
               <>
                 <Button
@@ -182,6 +370,107 @@ function QuoteDetail() {
           </div>
         }
       />
+
+      {isEditing && (
+        <Card className="mb-6 print:hidden">
+          <CardContent className="space-y-5 p-4">
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                ["labor_hours", "Heures", "0.25"],
+                ["labor_rate", "Tarif €/h", "0.01"],
+                ["travel_fee", "Déplacement €", "0.01"],
+                ["shipping_fee", "Frais de port €", "0.01"],
+                ["waste_treatment_fee", "Traitement déchets €", "0.01"],
+                ["oversized_shipping_fee", "Port hors gabarit €", "0.01"],
+                ["dump_evacuation_fee", "Déchetterie €", "0.01"],
+                ["lifting_equipment_fee", "Levage €", "0.01"],
+                ["vat_rate", "TVA %", "0.01"],
+              ].map(([key, label, step]) => (
+                <div key={key}>
+                  <Label>{label}</Label>
+                  <Input
+                    type="number"
+                    step={step}
+                    value={editQuote[key] ?? 0}
+                    onChange={(event) =>
+                      setEditQuote((current: any) => ({
+                        ...current,
+                        [key]: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+              <div className="sm:col-span-4">
+                <Label>Notes</Label>
+                <Textarea
+                  value={editQuote.notes ?? ""}
+                  onChange={(event) =>
+                    setEditQuote((current: any) => ({ ...current, notes: event.target.value }))
+                  }
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Lignes du devis</h3>
+                <Button type="button" variant="outline" size="sm" onClick={addEditItem}>
+                  <Plus className="mr-1 h-4 w-4" /> Ligne libre
+                </Button>
+              </div>
+              {editItems.map((item) => (
+                <div key={item.key} className="grid gap-2 sm:grid-cols-[1fr_90px_110px_110px_40px]">
+                  <Input
+                    value={item.description}
+                    onChange={(event) =>
+                      updateEditItem(item.key, { description: event.target.value })
+                    }
+                    placeholder="Description"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.quantity}
+                    onChange={(event) =>
+                      updateEditItem(item.key, { quantity: Number(event.target.value) })
+                    }
+                    placeholder="Qté"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.unit_price}
+                    onChange={(event) =>
+                      updateEditItem(item.key, { unit_price: Number(event.target.value) })
+                    }
+                    placeholder="PU HT"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.unit_cost}
+                    onChange={(event) =>
+                      updateEditItem(item.key, { unit_cost: Number(event.target.value) })
+                    }
+                    placeholder="Coût"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setEditItems((current) => current.filter((row) => row.key !== item.key))
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mx-auto max-w-3xl bg-card p-8 shadow-sm print:shadow-none print:bg-white print:text-black">
         <div className="mb-8 flex items-start justify-between border-b border-border pb-6">
