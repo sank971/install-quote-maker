@@ -76,7 +76,7 @@ export function pick(row: CsvRow, ...keys: string[]) {
   return "";
 }
 
-export function importCsvFile(onRows: (rows: CsvRow[]) => void | Promise<void>) {
+export function importCsvFile(onRows: (rows: CsvRow[]) => unknown | Promise<unknown>) {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = ".csv,text/csv";
