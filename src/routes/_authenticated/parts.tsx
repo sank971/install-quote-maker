@@ -56,8 +56,6 @@ function PartsPage() {
     orderBy: "name",
     ascending: true,
   });
-  const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
-  const { data: supplierParts = [] } = useList<any>("supplier_parts");
   const { data: partCategories = [] } = useList<any>("part_categories", {
     orderBy: "name",
     ascending: true,
