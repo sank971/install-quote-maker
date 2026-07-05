@@ -14,13 +14,9 @@ import { useList } from "@/lib/db-hooks";
 import { supabase } from "@/integrations/supabase/client";
 import { currentUserId } from "@/lib/ticket-workflow";
 
-export const Route = createFileRoute("/_authenticated/tickets")({ 
-  component: TicketsPage 
+export const Route = createFileRoute("/_authenticated/tickets")({
+  component: TicketsPage,
 });
-
-function num(prefix: string) {
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.floor(Math.random() * 9000 + 1000)}`;
-}
 
 function TicketsPage() {
   const qc = useQueryClient();
@@ -31,7 +27,7 @@ function TicketsPage() {
     orderBy: "name",
     ascending: true,
   });
-  
+
   const [siteSearch, setSiteSearch] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [selectedInstallationIds, setSelectedInstallationIds] = useState<string[]>([]);
@@ -67,14 +63,10 @@ function TicketsPage() {
   const filteredTickets = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return tickets;
-    
+
     return tickets.filter((ticket: any) => {
       const site = sites.find((s: any) => s.id === ticket.site_id);
-      const haystack = [
-        ticket.ticket_number,
-        ticket.title,
-        site?.name,
-      ]
+      const haystack = [ticket.ticket_number, ticket.title, site?.name]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -147,7 +139,7 @@ function TicketsPage() {
             p_client_id: site.client_id,
             p_site_id: site.id,
             p_installation_id: installation.id,
-            p_ticket_number: num("TCK"),
+            p_ticket_number: null,
             p_title: title,
             p_description: description || null,
             p_ticket_group_id: group?.id ?? null,
@@ -172,19 +164,19 @@ function TicketsPage() {
   // Status label colors
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      "en_attente_assignation": "bg-gray-100 text-gray-800",
-      "diagnostic_en_cours": "bg-blue-100 text-blue-800",
-      "diagnostic_termine": "bg-blue-200 text-blue-900",
-      "rapport_a_rediger": "bg-yellow-100 text-yellow-800",
-      "devis_a_creer": "bg-orange-100 text-orange-800",
-      "en_attente_pieces": "bg-orange-100 text-orange-800",
-      "pieces_recues": "bg-green-100 text-green-800",
-      "reparation_a_planifier": "bg-purple-100 text-purple-800",
-      "reparation_en_cours": "bg-purple-200 text-purple-900",
-      "bon_de_commande_recu": "bg-green-200 text-green-900",
-      "probleme_persistant": "bg-red-100 text-red-800",
-      "termine": "bg-green-300 text-green-900",
-      "cloture": "bg-gray-300 text-gray-900",
+      en_attente_assignation: "bg-gray-100 text-gray-800",
+      diagnostic_en_cours: "bg-blue-100 text-blue-800",
+      diagnostic_termine: "bg-blue-200 text-blue-900",
+      rapport_a_rediger: "bg-yellow-100 text-yellow-800",
+      devis_a_creer: "bg-orange-100 text-orange-800",
+      en_attente_pieces: "bg-orange-100 text-orange-800",
+      pieces_recues: "bg-green-100 text-green-800",
+      reparation_a_planifier: "bg-purple-100 text-purple-800",
+      reparation_en_cours: "bg-purple-200 text-purple-900",
+      bon_de_commande_recu: "bg-green-200 text-green-900",
+      probleme_persistant: "bg-red-100 text-red-800",
+      termine: "bg-green-300 text-green-900",
+      cloture: "bg-gray-300 text-gray-900",
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
@@ -198,10 +190,7 @@ function TicketsPage() {
 
       {/* Create Ticket Button */}
       <div className="mb-6 flex justify-end">
-        <Button 
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          size="sm"
-        >
+        <Button onClick={() => setShowCreateForm(!showCreateForm)} size="sm">
           <Plus className="mr-2 h-4 w-4" />
           {showCreateForm ? "Fermer" : "Créer un ticket"}
         </Button>
@@ -332,30 +321,32 @@ function TicketsPage() {
 
       {/* Tickets List */}
       {filteredTickets.length === 0 ? (
-        <EmptyState 
-          title="Aucun ticket" 
-          description={searchQuery ? "Aucun ticket ne correspond à votre recherche." : "Créez votre premier ticket pour commencer."}
+        <EmptyState
+          title="Aucun ticket"
+          description={
+            searchQuery
+              ? "Aucun ticket ne correspond à votre recherche."
+              : "Créez votre premier ticket pour commencer."
+          }
         />
       ) : (
         <div className="space-y-2">
           {filteredTickets.map((ticket: any) => {
             const site = sites.find((s: any) => s.id === ticket.site_id);
             const installation = installations.find((i: any) => i.id === ticket.installation_id);
-            
+
             return (
-              <Link 
+              <Link
                 key={ticket.id}
-                to="/tickets/$ticketId"
-                params={{ ticketId: ticket.id }}
+                to="/ticket/$ticketSlug"
+                params={{ ticketSlug: ticket.ticket_number ?? ticket.id }}
               >
                 <Card className="transition-colors hover:bg-accent/50 cursor-pointer">
                   <CardContent className="flex items-center justify-between p-4">
                     <div className="flex flex-1 items-center gap-4 min-w-0">
                       <ClipboardList className="h-5 w-5 text-primary flex-shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium">
-                          {ticket.ticket_number}
-                        </div>
+                        <div className="font-medium">{ticket.ticket_number}</div>
                         <div className="text-sm text-muted-foreground truncate">
                           {site?.name ? `${site.name}` : "Site"}
                           {installation?.name && ` · ${installation.name}`}
@@ -363,9 +354,7 @@ function TicketsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <Badge className={getStatusColor(ticket.status)}>
-                        {ticket.status}
-                      </Badge>
+                      <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
                       <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     </div>
                   </CardContent>

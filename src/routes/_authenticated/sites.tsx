@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_authenticated/sites")({
 
 function SitesPage() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isDetailRoute = pathname.startsWith("/sites/");
+  const isDetailRoute = pathname.startsWith("/site/");
 
   return isDetailRoute ? <Outlet /> : <SitesList />;
 }
@@ -181,7 +181,11 @@ function SitesList() {
             return (
               <Card key={s.id} className="p-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                  <Link to="/sites/$siteId" params={{ siteId: s.id }} className="min-w-0">
+                  <Link
+                    to="/site/$siteSlug"
+                    params={{ siteSlug: s.site_number ?? s.id }}
+                    className="min-w-0"
+                  >
                     <div className="flex min-w-0 items-start gap-3">
                       <div className="shrink-0 rounded-md bg-primary/10 p-2 text-primary">
                         <MapPin className="h-4 w-4" />
@@ -222,7 +226,7 @@ function SitesList() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                    <Link to="/sites/$siteId" params={{ siteId: s.id }}>
+                    <Link to="/site/$siteSlug" params={{ siteSlug: s.site_number ?? s.id }}>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </Link>
                   </div>

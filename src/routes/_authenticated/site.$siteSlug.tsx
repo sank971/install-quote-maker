@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useList, useOne } from "@/lib/db-hooks";
+import { useList, useOneByRouteParam } from "@/lib/db-hooks";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { currentUserId } from "@/lib/ticket-workflow";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/_authenticated/sites/$siteId")({
+export const Route = createFileRoute("/_authenticated/site/$siteSlug")({
   component: SiteDetail,
 });
 
@@ -21,16 +21,18 @@ function formatDate(value?: string | null) {
 }
 
 function SiteDetail() {
-  const { siteId } = Route.useParams();
+  const { siteSlug } = Route.useParams();
   const qc = useQueryClient();
   const [selectedTickets, setSelectedTickets] = useState<string[]>([]);
-  const { data: site } = useOne<any>("sites", siteId);
+  const { data: site } = useOneByRouteParam<any>("sites", siteSlug, "site_number");
+  const siteId = site?.id;
   const { data: clients = [] } = useList<any>("clients");
   const { data: installations = [] } = useList<any>("installations", {
     filter: (q) => q.eq("site_id", siteId),
     orderBy: "name",
     ascending: true,
     key: ["installations", "bySite", siteId],
+    enabled: !!siteId,
   });
   const { data: types = [] } = useList<any>("installation_types", {
     orderBy: "name",
@@ -44,10 +46,12 @@ function SiteDetail() {
   const { data: tickets = [] } = useList<any>("tickets", {
     filter: (q) => q.eq("site_id", siteId),
     key: ["tickets", "bySite", siteId],
+    enabled: !!siteId,
   });
   const { data: ticketGroups = [] } = useList<any>("ticket_groups", {
     filter: (q) => q.eq("site_id", siteId),
     key: ["ticket_groups", "bySite", siteId],
+    enabled: !!siteId,
   });
   const { data: groupTickets = [] } = useList<any>("ticket_group_tickets");
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
@@ -342,8 +346,11 @@ function SiteDetail() {
             return (
               <Link
                 key={installation.id}
-                to="/installations/$installationId"
-                params={{ installationId: installation.id }}
+                to="/installation/$installationSlug"
+                params={{
+                  installationSlug:
+                    installation.installation_number?.replace("/", "-") ?? installation.id,
+                }}
               >
                 <Card className="p-4 transition-colors hover:bg-accent/50">
                   <div className="flex items-start gap-3">

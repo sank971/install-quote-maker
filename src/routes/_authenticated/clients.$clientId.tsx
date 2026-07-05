@@ -178,8 +178,8 @@ function ClientDetail() {
                     </div>
                     <div className="min-w-0">
                       <Link
-                        to="/sites/$siteId"
-                        params={{ siteId: s.id }}
+                        to="/site/$siteSlug"
+                        params={{ siteSlug: s.site_number ?? s.id }}
                         className="truncate font-medium hover:underline"
                       >
                         {s.site_number ? `${s.site_number} · ` : ""}
