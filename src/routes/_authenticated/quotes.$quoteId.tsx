@@ -43,6 +43,7 @@ type EditableItem = {
   key: string;
   description: string;
   quantity: number;
+  length_meters?: number;
   unit_price: number;
   unit_cost: number;
   position: number;
@@ -149,6 +150,8 @@ function QuoteDetail() {
         reference: item.reference ?? "",
         category: item.category ?? "",
         quantity: Number(item.quantity ?? 1),
+        length_meters: item.length_meters ? Number(item.length_meters) : undefined,
+        pricing_unit: parts.find((part: any) => part.id === item.part_id)?.pricing_unit ?? "unit",
         unit_price: Number(item.unit_price ?? 0),
         unit_cost: Number(item.unit_cost ?? 0),
         position: Number(item.position ?? index),
@@ -326,7 +329,8 @@ function QuoteDetail() {
       description: details ? `${part.name} — ${details}` : part.name,
       reference: installedPart?.reference_override || part.reference || "",
       category: installedPart?.component_type || part.category || "",
-      quantity: part.pricing_unit === "linear_meter" && length > 0 ? length : 1,
+      quantity: 1,
+      length_meters: part.pricing_unit === "linear_meter" && length > 0 ? length : Number(part.length_meters ?? 0) || undefined,
       unit_price: negotiatedKitPrice
         ? Number(negotiatedKitPrice.negotiated_price)
         : Number(part.sale_price) * (1 - discount),
@@ -560,6 +564,7 @@ function QuoteDetail() {
           installation_id: item.installation_id ?? editInstallationId ?? null,
           description: item.description,
           quantity: item.quantity,
+          length_meters: item.pricing_unit === "linear_meter" ? item.length_meters ?? null : null,
           unit_price: item.unit_price,
           unit_cost: item.unit_cost,
           position,
@@ -614,10 +619,11 @@ function QuoteDetail() {
     toast.success("Statuts mis à jour");
   };
 
-  const partsHT = items.reduce(
-    (s: number, i: any) => s + Number(i.unit_price) * Number(i.quantity),
-    0,
-  );
+  const partsHT = items.reduce((s: number, i: any) => {
+    const part = parts.find((row: any) => row.id === i.part_id);
+    const billableQuantity = Number(i.quantity) * (part?.pricing_unit === "linear_meter" ? Number(i.length_meters || 0) || 1 : 1);
+    return s + Number(i.unit_price) * billableQuantity;
+  }, 0);
   const travelCount = Number(quote.travel_count ?? 1);
   const laborHT = Number(quote.labor_hours ?? 0) * travelCount * Number(quote.labor_rate ?? 0);
   const shippingFee = Number(quote.shipping_fee ?? 0);
@@ -983,7 +989,7 @@ function QuoteDetail() {
               </div>
               {editItems.map((item) => (
                 <div key={item.key} className="rounded-md border border-border/60 p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_90px_110px_110px_40px]">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_90px_90px_110px_110px_40px]">
                     <Input
                       value={item.description}
                       onChange={(event) =>
@@ -1023,6 +1029,19 @@ function QuoteDetail() {
                       }
                       placeholder="Qté"
                     />
+                    {item.pricing_unit === "linear_meter" && (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={item.length_meters ?? ""}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { length_meters: Number(event.target.value) })
+                        }
+                        placeholder="Long. ml"
+                        title="Longueur unitaire en mètres linéaires"
+                      />
+                    )}
                     <Input
                       type="number"
                       step="0.01"
@@ -1215,13 +1234,24 @@ function QuoteDetail() {
                   .map((i: any) => (
                     <tr key={i.id}>
                       <td className="py-2">{i.description}</td>
-                      <td className="py-2 text-right">{Number(i.quantity)}</td>
+                      <td className="py-2 text-right">
+                        {Number(i.quantity)}
+                        {parts.find((part: any) => part.id === i.part_id)?.pricing_unit === "linear_meter" && i.length_meters
+                          ? ` × ${Number(i.length_meters)} ml`
+                          : ""}
+                      </td>
                       <td className="py-2 text-right">{fmt(Number(i.unit_price))}</td>
                       <td className="py-2 text-right">
                         {contractDiscountPct > 0 ? `${contractDiscountPct.toFixed(2)}%` : "—"}
                       </td>
                       <td className="py-2 text-right">
-                        {fmt(Number(i.unit_price) * Number(i.quantity))}
+                        {fmt(
+                          Number(i.unit_price) *
+                            Number(i.quantity) *
+                            (parts.find((part: any) => part.id === i.part_id)?.pricing_unit === "linear_meter"
+                              ? Number(i.length_meters || 0) || 1
+                              : 1),
+                        )}
                       </td>
                     </tr>
                   )),

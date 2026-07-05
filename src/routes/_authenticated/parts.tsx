@@ -194,6 +194,9 @@ function PartsPage() {
           })
           .join(" | "),
         description: part.description,
+        longueur_m: part.length_meters,
+        largeur_m: part.width_meters,
+        poids_kg: part.weight_kg,
         prix_vente: part.sale_price,
         unite_chiffrage: part.pricing_unit,
       };
@@ -221,6 +224,9 @@ function PartsPage() {
       "marques_portes_compatibles",
       "modeles_portes_compatibles",
       "description",
+      "longueur_m",
+      "largeur_m",
+      "poids_kg",
       "prix_vente",
       "unite_chiffrage",
       "fournisseur_nom",
@@ -332,6 +338,9 @@ function PartsPage() {
           description: pick(row, "description") || null,
           sale_price: parseCsvNumber(pick(row, "prix_vente", "sale_price")),
           pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
+          length_meters: pick(row, "longueur_m", "length_meters") ? parseCsvNumber(pick(row, "longueur_m", "length_meters")) : null,
+          width_meters: pick(row, "largeur_m", "width_meters") ? parseCsvNumber(pick(row, "largeur_m", "width_meters")) : null,
+          weight_kg: pick(row, "poids_kg", "weight_kg") ? parseCsvNumber(pick(row, "poids_kg", "weight_kg")) : null,
         };
         if (part) {
           const { data, error } = await (supabase.from("parts") as any)
@@ -553,6 +562,9 @@ function PartsPage() {
       description: fd.get("description") || null,
       sale_price: Number(fd.get("sale_price") ?? salePrice ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
+      length_meters: fd.get("length_meters") ? Number(fd.get("length_meters")) : null,
+      width_meters: fd.get("width_meters") ? Number(fd.get("width_meters")) : null,
+      weight_kg: fd.get("weight_kg") ? Number(fd.get("weight_kg")) : null,
       is_kit: isKit,
       is_oversized: fd.get("is_oversized") === "on",
     });
@@ -813,6 +825,14 @@ function PartsPage() {
                           {p.is_kit ? "Kit" : "Pièce"} · Compat. : {typeCompatCount} types ·{" "}
                           {modelCompatCount} modèles
                         </span>
+                        {[p.length_meters && `${Number(p.length_meters)} m L`, p.width_meters && `${Number(p.width_meters)} m l`, p.weight_kg && `${Number(p.weight_kg)} kg`].filter(Boolean).length > 0 && (
+                          <>
+                            <span className="mx-2 text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">
+                              {[p.length_meters && `L ${Number(p.length_meters)} m`, p.width_meters && `l ${Number(p.width_meters)} m`, p.weight_kg && `${Number(p.weight_kg)} kg`].filter(Boolean).join(" · ")}
+                            </span>
+                          </>
+                        )}
                         {linkedSupplierNames.length > 0 && (
                           <>
                             <span className="mx-2 text-muted-foreground">·</span>
@@ -998,6 +1018,18 @@ function PartsPage() {
                   </div>
                 </>
               )}
+              <div>
+                <Label>Longueur (m)</Label>
+                <Input name="length_meters" type="number" step="0.01" min="0" defaultValue={edit?.length_meters ?? ""} />
+              </div>
+              <div>
+                <Label>Largeur (m)</Label>
+                <Input name="width_meters" type="number" step="0.01" min="0" defaultValue={edit?.width_meters ?? ""} />
+              </div>
+              <div>
+                <Label>Poids (kg)</Label>
+                <Input name="weight_kg" type="number" step="0.01" min="0" defaultValue={edit?.weight_kg ?? ""} />
+              </div>
               <div>
                 <Label>Chiffrage</Label>
                 <select
