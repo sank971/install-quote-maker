@@ -14,7 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Truck, Pencil, Trash2, DollarSign } from "lucide-react";
+import { Plus, Truck, Pencil, Trash2, DollarSign, Download, Upload } from "lucide-react";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/suppliers")({
   component: SuppliersPage,
@@ -28,11 +32,66 @@ function SuppliersPage() {
   const removeS = useRemove("suppliers");
   const upsertSP = useUpsert("supplier_parts");
   const removeSP = useRemove("supplier_parts");
+  const qc = useQueryClient();
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [pricingFor, setPricingFor] = useState<any>(null);
   const [priceEdit, setPriceEdit] = useState<any>(null);
+
+  const exportSuppliers = () => {
+    downloadCsv(
+      "fournisseurs.csv",
+      suppliers.map((s: any) => ({
+        nom: s.name,
+        email: s.email,
+        telephone: s.phone,
+        conditions_paiement: s.payment_terms,
+        titulaire_compte: s.account_holder,
+        iban: s.iban,
+        bic: s.bic,
+        notes: s.notes,
+      })),
+      [
+        "nom",
+        "email",
+        "telephone",
+        "conditions_paiement",
+        "titulaire_compte",
+        "iban",
+        "bic",
+        "notes",
+      ],
+    );
+  };
+
+  const importSuppliers = () =>
+    importCsvFile(async (rows) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      for (const row of rows) {
+        const name = pick(row, "nom", "name");
+        if (!name) continue;
+        const payload = {
+          owner_id,
+          name,
+          email: pick(row, "email") || null,
+          phone: pick(row, "telephone", "phone") || null,
+          payment_terms: pick(row, "conditions_paiement", "payment_terms") || null,
+          account_holder: pick(row, "titulaire_compte", "account_holder") || null,
+          iban: pick(row, "iban") || null,
+          bic: pick(row, "bic") || null,
+          notes: pick(row, "notes") || null,
+        };
+        const existing = suppliers.find((s: any) => s.name.toLowerCase() === name.toLowerCase());
+        if (existing)
+          await (supabase.from("suppliers") as any).update(payload).eq("id", existing.id);
+        else await (supabase.from("suppliers") as any).insert(payload);
+      }
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      toast.success("Fournisseurs importés");
+    });
 
   const openNew = () => {
     setEdit({});
@@ -85,10 +144,20 @@ function SuppliersPage() {
         title="Fournisseurs"
         description="Prix d'achat et meilleurs fournisseurs"
         actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau fournisseur
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportSuppliers}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importSuppliers}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouveau fournisseur
+            </Button>
+          </div>
         }
       />
 

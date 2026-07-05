@@ -15,7 +15,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
-import { Plus, Pencil, Trash2, Search, ChevronRight, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, ChevronRight, MapPin, Download, Upload } from "lucide-react";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/clients")({
   component: ClientsPage,
@@ -30,6 +34,7 @@ function ClientsPage() {
 
 function ClientsList() {
   const { data = [] } = useList<any>("clients");
+  const qc = useQueryClient();
   const upsert = useUpsert("clients");
   const upsertSite = useUpsert("sites", [["sites"]]);
   const remove = useRemove("clients");
@@ -38,6 +43,52 @@ function ClientsList() {
   const [edit, setEdit] = useState<any>(null);
   const [siteOpen, setSiteOpen] = useState(false);
   const [siteClient, setSiteClient] = useState<any>(null);
+
+  const exportClients = () =>
+    downloadCsv(
+      "clients.csv",
+      data.map((c: any) => ({
+        numero_client: c.client_number,
+        nom: c.name,
+        email: c.email,
+        telephone: c.phone,
+        contact: c.contact_name,
+        siret: c.siret,
+        adresse: c.address,
+        notes: c.notes,
+      })),
+      ["numero_client", "nom", "email", "telephone", "contact", "siret", "adresse", "notes"],
+    );
+
+  const importClients = () =>
+    importCsvFile(async (rows) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      for (const row of rows) {
+        const name = pick(row, "nom", "name");
+        if (!name) continue;
+        const payload = {
+          owner_id,
+          name,
+          email: pick(row, "email") || null,
+          phone: pick(row, "telephone", "phone") || null,
+          address: pick(row, "adresse", "address") || null,
+          contact_name: pick(row, "contact", "contact_name") || null,
+          siret: pick(row, "siret") || null,
+          notes: pick(row, "notes") || null,
+        };
+        const number = pick(row, "numero_client", "client_number");
+        const existing = data.find(
+          (c: any) =>
+            (number && c.client_number === number) || c.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing) await (supabase.from("clients") as any).update(payload).eq("id", existing.id);
+        else await (supabase.from("clients") as any).insert(payload);
+      }
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      toast.success("Clients importés");
+    });
 
   const filtered = data.filter((c) =>
     [c.client_number, c.name, c.siret, c.email, c.phone, c.contact_name]
@@ -78,10 +129,20 @@ function ClientsList() {
         title="Clients"
         description="Gérez vos clients et leurs sites"
         actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau client
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportClients}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importClients}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouveau client
+            </Button>
+          </div>
         }
       />
 
