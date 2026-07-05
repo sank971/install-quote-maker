@@ -166,6 +166,8 @@ export type Database = {
           on_call_hourly_rate: number | null;
           on_call_included: boolean;
           on_call_travel_fee: number | null;
+          out_of_contract_hourly_rate: number | null;
+          out_of_contract_travel_fee: number | null;
           oversized_shipping_fee: number | null;
           owner_id: string;
           parts_discount_pct: number | null;
@@ -189,6 +191,8 @@ export type Database = {
           on_call_hourly_rate?: number | null;
           on_call_included?: boolean;
           on_call_travel_fee?: number | null;
+          out_of_contract_hourly_rate?: number | null;
+          out_of_contract_travel_fee?: number | null;
           oversized_shipping_fee?: number | null;
           owner_id: string;
           parts_discount_pct?: number | null;
@@ -212,6 +216,8 @@ export type Database = {
           on_call_hourly_rate?: number | null;
           on_call_included?: boolean;
           on_call_travel_fee?: number | null;
+          out_of_contract_hourly_rate?: number | null;
+          out_of_contract_travel_fee?: number | null;
           oversized_shipping_fee?: number | null;
           owner_id?: string;
           parts_discount_pct?: number | null;
@@ -725,6 +731,7 @@ export type Database = {
           description: string | null;
           id: string;
           is_kit: boolean;
+          is_oversized: boolean;
           name: string;
           owner_id: string;
           photo_url: string | null;
@@ -740,6 +747,7 @@ export type Database = {
           description?: string | null;
           id?: string;
           is_kit?: boolean;
+          is_oversized?: boolean;
           name: string;
           owner_id: string;
           photo_url?: string | null;
@@ -755,6 +763,7 @@ export type Database = {
           description?: string | null;
           id?: string;
           is_kit?: boolean;
+          is_oversized?: boolean;
           name?: string;
           owner_id?: string;
           photo_url?: string | null;
