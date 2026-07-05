@@ -541,6 +541,8 @@ function PartsPage() {
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const isKit = fd.get("is_kit") === "on";
+    const shouldOpenCompositionAfterSave = !edit.id && isKit;
     const savedPart = await upsert.mutateAsync({
       id: edit.id,
       name: fd.get("name"),
@@ -550,7 +552,7 @@ function PartsPage() {
       description: fd.get("description") || null,
       sale_price: Number(fd.get("sale_price") ?? salePrice ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
-      is_kit: fd.get("is_kit") === "on",
+      is_kit: isKit,
     });
     const supplierId = fd.get("supplier_id") as string | null;
     if (supplierId) {
@@ -576,6 +578,12 @@ function PartsPage() {
       qc.invalidateQueries({ queryKey: ["supplier_parts"] });
     }
     setOpen(false);
+    if (shouldOpenCompositionAfterSave) {
+      setComponentsOpen(savedPart);
+      setSelectedComponentPartIds([]);
+      setComponentDraft({ quantity: 1, relation_kind: "kit_component", notes: "" });
+      toast.info("Ajoutez maintenant les pièces qui composent le kit et ses options");
+    }
   };
 
   const toggleCompat = async (partId: string, modelId: string, present: boolean) => {
@@ -657,6 +665,19 @@ function PartsPage() {
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success("Pièce supprimée");
+  };
+
+  const updateComponent = async (
+    parentPartId: string,
+    componentPartId: string,
+    patch: Partial<{ quantity: number; relation_kind: string; notes: string | null }>,
+  ) => {
+    const { error } = await (supabase.from("part_components" as any) as any)
+      .update(patch)
+      .eq("parent_part_id", parentPartId)
+      .eq("component_part_id", componentPartId);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["part_components"] });
   };
 
   const toggleTypeCompat = async (partId: string, typeId: string, present: boolean) => {
@@ -799,15 +820,23 @@ function PartsPage() {
                     <Button
                       variant="outline"
                       size="sm"
+                      className="gap-2"
                       onClick={() => {
                         setComponentsOpen(p);
                         setSelectedComponentPartIds([]);
-                        setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
+                        setComponentDraft({
+                          quantity: 1,
+                          relation_kind: p.is_kit ? "kit_component" : "accessory",
+                          notes: "",
+                        });
                       }}
                       title="Gérer la composition de cette pièce ou de ce kit"
                       aria-label="Gérer la composition"
                     >
                       <Boxes className="h-4 w-4" />
+                      <span className="hidden sm:inline">
+                        {p.is_kit ? "Composition / options" : "Accessoires"}
+                      </span>
                     </Button>
                     <Button
                       variant="ghost"
@@ -845,6 +874,13 @@ function PartsPage() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3">
+            {!edit?.id && edit?.is_kit && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-muted-foreground">
+                Créez d’abord la référence du kit. Après l’enregistrement, la fenêtre de
+                composition s’ouvrira automatiquement pour ajouter les pièces incluses, les options
+                au prix négocié et les accessoires facturés à l’unité.
+              </div>
+            )}
             <div>
               <Label>Nom *</Label>
               <Input name="name" required defaultValue={edit?.name} />
@@ -1006,21 +1042,41 @@ function PartsPage() {
                 return (
                   <div
                     key={component.component_part_id}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2 text-sm"
+                    className="grid gap-2 rounded-md border border-border/60 p-2 text-sm sm:grid-cols-[1fr_90px_220px_auto]"
                   >
                     <div>
                       <div className="font-medium">{part?.name ?? "Pièce inconnue"}</div>
                       <div className="text-xs text-muted-foreground">
-                        Qté {component.quantity} ·{" "}
-                        {component.relation_kind === "kit_component"
-                          ? "Composition du kit"
-                          : component.relation_kind === "negotiated_option"
-                            ? "Option prix négocié"
-                            : "Accessoire à l’unité"}{" "}
                         {part?.reference ? `· Réf. ${part.reference}` : ""}{" "}
                         {component.notes ? `· ${component.notes}` : ""}
                       </div>
                     </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      defaultValue={component.quantity}
+                      aria-label={`Quantité de ${part?.name ?? "la pièce"}`}
+                      onBlur={(e) =>
+                        updateComponent(componentsOpen.id, component.component_part_id, {
+                          quantity: Number(e.target.value) || 1,
+                        })
+                      }
+                    />
+                    <select
+                      value={component.relation_kind ?? "accessory"}
+                      onChange={(e) =>
+                        updateComponent(componentsOpen.id, component.component_part_id, {
+                          relation_kind: e.target.value,
+                        })
+                      }
+                      aria-label={`Type de lien de ${part?.name ?? "la pièce"}`}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                    >
+                      <option value="kit_component">Composition du kit</option>
+                      <option value="negotiated_option">Option prix négocié</option>
+                      <option value="accessory">Accessoire à l’unité</option>
+                    </select>
                     <Button
                       variant="ghost"
                       size="icon"
