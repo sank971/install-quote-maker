@@ -2,7 +2,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, FileText, PackageCheck, CheckCircle2, UserCheck, History } from "lucide-react";
+import { ChevronLeft, FileText, PackageCheck, CheckCircle2, UserCheck, History, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useList, useOne } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
@@ -71,8 +71,16 @@ function TicketDetail() {
   const { data: history = [] } = useList<any>("history_events");
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: parts = [] } = useList<any>("parts");
+  const { data: types = [] } = useList<any>("installation_types");
+  const { data: models = [] } = useList<any>("models");
+  const { data: installationParts = [] } = useList<any>("installation_parts");
+  const { data: partCategories = [] } = useList<any>("part_categories", {
+    orderBy: "name",
+    ascending: true,
+  });
 
   const [expandedIntervention, setExpandedIntervention] = useState<string | null>(null);
+  const [selectedPartType, setSelectedPartType] = useState("");
 
   const invalidate = () =>
     [
@@ -107,6 +115,17 @@ function TicketDetail() {
       .map((qt: any) => qt.quote_id)
   );
   const linkedQuotes = quotes.filter((q: any) => linkedQuoteIds.has(q.id));
+
+  // Get part types for this installation
+  const installationModel = models.find((m: any) => m.id === installation?.model_id);
+  const effectiveTypeId = installation?.type_id || installationModel?.type_id;
+  const installationType = types.find((t: any) => t.id === effectiveTypeId);
+  const componentTypes = Array.isArray(installationType?.component_types)
+    ? installationType.component_types
+    : [];
+  const availablePartTypes = componentTypes.length
+    ? componentTypes.map((name: unknown) => String(name))
+    : partCategories.map((category: any) => String(category.name));
 
   const assign = async (intervention: any) => {
     const user = await currentUserId();
@@ -164,6 +183,7 @@ function TicketDetail() {
       besoin_devis: fd.get("besoin_devis") === "on",
       besoin_commande_pieces: fd.get("besoin_commande_pieces") === "on",
       pieces_remplacees_succes: successParts,
+      problem_part_type: fd.get("problem_part_type") || null,
     };
     const { error } = await (supabase.from("intervention_reports" as any) as any).insert(report);
     if (error) return toast.error(error.message);
@@ -181,8 +201,110 @@ function TicketDetail() {
       ok ? "Réparation réussie" : "Rapport traité",
     );
     e.currentTarget.reset();
+    setSelectedPartType("");
     invalidate();
     toast.success("Rapport créé");
+  };
+
+  const createQuoteFromTicket = async () => {
+    if (!ticket || !installation) return toast.error("Données manquantes");
+    const owner_id = await currentUserId();
+    try {
+      const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+      
+      // Get linked tickets with the same installation
+      const groupTicketIds = new Set<string>();
+      groupTicketIds.add(ticketId);
+      
+      // Create quote
+      const { data: quote, error: quoteError } = await supabase
+        .from("quotes")
+        .insert({
+          owner_id,
+          quote_number: number,
+          client_id: ticket.client_id,
+          site_id: ticket.site_id,
+          installation_id: ticket.installation_id,
+          vat_rate: 20,
+          notes: `Devis créé depuis le ticket ${ticket.ticket_number}`,
+        })
+        .select()
+        .single();
+      
+      if (quoteError) throw quoteError;
+
+      // Add installation to quote
+      const { error: qiError } = await (
+        supabase.from("quote_installations" as any) as any
+      ).insert({
+        owner_id,
+        quote_id: quote.id,
+        installation_id: ticket.installation_id,
+        position: 0,
+      });
+      if (qiError) throw qiError;
+
+      // Link quote to ticket
+      const { error: qtError } = await (
+        supabase.from("quote_tickets" as any) as any
+      ).insert(
+        Array.from(groupTicketIds).map((tickId) => ({
+          owner_id,
+          quote_id: quote.id,
+          ticket_id: tickId,
+        }))
+      );
+      if (qtError) throw qtError;
+
+      // Find the diagnostic report to get the problem part type
+      const diagnosticReport = ticketReports.find((r: any) => {
+        const intervention = ticketInterventions.find((i: any) => i.id === r.intervention_id);
+        return intervention?.type === "diagnostic";
+      });
+
+      const problemPartType = diagnosticReport?.problem_part_type;
+
+      // Add pre-filled parts if problem part type is specified
+      if (problemPartType && installation.id) {
+        const presentParts = installationParts.filter(
+          (p: any) => p.installation_id === installation.id
+        );
+
+        const quoteItems = presentParts
+          .map((ip: any) => {
+            const part = parts.find((p: any) => p.id === ip.part_id);
+            if (!part || part.category !== problemPartType) return null;
+            
+            return {
+              owner_id,
+              quote_id: quote.id,
+              part_id: part.id,
+              installation_id: installation.id,
+              description: part.name,
+              quantity: 1,
+              unit_price: Number(part.sale_price || 0),
+              unit_cost: 0,
+              position: 0,
+            };
+          })
+          .filter(Boolean);
+
+        if (quoteItems.length > 0) {
+          const { error: itemsError } = await supabase
+            .from("quote_items")
+            .insert(quoteItems);
+          if (itemsError) throw itemsError;
+        }
+      }
+
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quote_tickets"] });
+      
+      toast.success("Devis créé avec succès");
+      navigate({ to: "/quotes/$quoteId", params: { quoteId: quote.id } });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   };
 
   const createPO = async (quote: any) => {
@@ -408,6 +530,31 @@ function TicketDetail() {
                           <Input name="actions" placeholder="Actions réalisées" />
                         </div>
                         <Input name="conclusion" placeholder="Conclusion" />
+                        
+                        {/* Part Type Selection */}
+                        {availablePartTypes.length > 0 && (
+                          <div className="rounded-md border border-dashed border-orange-200 bg-orange-50 p-3">
+                            <Label className="text-xs font-semibold text-orange-900">
+                              ⚠️ Type de pièce défaillante (pour pré-remplir le devis)
+                            </Label>
+                            <Select 
+                              value={selectedPartType} 
+                              onValueChange={setSelectedPartType}
+                            >
+                              <SelectTrigger className="mt-2" name="problem_part_type">
+                                <SelectValue placeholder="Sélectionner le type de pièce en panne" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePartTypes.map((type) => (
+                                  <SelectItem key={type} value={type}>
+                                    {type}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
                         <div className="grid gap-2 md:grid-cols-3">
                           <Select name="reparation_reussie">
                             <SelectTrigger>
@@ -455,6 +602,9 @@ function TicketDetail() {
                           <p><b>Constat :</b> {report.constat}</p>
                           <p><b>Actions :</b> {report.actions_realisees}</p>
                           <p><b>Conclusion :</b> {report.conclusion}</p>
+                          {report.problem_part_type && (
+                            <p><b>Type de pièce défaillante :</b> {report.problem_part_type}</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -463,6 +613,18 @@ function TicketDetail() {
               </Card>
             );
           })}
+
+        {/* Create Quote Button - appears when report is done */}
+        {ticketReports.length > 0 && ticketQuotes.length === 0 && linkedQuotes.length === 0 && (
+          <Button 
+            onClick={createQuoteFromTicket} 
+            className="w-full"
+            size="lg"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Créer un devis depuis ce ticket
+          </Button>
+        )}
 
         {/* Devis */}
         {(ticketQuotes.length > 0 || linkedQuotes.length > 0) && (
