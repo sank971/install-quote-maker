@@ -554,6 +554,7 @@ function PartsPage() {
       sale_price: Number(fd.get("sale_price") ?? salePrice ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
       is_kit: isKit,
+      is_oversized: fd.get("is_oversized") === "on",
     });
     const supplierId = fd.get("supplier_id") as string | null;
     if (supplierId) {
@@ -1008,9 +1009,17 @@ function PartsPage() {
                   <option value="linear_meter">Au mètre linéaire</option>
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm">
                 <input name="is_kit" type="checkbox" defaultChecked={Boolean(edit?.is_kit)} />
                 Kit (référence de lot disponible dans les pièces)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="is_oversized"
+                  type="checkbox"
+                  defaultChecked={Boolean(edit?.is_oversized)}
+                />
+                Pièce hors gabarit
               </label>
             </div>
             <div>

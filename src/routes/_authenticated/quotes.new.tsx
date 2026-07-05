@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useList } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +30,7 @@ interface Item {
   parent_part_id?: string;
   pricing_unit?: string;
   relation_kind?: string;
+  is_oversized?: boolean;
 }
 
 function NewQuote() {
@@ -90,8 +91,6 @@ function NewQuote() {
   const contractRepairsIncluded = Boolean(contract?.repairs_included);
   const contractOnCallIncluded = Boolean(contract?.on_call_included);
   const kits = parts.filter((part: any) => part.is_kit);
-  const shouldUseContractWorkRates =
-    interventionReason === "damage_vandalism" || interventionReason === "new_installation";
   const effectiveLaborRate = Number(laborRate);
   const effectiveTravelCount = Math.max(0, Number(travelCount) || 0);
   const effectiveTravelFee = Number(travelFee);
@@ -103,8 +102,21 @@ function NewQuote() {
       setLaborRate(0);
       setTravelFee(0);
     } else {
-      setLaborRate(Number(c.hourly_rate ?? 65));
-      setTravelFee(Number(c.travel_fee ?? 0));
+      const usesOutOfContractRates = reason === "damage_vandalism" || reason === "new_installation";
+      setLaborRate(
+        Number(
+          (usesOutOfContractRates ? c.out_of_contract_hourly_rate : c.hourly_rate) ??
+            c.hourly_rate ??
+            65,
+        ),
+      );
+      setTravelFee(
+        Number(
+          (usesOutOfContractRates ? c.out_of_contract_travel_fee : c.travel_fee) ??
+            c.travel_fee ??
+            0,
+        ),
+      );
     }
 
     if (onCall) {
@@ -119,7 +131,7 @@ function NewQuote() {
 
     setShippingFee(Number(c.shipping_fee ?? 0));
     setWasteTreatmentFee(Number(c.waste_treatment_fee ?? 0));
-    setOversizedShippingFee(Number(c.oversized_shipping_fee ?? 0));
+    setOversizedShippingFee(0);
     setDumpEvacuationFee(Number(c.dump_evacuation_fee ?? 0));
     setLiftingEquipmentFee(Number(c.lifting_equipment_fee ?? 0));
   };
@@ -139,6 +151,15 @@ function NewQuote() {
     setIsOnCall(checked);
     applyContractPricing(contract, interventionReason, checked);
   };
+
+  const hasOversizedPart = items.some((item) => {
+    if (item.is_oversized) return true;
+    return Boolean(parts.find((part: any) => part.id === item.part_id)?.is_oversized);
+  });
+
+  useEffect(() => {
+    setOversizedShippingFee(hasOversizedPart && contract ? Number(contract.oversized_shipping_fee ?? 0) : 0);
+  }, [hasOversizedPart, contract]);
 
   const presentPartIds = useMemo(
     () =>
@@ -257,6 +278,9 @@ function NewQuote() {
   const getComponentPrice = (component: any) => {
     if (component.relation_kind === "kit_component") return 0;
     const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    if (component.relation_kind === "negotiated_option") {
+      return Number(component.negotiated_price ?? componentPart?.sale_price ?? 0);
+    }
     return Number(componentPart?.sale_price ?? 0);
   };
 
@@ -297,7 +321,7 @@ function NewQuote() {
   const cheapestCost = (partId: string) => {
     const offers = sp.filter((x: any) => x.part_id === partId);
     if (offers.length === 0) return 0;
-    return Math.min(...offers.map((o: any) => Number(o.purchase_price) + Number(o.shipping_cost)));
+    return Math.min(...offers.map((o: any) => Number(o.purchase_price)));
   };
 
   const buildPartItem = (
@@ -351,6 +375,7 @@ function NewQuote() {
         : Number(p.sale_price) * (1 - discount),
       unit_cost: componentCost ?? cheapestCost(p.id),
       pricing_unit: p.pricing_unit ?? "unit",
+      is_oversized: Boolean(p.is_oversized),
       ...patch,
     };
   };
@@ -566,6 +591,7 @@ function NewQuote() {
               reference: i.reference?.trim() || null,
               category: i.category || null,
               sale_price: i.unit_price,
+              is_oversized: Boolean(i.is_oversized),
             })
             .select()
             .single();
@@ -1021,6 +1047,16 @@ function NewQuote() {
                       />
                       Enregistrer cette nouvelle pièce et la rendre compatible avec ce modèle de
                       porte
+                    </label>
+                  )}
+                  {!i.part_id && (
+                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(i.is_oversized)}
+                        onChange={(e) => update(i.key, { is_oversized: e.target.checked })}
+                      />
+                      Pièce hors gabarit
                     </label>
                   )}
                   {contractDiscountPct > 0 && (

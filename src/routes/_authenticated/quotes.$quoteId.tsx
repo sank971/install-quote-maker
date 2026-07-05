@@ -53,6 +53,7 @@ type EditableItem = {
   parent_part_id?: string;
   pricing_unit?: string;
   relation_kind?: string;
+  is_oversized?: boolean;
 };
 
 function QuoteDetail() {
@@ -153,6 +154,7 @@ function QuoteDetail() {
         position: Number(item.position ?? index),
         parent_part_id: item.parent_part_id ?? undefined,
         relation_kind: item.relation_kind ?? undefined,
+        is_oversized: Boolean(parts.find((part: any) => part.id === item.part_id)?.is_oversized),
       })),
     );
   }, [items, isEditing]);
@@ -274,7 +276,7 @@ function QuoteDetail() {
     const offers = supplierParts.filter((row: any) => row.part_id === partId);
     if (offers.length === 0) return 0;
     return Math.min(
-      ...offers.map((offer: any) => Number(offer.purchase_price) + Number(offer.shipping_cost)),
+      ...offers.map((offer: any) => Number(offer.purchase_price)),
     );
   };
   const buildEditPartItem = (
@@ -330,6 +332,7 @@ function QuoteDetail() {
         : Number(part.sale_price) * (1 - discount),
       unit_cost: componentCost ?? cheapestCost(part.id),
       pricing_unit: part.pricing_unit ?? "unit",
+      is_oversized: Boolean(part.is_oversized),
       position: editItems.length,
       ...patch,
     };
@@ -337,6 +340,9 @@ function QuoteDetail() {
   const getEditComponentPrice = (component: any) => {
     if (component.relation_kind === "kit_component") return 0;
     const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    if (component.relation_kind === "negotiated_option") {
+      return Number(component.negotiated_price ?? componentPart?.sale_price ?? 0);
+    }
     return Number(componentPart?.sale_price ?? 0);
   };
 
@@ -404,6 +410,59 @@ function QuoteDetail() {
     toast.success("Statut du devis mis à jour");
   };
 
+
+  const applyEditContractPricing = (
+    contractRow: any,
+    reason = editQuote.intervention_reason,
+    onCall = editQuote.is_on_call,
+  ) => {
+    if (!contractRow) return;
+    const usesOutOfContractRates = reason === "damage_vandalism" || reason === "new_installation";
+    let laborRate = Number(
+      (usesOutOfContractRates ? contractRow.out_of_contract_hourly_rate : contractRow.hourly_rate) ??
+        contractRow.hourly_rate ??
+        0,
+    );
+    let travelFee = Number(
+      (usesOutOfContractRates ? contractRow.out_of_contract_travel_fee : contractRow.travel_fee) ??
+        contractRow.travel_fee ??
+        0,
+    );
+
+    if (reason === "standard_repair" && contractRow.repairs_included) {
+      laborRate = 0;
+      travelFee = 0;
+    }
+
+    if (onCall) {
+      if (contractRow.on_call_included) {
+        laborRate = 0;
+        travelFee = 0;
+      } else {
+        laborRate = Number(contractRow.on_call_hourly_rate ?? contractRow.hourly_rate ?? laborRate);
+        travelFee = Number(contractRow.on_call_travel_fee ?? contractRow.travel_fee ?? travelFee);
+      }
+    }
+
+    setEditQuote((current: any) => ({
+      ...current,
+      labor_rate: laborRate,
+      travel_fee: travelFee,
+      shipping_fee: Number(contractRow.shipping_fee ?? 0),
+      waste_treatment_fee: Number(contractRow.waste_treatment_fee ?? 0),
+      oversized_shipping_fee: 0,
+      dump_evacuation_fee: Number(contractRow.dump_evacuation_fee ?? 0),
+      lifting_equipment_fee: Number(contractRow.lifting_equipment_fee ?? 0),
+    }));
+  };
+
+  const hasEditOversizedPart = editItems.some((item) => {
+    if (item.is_oversized) return true;
+    return Boolean(parts.find((part: any) => part.id === item.part_id)?.is_oversized);
+  });
+
+
+
   const removeEditItem = (key: string) =>
     setEditItems((current) => {
       const removed = current.find((item) => item.key === key);
@@ -452,7 +511,10 @@ function QuoteDetail() {
           travel_fee: editQuote.travel_fee,
           shipping_fee: editQuote.shipping_fee,
           waste_treatment_fee: editQuote.waste_treatment_fee,
-          oversized_shipping_fee: editQuote.oversized_shipping_fee,
+          oversized_shipping_fee:
+            hasEditOversizedPart && editContract
+              ? Number(editContract.oversized_shipping_fee ?? 0)
+              : 0,
           dump_evacuation_fee: editQuote.dump_evacuation_fee,
           lifting_equipment_fee: editQuote.lifting_equipment_fee,
           vat_rate: editQuote.vat_rate,
@@ -745,12 +807,16 @@ function QuoteDetail() {
                 <Label>Contrat appliqué</Label>
                 <select
                   value={editQuote.contract_id ?? ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const nextContract = contracts.find(
+                      (contractRow: any) => contractRow.id === event.target.value,
+                    );
                     setEditQuote((current: any) => ({
                       ...current,
                       contract_id: event.target.value,
-                    }))
-                  }
+                    }));
+                    applyEditContractPricing(nextContract, editQuote.intervention_reason, editQuote.is_on_call);
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">Aucun</option>
@@ -795,12 +861,14 @@ function QuoteDetail() {
                 <Label>Motif d’intervention</Label>
                 <select
                   value={editQuote.intervention_reason ?? "standard_repair"}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const reason = event.target.value;
                     setEditQuote((current: any) => ({
                       ...current,
-                      intervention_reason: event.target.value,
-                    }))
-                  }
+                      intervention_reason: reason,
+                    }));
+                    applyEditContractPricing(editContract, reason, editQuote.is_on_call);
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="standard_repair">Réparation hors casse</option>
@@ -812,12 +880,14 @@ function QuoteDetail() {
                 <input
                   type="checkbox"
                   checked={Boolean(editQuote.is_on_call)}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.target.checked;
                     setEditQuote((current: any) => ({
                       ...current,
-                      is_on_call: event.target.checked,
-                    }))
-                  }
+                      is_on_call: checked,
+                    }));
+                    applyEditContractPricing(editContract, editQuote.intervention_reason, checked);
+                  }}
                 />
                 Astreinte
               </label>

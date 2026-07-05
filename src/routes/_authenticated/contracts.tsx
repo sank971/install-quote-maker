@@ -69,6 +69,8 @@ function ContractsPage() {
       client_id: fd.get("client_id") || null,
       hourly_rate: fd.get("hourly_rate") ? Number(fd.get("hourly_rate")) : null,
       travel_fee: fd.get("travel_fee") ? Number(fd.get("travel_fee")) : null,
+      out_of_contract_hourly_rate: asNumberOrNull(fd.get("out_of_contract_hourly_rate")),
+      out_of_contract_travel_fee: asNumberOrNull(fd.get("out_of_contract_travel_fee")),
       flat_fee: asNumberOrNull(fd.get("flat_fee")),
       parts_discount_pct: Number(fd.get("parts_discount_pct") ?? 0),
       on_call_included: fd.get("on_call_included") === "on",
@@ -231,6 +233,8 @@ function ContractsPage() {
                       <div className="mt-1 text-xs text-muted-foreground">
                         {c.hourly_rate && `${c.hourly_rate}€/h · `}
                         {c.travel_fee != null && `Dépl. ${c.travel_fee}€ · `}
+                        {c.out_of_contract_hourly_rate != null &&
+                          `Hors contrat ${c.out_of_contract_hourly_rate}€/h · `}
                         {Number(c.parts_discount_pct) > 0 &&
                           `Remise pièces ${c.parts_discount_pct}%`}
                         {c.repairs_included && " · Réparations hors casse incluses"}
@@ -352,6 +356,24 @@ function ContractsPage() {
                   type="number"
                   step="0.01"
                   defaultValue={edit?.travel_fee ?? ""}
+                />
+              </div>
+              <div>
+                <Label>Tarif horaire hors contrat (€)</Label>
+                <Input
+                  name="out_of_contract_hourly_rate"
+                  type="number"
+                  step="0.01"
+                  defaultValue={edit?.out_of_contract_hourly_rate ?? ""}
+                />
+              </div>
+              <div>
+                <Label>Déplacement hors contrat (€)</Label>
+                <Input
+                  name="out_of_contract_travel_fee"
+                  type="number"
+                  step="0.01"
+                  defaultValue={edit?.out_of_contract_travel_fee ?? ""}
                 />
               </div>
               <div>
