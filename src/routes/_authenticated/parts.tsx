@@ -190,6 +190,55 @@ function PartsPage() {
         parts.map((p: any) => [`${(p.reference || "").toLowerCase()}|${p.name.toLowerCase()}`, p]),
       );
       const supplierCache = new Map(suppliers.map((s: any) => [s.name.toLowerCase(), s]));
+      const brandCache = new Map(brands.map((brand: any) => [normalizeName(brand.name), brand]));
+      const typeCache = new Map(types.map((type: any) => [normalizeName(type.name), type]));
+      const modelCache = new Map(
+        models.map((model: any) => [
+          `${model.brand_id}|${model.type_id ?? ""}|${normalizeName(model.name)}`,
+          model,
+        ]),
+      );
+      const getOrCreateBrand = async (name: string) => {
+        const key = normalizeName(name);
+        if (!key) return null;
+        const cached = brandCache.get(key);
+        if (cached) return cached;
+        const { data, error } = await (supabase.from("brands") as any)
+          .upsert({ owner_id, name: name.trim() }, { onConflict: "owner_id,name" })
+          .select()
+          .single();
+        if (error) raiseImportError(`Impossible de créer la marque ${name}`, error);
+        brandCache.set(key, data);
+        return data;
+      };
+      const getOrCreateType = async (name: string) => {
+        const key = normalizeName(name);
+        if (!key) return null;
+        const cached = typeCache.get(key);
+        if (cached) return cached;
+        const { data, error } = await (supabase.from("installation_types") as any)
+          .upsert({ owner_id, name: name.trim() }, { onConflict: "owner_id,name" })
+          .select()
+          .single();
+        if (error) raiseImportError(`Impossible de créer le type de porte ${name}`, error);
+        typeCache.set(key, data);
+        return data;
+      };
+      const getOrCreateModel = async (name: string, brand: any, type: any | null) => {
+        const key = `${brand.id}|${type?.id ?? ""}|${normalizeName(name)}`;
+        const cached = modelCache.get(key);
+        if (cached) return cached;
+        const { data, error } = await (supabase.from("models") as any)
+          .upsert(
+            { owner_id, brand_id: brand.id, type_id: type?.id ?? null, name: name.trim() },
+            { onConflict: "owner_id,brand_id,type_id,name" },
+          )
+          .select()
+          .single();
+        if (error) raiseImportError(`Impossible de créer le modèle de porte ${name}`, error);
+        modelCache.set(key, data);
+        return data;
+      };
       for (const row of rows) {
         const partName = pick(
           row,
@@ -220,11 +269,14 @@ function PartsPage() {
               (normalizedReference && (p.reference || "").toLowerCase() === normalizedReference) ||
               p.name.toLowerCase() === normalizedPartName,
           );
+        const partBrandName = pick(row, "marque", "piece_marque", "marque_piece", "brand");
+        const partBrand = partBrandName ? await getOrCreateBrand(partBrandName) : null;
         const partPayload = {
           owner_id,
           name: partName,
           reference: reference || null,
           category: pick(row, "piece_categorie", "category") || null,
+          brand_id: partBrand?.id ?? null,
           description: pick(row, "description") || null,
           sale_price: parseCsvNumber(pick(row, "prix_vente", "sale_price")),
           pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
@@ -258,73 +310,72 @@ function PartsPage() {
         const compatibleModelNames = splitCsvList(
           pick(row, "modeles_portes_compatibles", "modele_porte", "modele_de_porte", "door_model"),
         );
-        const compatibleTypes = types.filter((type: any) =>
-          compatibleTypeNames.some((name) => normalizeName(name) === normalizeName(type.name)),
-        );
+        const compatibleTypes = (
+          await Promise.all(compatibleTypeNames.map((name) => getOrCreateType(name)))
+        ).filter(Boolean);
+        const compatibleBrands = (
+          await Promise.all(compatibleBrandNames.map((name) => getOrCreateBrand(name)))
+        ).filter(Boolean);
         if (compatibleTypes.length > 0) {
-          const existingTypeIds = new Set(
-            typeCompat
-              .filter((compat: any) => compat.part_id === part.id)
-              .map((compat: any) => compat.type_id),
-          );
-          const typeRows = compatibleTypes
-            .filter((type: any) => !existingTypeIds.has(type.id))
-            .map((type: any) => ({ owner_id, part_id: part.id, type_id: type.id }));
-          if (typeRows.length > 0) {
-            const { error } = await supabase
-              .from("part_type_compat")
-              .upsert(typeRows, { onConflict: "part_id,type_id" });
-            if (error)
-              raiseImportError(
-                `Impossible de créer les compatibilités type pour ${partName}`,
-                error,
-              );
+          const typeRows = compatibleTypes.map((type: any) => ({
+            owner_id,
+            part_id: part.id,
+            type_id: type.id,
+          }));
+          const { error } = await supabase
+            .from("part_type_compat")
+            .upsert(typeRows, { onConflict: "part_id,type_id" });
+          if (error)
+            raiseImportError(`Impossible de créer les compatibilités type pour ${partName}`, error);
+        }
+        const compatibleModels = [];
+        for (const modelLabel of compatibleModelNames) {
+          const labelParts = modelLabel
+            .split(" - ")
+            .map((item) => item.trim())
+            .filter(Boolean);
+          const explicitModelName = labelParts.at(-1) ?? modelLabel;
+          const labelBrand = labelParts.length >= 3 ? await getOrCreateBrand(labelParts[0]) : null;
+          const labelType = labelParts.length >= 3 ? await getOrCreateType(labelParts[1]) : null;
+          const candidateBrands = labelBrand ? [labelBrand] : compatibleBrands;
+          const candidateTypes = labelType ? [labelType] : compatibleTypes;
+          const existingMatches = Array.from(modelCache.values()).filter((model: any) => {
+            const sameName = normalizeName(model.name) === normalizeName(explicitModelName);
+            const sameBrand =
+              candidateBrands.length === 0 ||
+              candidateBrands.some((brand: any) => brand.id === model.brand_id);
+            const sameType =
+              candidateTypes.length === 0 ||
+              candidateTypes.some((type: any) => type.id === model.type_id);
+            return sameName && sameBrand && sameType;
+          });
+          compatibleModels.push(...existingMatches);
+          if (candidateBrands.length === 0) continue;
+          for (const brand of candidateBrands) {
+            const typesToCreate = candidateTypes.length > 0 ? candidateTypes : [null];
+            for (const type of typesToCreate) {
+              const model = await getOrCreateModel(explicitModelName, brand, type);
+              if (model) compatibleModels.push(model);
+            }
           }
         }
-        const compatibleTypeIds = new Set(compatibleTypes.map((type: any) => type.id));
-        const compatibleBrandIds = new Set(
-          brands
-            .filter((brand: any) =>
-              compatibleBrandNames.some(
-                (name) => normalizeName(name) === normalizeName(brand.name),
-              ),
-            )
-            .map((brand: any) => brand.id),
+        const uniqueCompatibleModels = Array.from(
+          new Map(compatibleModels.map((model: any) => [model.id, model])).values(),
         );
-        const compatibleModels = models.filter((model: any) => {
-          const modelBrand = brands.find((brand: any) => brand.id === model.brand_id)?.name ?? "";
-          const modelType = types.find((type: any) => type.id === model.type_id)?.name ?? "";
-          const modelLabels = [
-            model.name,
-            [modelBrand, model.name].filter(Boolean).join(" - "),
-            [modelType, model.name].filter(Boolean).join(" - "),
-            [modelBrand, modelType, model.name].filter(Boolean).join(" - "),
-          ].map(normalizeName);
-          return (
-            compatibleModelNames.some((name) => modelLabels.includes(normalizeName(name))) &&
-            (compatibleBrandIds.size === 0 || compatibleBrandIds.has(model.brand_id)) &&
-            (compatibleTypeIds.size === 0 || compatibleTypeIds.has(model.type_id))
-          );
-        });
-        if (compatibleModels.length > 0) {
-          const existingModelIds = new Set(
-            modelCompat
-              .filter((compat: any) => compat.part_id === part.id)
-              .map((compat: any) => compat.model_id),
-          );
-          const modelRows = compatibleModels
-            .filter((model: any) => !existingModelIds.has(model.id))
-            .map((model: any) => ({ owner_id, part_id: part.id, model_id: model.id }));
-          if (modelRows.length > 0) {
-            const { error } = await supabase
-              .from("part_model_compat")
-              .upsert(modelRows, { onConflict: "part_id,model_id" });
-            if (error)
-              raiseImportError(
-                `Impossible de créer les compatibilités modèle pour ${partName}`,
-                error,
-              );
-          }
+        if (uniqueCompatibleModels.length > 0) {
+          const modelRows = uniqueCompatibleModels.map((model: any) => ({
+            owner_id,
+            part_id: part.id,
+            model_id: model.id,
+          }));
+          const { error } = await supabase
+            .from("part_model_compat")
+            .upsert(modelRows, { onConflict: "part_id,model_id" });
+          if (error)
+            raiseImportError(
+              `Impossible de créer les compatibilités modèle pour ${partName}`,
+              error,
+            );
         }
 
         const supplierName = pick(
@@ -393,6 +444,9 @@ function PartsPage() {
       qc.invalidateQueries({ queryKey: ["parts"] });
       qc.invalidateQueries({ queryKey: ["suppliers"] });
       qc.invalidateQueries({ queryKey: ["supplier_parts"] });
+      qc.invalidateQueries({ queryKey: ["brands"] });
+      qc.invalidateQueries({ queryKey: ["installation_types"] });
+      qc.invalidateQueries({ queryKey: ["models"] });
       qc.invalidateQueries({ queryKey: ["part_type_compat"] });
       qc.invalidateQueries({ queryKey: ["part_model_compat"] });
       toast.success("Pièces, fournisseurs et compatibilités importés");
