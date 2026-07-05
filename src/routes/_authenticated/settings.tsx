@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { downloadCsv } from "@/lib/csv";
 import { Download, Plus, Trash2, Pencil, X } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -169,6 +170,20 @@ function SettingsPage() {
   const effectivePartPricing = partPricingDraft ??
     partPricingSetting?.value ?? { markupTiers: DEFAULT_PART_MARKUP_TIERS, annualIncreasePct: 0 };
   const partMarkupTiers = effectivePartPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
+
+  const saveRuleDraft = () => {
+    try {
+      upRule.mutate({
+        code: ruleDraft.code,
+        name: ruleDraft.name,
+        conditions: JSON.parse(ruleDraft.conditions || "[]"),
+        actions: JSON.parse(ruleDraft.actions || "[]"),
+        is_active: true,
+      });
+    } catch {
+      toast.error("Le JSON de la règle est invalide");
+    }
+  };
 
   const updatePartMarkupTier = (index: number, patch: any) => {
     const tiers = [...partMarkupTiers];
@@ -393,18 +408,7 @@ function SettingsPage() {
                 onChange={(e) => setRuleDraft({ ...ruleDraft, actions: e.target.value })}
                 placeholder='Actions JSON [{"type":"add_part_family","part_family":"Ressorts","quantity":2}]'
               />
-              <Button
-                size="sm"
-                onClick={() =>
-                  upRule.mutate({
-                    code: ruleDraft.code,
-                    name: ruleDraft.name,
-                    conditions: JSON.parse(ruleDraft.conditions || "[]"),
-                    actions: JSON.parse(ruleDraft.actions || "[]"),
-                    is_active: true,
-                  })
-                }
-              >
+              <Button size="sm" onClick={saveRuleDraft}>
                 Enregistrer la règle
               </Button>
             </div>

@@ -8,6 +8,13 @@ export type ErpPart = {
   technical_specs?: Record<string, unknown> | null;
 };
 
+export type PartCompatibility = {
+  part_id: string;
+  target_kind: string;
+  target_id?: string | null;
+  target_value?: string | null;
+};
+
 export type SupplierOffer = {
   id: string;
   supplier_id: string;
@@ -43,6 +50,8 @@ export type BomItem = {
   selection_strategy?: string | null;
   required?: boolean;
   position?: number;
+  quantity?: number;
+  constraints?: Record<string, unknown> | null;
 };
 
 export type InstallationCalculationInput = {

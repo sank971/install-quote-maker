@@ -12,6 +12,7 @@ import { Boxes, CheckCircle2, ChevronLeft, Circle, Plus, Trash2, Wand2 } from "l
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calculateInstallationQuote } from "@/lib/erp/installation-calculator";
+import type { CalculationLog } from "@/lib/erp/types";
 
 export const Route = createFileRoute("/_authenticated/quotes/new")({
   component: NewQuote,
@@ -33,6 +34,7 @@ interface Item {
   pricing_unit?: string;
   relation_kind?: string;
   is_oversized?: boolean;
+  supplier_id?: string;
 }
 
 function NewQuote() {
@@ -71,6 +73,7 @@ function NewQuote() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: partCompatibilities = [] } = useList<any>("part_compatibilities");
 
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -91,6 +94,7 @@ function NewQuote() {
   const [liftingEquipmentFee, setLiftingEquipmentFee] = useState(0);
   const [vatRate, setVatRate] = useState(20);
   const [notes, setNotes] = useState("");
+  const [calculationLogs, setCalculationLogs] = useState<CalculationLog[]>([]);
   const [busy, setBusy] = useState(false);
 
   const clientSites = sites.filter((s: any) => s.client_id === clientId);
@@ -540,6 +544,7 @@ function NewQuote() {
       formulas: activeFormulas,
       rules,
       bomItems: configuredBomItems,
+      compatibilities: partCompatibilities,
     });
     setItems((prev) => [
       ...prev,
@@ -549,6 +554,7 @@ function NewQuote() {
         ...line,
       })),
     ]);
+    setCalculationLogs((current) => [...current, ...result.logs]);
     setNotes((current) =>
       [current, "Journal des calculs:", ...result.logs.map((log) => `- ${log.message}`)]
         .filter(Boolean)
@@ -708,6 +714,19 @@ function NewQuote() {
         );
         if (qiError) throw qiError;
       }
+      if (calculationLogs.length > 0) {
+        const { error: logError } = await supabase.from("quote_calculation_logs").insert(
+          calculationLogs.map((log) => ({
+            owner_id,
+            quote_id: quote.id,
+            session_key: number,
+            step: log.step,
+            message: log.message,
+            details: log.details ?? {},
+          })),
+        );
+        if (logError) throw logError;
+      }
       if (resolvedItems.length > 0) {
         const rows = resolvedItems.map((i, idx) => ({
           owner_id,
@@ -722,6 +741,7 @@ function NewQuote() {
           position: idx,
           parent_part_id: i.parent_part_id ?? null,
           relation_kind: i.relation_kind ?? null,
+          supplier_id: i.supplier_id ?? null,
         }));
         const { error: e2 } = await supabase.from("quote_items").insert(rows);
         if (e2) throw e2;
