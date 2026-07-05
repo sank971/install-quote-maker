@@ -900,6 +900,7 @@ export type Database = {
           shipping_fee: number
           site_id: string | null
           status: string
+          travel_count: number
           travel_fee: number | null
           updated_at: string
           vat_rate: number
@@ -925,6 +926,7 @@ export type Database = {
           shipping_fee?: number
           site_id?: string | null
           status?: string
+          travel_count?: number
           travel_fee?: number | null
           updated_at?: string
           vat_rate?: number
@@ -950,6 +952,7 @@ export type Database = {
           shipping_fee?: number
           site_id?: string | null
           status?: string
+          travel_count?: number
           travel_fee?: number | null
           updated_at?: string
           vat_rate?: number

@@ -62,6 +62,7 @@ function NewQuote() {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
   const [laborHours, setLaborHours] = useState(0);
+  const [travelCount, setTravelCount] = useState(1);
   const [laborRate, setLaborRate] = useState(65);
   const [travelFee, setTravelFee] = useState(0);
   const [interventionReason, setInterventionReason] = useState("standard_repair");
@@ -91,6 +92,7 @@ function NewQuote() {
   const shouldUseContractWorkRates =
     interventionReason === "damage_vandalism" || interventionReason === "new_installation";
   const effectiveLaborRate = Number(laborRate);
+  const effectiveTravelCount = Math.max(0, Number(travelCount) || 0);
   const effectiveTravelFee = Number(travelFee);
 
   const applyContractPricing = (c: any, reason = interventionReason, onCall = isOnCall) => {
@@ -430,7 +432,7 @@ function NewQuote() {
   const remove = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
 
   const partsHT = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const laborHT = laborHours * effectiveLaborRate;
+  const laborHT = laborHours * effectiveTravelCount * effectiveLaborRate;
   const feesHT =
     effectiveTravelFee +
     shippingFee +
@@ -479,6 +481,7 @@ function NewQuote() {
           installation_id: installationId || null,
           contract_id: contractId || null,
           labor_hours: laborHours,
+          travel_count: effectiveTravelCount,
           labor_rate: effectiveLaborRate,
           travel_fee: effectiveTravelFee,
           intervention_reason: interventionReason,
@@ -987,7 +990,17 @@ function NewQuote() {
                 />
               </div>
               <div>
-                <Label>Tarif €/h</Label>
+                <Label>Nombre de déplacements</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={travelCount}
+                  onChange={(e) => setTravelCount(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>Tarif €/h/technicien</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1085,7 +1098,10 @@ function NewQuote() {
                 </div>
               )}
               <Row label="Pièces HT" value={partsHT} />
-              <Row label="Main-d'œuvre" value={laborHT} />
+              <Row
+                label={`Main-d'œuvre (${laborHours} h/technicien × ${effectiveTravelCount} déplacement${effectiveTravelCount > 1 ? "s" : ""})`}
+                value={laborHT}
+              />
               <Row label="Déplacement" value={travelFee} />
               <Row label="Frais de port" value={shippingFee} />
               <Row label="Traitement déchets" value={wasteTreatmentFee} />
