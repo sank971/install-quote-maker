@@ -611,6 +611,7 @@ export type Database = {
           component_part_id: string
           created_at: string
           notes: string | null
+          negotiated_price: number | null
           owner_id: string
           parent_part_id: string
           position: number
@@ -621,6 +622,7 @@ export type Database = {
           component_part_id: string
           created_at?: string
           notes?: string | null
+          negotiated_price?: number | null
           owner_id: string
           parent_part_id: string
           position?: number
@@ -631,6 +633,7 @@ export type Database = {
           component_part_id?: string
           created_at?: string
           notes?: string | null
+          negotiated_price?: number | null
           owner_id?: string
           parent_part_id?: string
           position?: number

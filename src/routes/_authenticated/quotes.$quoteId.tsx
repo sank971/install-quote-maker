@@ -349,6 +349,11 @@ function QuoteDetail() {
     if (isUnitAccessory && componentPart) {
       componentPatch.unit_price = Number(componentPart.sale_price);
     }
+    if (component.relation_kind === "negotiated_option") {
+      componentPatch.unit_price = Number(
+        component.negotiated_price ?? componentPart?.sale_price ?? 0,
+      );
+    }
     const componentItem = buildEditPartItem(
       component.component_part_id,
       componentPatch,

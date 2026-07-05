@@ -116,6 +116,7 @@ function PartsPage() {
   const [componentDraft, setComponentDraft] = useState({
     quantity: 1,
     relation_kind: "accessory",
+    negotiated_price: 0,
     notes: "",
   });
   const [selectedComponentPartIds, setSelectedComponentPartIds] = useState<string[]>([]);
@@ -581,7 +582,12 @@ function PartsPage() {
     if (shouldOpenCompositionAfterSave) {
       setComponentsOpen(savedPart);
       setSelectedComponentPartIds([]);
-      setComponentDraft({ quantity: 1, relation_kind: "kit_component", notes: "" });
+      setComponentDraft({
+        quantity: 1,
+        relation_kind: "kit_component",
+        negotiated_price: 0,
+        notes: "",
+      });
       toast.info("Ajoutez maintenant les pièces qui composent le kit et ses options");
     }
   };
@@ -637,11 +643,15 @@ function PartsPage() {
         quantity: Number(componentDraft.quantity) || 1,
         relation_kind: componentDraft.relation_kind,
         position: siblings.length + index,
+        negotiated_price:
+          componentDraft.relation_kind === "negotiated_option"
+            ? Number(componentDraft.negotiated_price) || 0
+            : null,
         notes: componentDraft.notes || null,
       })),
     );
     if (error) return toast.error(error.message);
-    setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
+    setComponentDraft({ quantity: 1, relation_kind: "accessory", negotiated_price: 0, notes: "" });
     setSelectedComponentPartIds([]);
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success(
@@ -670,7 +680,12 @@ function PartsPage() {
   const updateComponent = async (
     parentPartId: string,
     componentPartId: string,
-    patch: Partial<{ quantity: number; relation_kind: string; notes: string | null }>,
+    patch: Partial<{
+      quantity: number;
+      relation_kind: string;
+      negotiated_price: number | null;
+      notes: string | null;
+    }>,
   ) => {
     const { error } = await (supabase.from("part_components" as any) as any)
       .update(patch)
@@ -827,6 +842,7 @@ function PartsPage() {
                         setComponentDraft({
                           quantity: 1,
                           relation_kind: p.is_kit ? "kit_component" : "accessory",
+                          negotiated_price: 0,
                           notes: "",
                         });
                       }}
@@ -876,9 +892,9 @@ function PartsPage() {
           <form onSubmit={submit} className="space-y-3">
             {!edit?.id && edit?.is_kit && (
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-muted-foreground">
-                Créez d’abord la référence du kit. Après l’enregistrement, la fenêtre de
-                composition s’ouvrira automatiquement pour ajouter les pièces incluses, les options
-                au prix négocié et les accessoires facturés à l’unité.
+                Créez d’abord la référence du kit. Après l’enregistrement, la fenêtre de composition
+                s’ouvrira automatiquement pour ajouter les pièces incluses, les options au prix
+                négocié et les accessoires facturés à l’unité.
               </div>
             )}
             <div>
@@ -1017,7 +1033,12 @@ function PartsPage() {
           if (!o) {
             setComponentsOpen(null);
             setSelectedComponentPartIds([]);
-            setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
+            setComponentDraft({
+              quantity: 1,
+              relation_kind: "accessory",
+              negotiated_price: 0,
+              notes: "",
+            });
           }
         }}
       >
@@ -1042,7 +1063,7 @@ function PartsPage() {
                 return (
                   <div
                     key={component.component_part_id}
-                    className="grid gap-2 rounded-md border border-border/60 p-2 text-sm sm:grid-cols-[1fr_90px_220px_auto]"
+                    className="grid gap-2 rounded-md border border-border/60 p-2 text-sm sm:grid-cols-[1fr_90px_220px_130px_auto]"
                   >
                     <div>
                       <div className="font-medium">{part?.name ?? "Pièce inconnue"}</div>
@@ -1068,6 +1089,10 @@ function PartsPage() {
                       onChange={(e) =>
                         updateComponent(componentsOpen.id, component.component_part_id, {
                           relation_kind: e.target.value,
+                          negotiated_price:
+                            e.target.value === "negotiated_option"
+                              ? Number(component.negotiated_price ?? part?.sale_price ?? 0)
+                              : null,
                         })
                       }
                       aria-label={`Type de lien de ${part?.name ?? "la pièce"}`}
@@ -1077,6 +1102,25 @@ function PartsPage() {
                       <option value="negotiated_option">Option prix négocié</option>
                       <option value="accessory">Accessoire à l’unité</option>
                     </select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      defaultValue={component.negotiated_price ?? ""}
+                      placeholder={
+                        component.relation_kind === "negotiated_option" ? "Prix option €" : "—"
+                      }
+                      disabled={component.relation_kind !== "negotiated_option"}
+                      aria-label={`Prix négocié de ${part?.name ?? "l’option"}`}
+                      onBlur={(e) =>
+                        updateComponent(componentsOpen.id, component.component_part_id, {
+                          negotiated_price:
+                            component.relation_kind === "negotiated_option"
+                              ? Number(e.target.value) || 0
+                              : null,
+                        })
+                      }
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1133,7 +1177,7 @@ function PartsPage() {
                   })}
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-[90px_220px_1fr_auto]">
+            <div className="grid gap-2 sm:grid-cols-[90px_220px_140px_1fr_auto]">
               <Input
                 type="number"
                 step="0.01"
@@ -1155,6 +1199,20 @@ function PartsPage() {
                 <option value="negotiated_option">Option prix négocié</option>
                 <option value="accessory">Accessoire à l’unité</option>
               </select>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={componentDraft.negotiated_price}
+                onChange={(e) =>
+                  setComponentDraft((draft) => ({
+                    ...draft,
+                    negotiated_price: Number(e.target.value),
+                  }))
+                }
+                placeholder="Prix option €"
+                disabled={componentDraft.relation_kind !== "negotiated_option"}
+              />
               <Input
                 value={componentDraft.notes}
                 onChange={(e) =>
