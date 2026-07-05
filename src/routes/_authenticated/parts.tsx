@@ -30,6 +30,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
+const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
+
+const raiseImportError = (message: string, error: unknown) => {
+  console.error(message, error);
+  toast.error(message);
+  throw new Error(message);
+};
+
 export const Route = createFileRoute("/_authenticated/parts")({
   component: PartsPage,
 });
@@ -132,59 +140,125 @@ function PartsPage() {
       );
       const supplierCache = new Map(suppliers.map((s: any) => [s.name.toLowerCase(), s]));
       for (const row of rows) {
-        const partName = pick(row, "piece_nom", "part_name", "nom");
+        const partName = pick(
+          row,
+          "piece_nom",
+          "pièce_nom",
+          "piece",
+          "pièce",
+          "part_name",
+          "nom",
+          "name",
+        );
         if (!partName) continue;
-        const reference = pick(row, "piece_reference", "reference");
-        const partKey = `${reference.toLowerCase()}|${partName.toLowerCase()}`;
-        let part = partCache.get(partKey);
+        const reference = pick(
+          row,
+          "piece_reference",
+          "pièce_reference",
+          "reference",
+          "ref_piece",
+          "réf_pièce",
+        );
+        const normalizedPartName = partName.toLowerCase();
+        const normalizedReference = reference.toLowerCase();
+        const partKey = `${normalizedReference}|${normalizedPartName}`;
+        let part =
+          partCache.get(partKey) ??
+          parts.find(
+            (p: any) =>
+              (normalizedReference && (p.reference || "").toLowerCase() === normalizedReference) ||
+              p.name.toLowerCase() === normalizedPartName,
+          );
         const partPayload = {
           owner_id,
           name: partName,
           reference: reference || null,
           category: pick(row, "piece_categorie", "category") || null,
           description: pick(row, "description") || null,
-          sale_price: Number(pick(row, "prix_vente", "sale_price") || 0),
+          sale_price: parseCsvNumber(pick(row, "prix_vente", "sale_price")),
           pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
         };
-        if (part) await (supabase.from("parts") as any).update(partPayload).eq("id", part.id);
-        else {
-          const { data } = await (supabase.from("parts") as any)
+        if (part) {
+          const { data, error } = await (supabase.from("parts") as any)
+            .update(partPayload)
+            .eq("id", part.id)
+            .select()
+            .single();
+          if (error) raiseImportError(`Impossible de mettre à jour la pièce ${partName}`, error);
+          part = data;
+        } else {
+          const { data, error } = await (supabase.from("parts") as any)
             .insert(partPayload)
             .select()
             .single();
+          if (error) raiseImportError(`Impossible de créer la pièce ${partName}`, error);
           part = data;
-          partCache.set(partKey, part);
         }
-        const supplierName = pick(row, "fournisseur_nom", "supplier_name");
+        partCache.set(partKey, part);
+        if (normalizedReference)
+          partCache.set(`${normalizedReference}|${normalizedPartName}`, part);
+        const supplierName = pick(
+          row,
+          "fournisseur_nom",
+          "fournisseur",
+          "supplier_name",
+          "supplier",
+          "nom_fournisseur",
+        );
         if (!supplierName || !part) continue;
         let supplier = supplierCache.get(supplierName.toLowerCase());
         const supplierPayload = {
           owner_id,
           name: supplierName,
-          email: pick(row, "fournisseur_email") || null,
-          phone: pick(row, "fournisseur_telephone") || null,
+          email:
+            pick(row, "fournisseur_email", "email_fournisseur", "supplier_email", "email") || null,
+          phone:
+            pick(
+              row,
+              "fournisseur_telephone",
+              "fournisseur_téléphone",
+              "telephone_fournisseur",
+              "supplier_phone",
+            ) || null,
         };
-        if (!supplier) {
-          const { data } = await (supabase.from("suppliers") as any)
+        if (supplier) {
+          const { data, error } = await (supabase.from("suppliers") as any)
+            .update(supplierPayload)
+            .eq("id", supplier.id)
+            .select()
+            .single();
+          if (error)
+            raiseImportError(`Impossible de mettre à jour le fournisseur ${supplierName}`, error);
+          supplier = data;
+        } else {
+          const { data, error } = await (supabase.from("suppliers") as any)
             .insert(supplierPayload)
             .select()
             .single();
+          if (error) raiseImportError(`Impossible de créer le fournisseur ${supplierName}`, error);
           supplier = data;
-          supplierCache.set(supplierName.toLowerCase(), supplier);
         }
-        await (supabase.from("supplier_parts") as any).upsert(
+        supplierCache.set(supplierName.toLowerCase(), supplier);
+        const { error: supplierPartError } = await (supabase.from("supplier_parts") as any).upsert(
           {
             owner_id,
             supplier_id: supplier.id,
             part_id: part.id,
             supplier_ref: pick(row, "ref_fournisseur") || null,
-            purchase_price: Number(pick(row, "prix_achat") || 0),
-            shipping_cost: Number(pick(row, "frais_port") || 0),
-            lead_time_days: pick(row, "delai_jours") ? Number(pick(row, "delai_jours")) : null,
+            purchase_price: parseCsvNumber(pick(row, "prix_achat", "purchase_price")),
+            shipping_cost: parseCsvNumber(pick(row, "frais_port", "shipping_cost")),
+            lead_time_days: pick(row, "delai_jours", "lead_time_days")
+              ? parseCsvNumber(pick(row, "delai_jours", "lead_time_days"))
+              : null,
             price_updated_at: new Date().toISOString(),
           },
           { onConflict: "supplier_id,part_id" },
         );
+        if (supplierPartError)
+          raiseImportError(
+            `Impossible de lier ${supplierName} à la pièce ${partName}`,
+            supplierPartError,
+          );
       }
       qc.invalidateQueries({ queryKey: ["parts"] });
       qc.invalidateQueries({ queryKey: ["suppliers"] });
