@@ -1,0 +1,2 @@
+ALTER TABLE public.quotes
+  ADD COLUMN IF NOT EXISTS travel_count NUMERIC(6,2) NOT NULL DEFAULT 1;

@@ -93,6 +93,7 @@ function QuoteDetail() {
     setEditQuote({
       labor_hours: Number(quote.labor_hours ?? 0),
       labor_rate: Number(quote.labor_rate ?? 0),
+      travel_count: Number(quote.travel_count ?? 1),
       travel_fee: Number(quote.travel_fee ?? 0),
       shipping_fee: Number(quote.shipping_fee ?? 0),
       waste_treatment_fee: Number(quote.waste_treatment_fee ?? 0),
@@ -185,6 +186,7 @@ function QuoteDetail() {
         .update({
           labor_hours: editQuote.labor_hours,
           labor_rate: editQuote.labor_rate,
+          travel_count: editQuote.travel_count,
           travel_fee: editQuote.travel_fee,
           shipping_fee: editQuote.shipping_fee,
           waste_treatment_fee: editQuote.waste_treatment_fee,
@@ -269,7 +271,8 @@ function QuoteDetail() {
     (s: number, i: any) => s + Number(i.unit_price) * Number(i.quantity),
     0,
   );
-  const laborHT = Number(quote.labor_hours ?? 0) * Number(quote.labor_rate ?? 0);
+  const travelCount = Number(quote.travel_count ?? 1);
+  const laborHT = Number(quote.labor_hours ?? 0) * travelCount * Number(quote.labor_rate ?? 0);
   const shippingFee = Number(quote.shipping_fee ?? 0);
   const wasteTreatmentFee = Number(quote.waste_treatment_fee ?? 0);
   const oversizedShippingFee = Number(quote.oversized_shipping_fee ?? 0);
@@ -377,7 +380,8 @@ function QuoteDetail() {
             <div className="grid gap-3 sm:grid-cols-4">
               {[
                 ["labor_hours", "Heures", "0.25"],
-                ["labor_rate", "Tarif €/h", "0.01"],
+                ["labor_rate", "Tarif €/h/technicien", "0.01"],
+                ["travel_count", "Nombre de déplacements", "1"],
                 ["travel_fee", "Déplacement €", "0.01"],
                 ["shipping_fee", "Frais de port €", "0.01"],
                 ["waste_treatment_fee", "Traitement déchets €", "0.01"],
@@ -585,7 +589,10 @@ function QuoteDetail() {
               {Number(quote.labor_hours) > 0 && (
                 <tr>
                   <td className="py-2">Main-d'œuvre</td>
-                  <td className="py-2 text-right">{quote.labor_hours} h</td>
+                  <td className="py-2 text-right">
+                    {quote.labor_hours} h/technicien × {travelCount} déplacement
+                    {travelCount > 1 ? "s" : ""}
+                  </td>
                   <td className="py-2 text-right">{fmt(Number(quote.labor_rate))}</td>
                   <td className="py-2 text-right">—</td>
                   <td className="py-2 text-right">{fmt(laborHT)}</td>
