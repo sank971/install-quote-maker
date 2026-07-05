@@ -142,7 +142,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
-  '/tickets': typeof AuthenticatedTicketsRouteWithChildren
+  '/tickets': typeof AuthenticatedTicketsRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
   '/installation/$installationSlug': typeof AuthenticatedInstallationInstallationSlugRoute
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
@@ -162,7 +162,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
-  '/tickets': typeof AuthenticatedTicketsRouteWithChildren
+  '/tickets': typeof AuthenticatedTicketsRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
   '/installation/$installationSlug': typeof AuthenticatedInstallationInstallationSlugRoute
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
@@ -184,7 +184,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRoute
-  '/_authenticated/tickets': typeof AuthenticatedTicketsRouteWithChildren
+  '/_authenticated/tickets': typeof AuthenticatedTicketsRoute
   '/_authenticated/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
   '/_authenticated/installation/$installationSlug': typeof AuthenticatedInstallationInstallationSlugRoute
   '/_authenticated/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute

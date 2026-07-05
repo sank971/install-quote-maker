@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import {
   Boxes,
   Download,
   Upload,
+  Calculator,
+  TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,6 +33,26 @@ import { toast } from "sonner";
 import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
+
+const DEFAULT_PART_MARKUP_TIERS = [
+  { min: 0, max: 50, coefficient: 2 },
+  { min: 50, max: 200, coefficient: 1.7 },
+  { min: 200, max: null, coefficient: 1.4 },
+];
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+
+const calculateSalePrice = (purchasePrice: number, tiers: any[] = DEFAULT_PART_MARKUP_TIERS) => {
+  const tier = tiers
+    .map((row: any) => ({
+      min: Number(row.min) || 0,
+      max: row.max === null || row.max === "" || row.max === undefined ? null : Number(row.max),
+      coefficient: Number(row.coefficient) || 1,
+    }))
+    .sort((a, b) => a.min - b.min)
+    .find((row) => purchasePrice >= row.min && (row.max === null || purchasePrice < row.max));
+  return roundMoney(purchasePrice * (tier?.coefficient ?? 1));
+};
 
 const splitCsvList = (value: string) =>
   value
@@ -73,6 +95,7 @@ function PartsPage() {
   });
   const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
   const { data: supplierParts = [] } = useList<any>("supplier_parts");
+  const { data: settings = [] } = useList<any>("app_settings");
   const { data: types = [] } = useList<any>("installation_types", {
     orderBy: "name",
     ascending: true,
@@ -97,6 +120,33 @@ function PartsPage() {
   });
   const [selectedComponentPartIds, setSelectedComponentPartIds] = useState<string[]>([]);
   const [selectedCompatTypeIds, setSelectedCompatTypeIds] = useState<string[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [purchasePrice, setPurchasePrice] = useState(0);
+  const [salePrice, setSalePrice] = useState(0);
+  const partPricingSetting = settings.find((setting: any) => setting.key === "part_pricing");
+  const partPricing = partPricingSetting?.value ?? {};
+  const markupTiers = partPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
+  const annualIncreasePct = Number(partPricing.annualIncreasePct) || 0;
+
+  useEffect(() => {
+    if (!open) return;
+    const currentSupplierPart = edit?.id
+      ? supplierParts.find((sp: any) => sp.part_id === edit.id)
+      : null;
+    setSelectedSupplierId(currentSupplierPart?.supplier_id ?? "");
+    setPurchasePrice(Number(currentSupplierPart?.purchase_price) || 0);
+    setSalePrice(Number(edit?.sale_price) || 0);
+  }, [edit, open, supplierParts]);
+
+  const supplierPartBySupplier = useMemo(
+    () =>
+      new Map(
+        supplierParts
+          .filter((sp: any) => sp.part_id === edit?.id)
+          .map((sp: any) => [sp.supplier_id, sp]),
+      ),
+    [edit?.id, supplierParts],
+  );
 
   const exportPartsSuppliers = () => {
     const rows = parts.flatMap((part: any) => {
@@ -453,6 +503,24 @@ function PartsPage() {
       toast.success("Pièces, fournisseurs et compatibilités importés");
     });
 
+  const applyAnnualIncrease = async () => {
+    if (annualIncreasePct <= 0)
+      return toast.error("Définissez d’abord un pourcentage annuel dans Paramètres.");
+    if (
+      !confirm(
+        `Appliquer ${annualIncreasePct}% d’augmentation à tous les prix de vente des pièces ?`,
+      )
+    )
+      return;
+    for (const part of parts) {
+      await upsert.mutateAsync({
+        id: part.id,
+        sale_price: roundMoney(Number(part.sale_price) * (1 + annualIncreasePct / 100)),
+      });
+    }
+    toast.success("Augmentation annuelle appliquée aux prix fixes");
+  };
+
   const filtered = parts.filter((p) =>
     [p.name, p.reference, p.category]
       .filter(Boolean)
@@ -462,7 +530,7 @@ function PartsPage() {
   );
 
   const openNew = (isKit = false) => {
-    setEdit({ is_kit: isKit });
+    setEdit({ is_kit: isKit, sale_price: 0 });
     setOpen(true);
   };
   const openEdit = (p: any) => {
@@ -480,7 +548,7 @@ function PartsPage() {
       category: fd.get("category") || null,
       brand_id: fd.get("brand_id") || null,
       description: fd.get("description") || null,
-      sale_price: Number(fd.get("sale_price") ?? 0),
+      sale_price: Number(fd.get("sale_price") ?? salePrice ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
       is_kit: fd.get("is_kit") === "on",
     });
@@ -493,8 +561,10 @@ function PartsPage() {
           owner_id,
           supplier_id: supplierId,
           part_id: savedPart.id,
-          purchase_price: 0,
-          shipping_cost: 0,
+          purchase_price: Number(fd.get("purchase_price") ?? purchasePrice ?? 0),
+          shipping_cost: Number(
+            fd.get("shipping_cost") ?? supplierPartBySupplier.get(supplierId)?.shipping_cost ?? 0,
+          ),
           price_updated_at: new Date().toISOString(),
         },
         { onConflict: "supplier_id,part_id" },
@@ -626,6 +696,10 @@ function PartsPage() {
               <Upload className="mr-2 h-4 w-4" />
               Importer CSV
             </Button>
+            <Button variant="outline" onClick={applyAnnualIncrease}>
+              <TrendingUp className="mr-2 h-4 w-4" />
+              Augmentation annuelle
+            </Button>
             <Button onClick={() => openNew(false)}>
               <Plus className="mr-2 h-4 w-4" />
               Nouvelle pièce
@@ -651,10 +725,16 @@ function PartsPage() {
         <EmptyState
           title="Aucune pièce ou kit"
           action={
-            <Button onClick={() => openNew(false)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nouvelle pièce
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={applyAnnualIncrease}>
+                <TrendingUp className="mr-2 h-4 w-4" />
+                Augmentation annuelle
+              </Button>
+              <Button onClick={() => openNew(false)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nouvelle pièce
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -810,18 +890,21 @@ function PartsPage() {
                   name="sale_price"
                   type="number"
                   step="0.01"
-                  defaultValue={edit?.sale_price ?? 0}
+                  value={salePrice}
+                  onChange={(e) => setSalePrice(Number(e.target.value))}
                 />
               </div>
               <div>
                 <Label>Fournisseur</Label>
                 <select
                   name="supplier_id"
-                  defaultValue={
-                    edit?.id
-                      ? (supplierParts.find((sp: any) => sp.part_id === edit.id)?.supplier_id ?? "")
-                      : ""
-                  }
+                  value={selectedSupplierId}
+                  onChange={(e) => {
+                    const nextSupplierId = e.target.value;
+                    const link = supplierPartBySupplier.get(nextSupplierId);
+                    setSelectedSupplierId(nextSupplierId);
+                    setPurchasePrice(Number(link?.purchase_price) || 0);
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">—</option>
@@ -832,6 +915,36 @@ function PartsPage() {
                   ))}
                 </select>
               </div>
+              {selectedSupplierId && (
+                <>
+                  <div>
+                    <Label>Prix d’achat (€)</Label>
+                    <Input
+                      name="purchase_price"
+                      type="number"
+                      step="0.01"
+                      value={purchasePrice}
+                      onChange={(e) => setPurchasePrice(Number(e.target.value))}
+                    />
+                  </div>
+                  <input
+                    type="hidden"
+                    name="shipping_cost"
+                    value={supplierPartBySupplier.get(selectedSupplierId)?.shipping_cost ?? 0}
+                  />
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setSalePrice(calculateSalePrice(purchasePrice, markupTiers))}
+                    >
+                      <Calculator className="mr-2 h-4 w-4" />
+                      Calculer le prix de vente
+                    </Button>
+                  </div>
+                </>
+              )}
               <div>
                 <Label>Chiffrage</Label>
                 <select
