@@ -79,6 +79,12 @@ const toKey = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+const DEFAULT_PART_MARKUP_TIERS = [
+  { min: 0, max: 50, coefficient: 2 },
+  { min: 50, max: 200, coefficient: 1.7 },
+  { min: 200, max: null, coefficient: 1.4 },
+];
+
 const normalizeFields = (fields: any[]): CustomField[] =>
   fields
     .map((f) => ({ key: f.key || toKey(f.label), label: f.label, type: f.type || "text" }))
@@ -122,13 +128,24 @@ function SettingsPage() {
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState<CustomField["type"]>("text");
   const quoteSetting = settings.data?.find((setting: any) => setting.key === "quote_document");
+  const partPricingSetting = settings.data?.find((setting: any) => setting.key === "part_pricing");
   const [quoteDescription, setQuoteDescription] = useState("");
   const [quoteTerms, setQuoteTerms] = useState("");
+  const [partPricingDraft, setPartPricingDraft] = useState<any | null>(null);
   const effectiveQuoteDescription = quoteDescription || quoteSetting?.value?.description || "";
   const effectiveQuoteTerms =
     quoteTerms ||
     quoteSetting?.value?.terms ||
     "Devis valable 30 jours. Bon pour accord : date et signature.";
+  const effectivePartPricing = partPricingDraft ??
+    partPricingSetting?.value ?? { markupTiers: DEFAULT_PART_MARKUP_TIERS, annualIncreasePct: 0 };
+  const partMarkupTiers = effectivePartPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
+
+  const updatePartMarkupTier = (index: number, patch: any) => {
+    const tiers = [...partMarkupTiers];
+    tiers[index] = { ...tiers[index], ...patch };
+    setPartPricingDraft({ ...effectivePartPricing, markupTiers: tiers });
+  };
 
   const seedTypes = async () => {
     const defaultPartCategories = Array.from(
@@ -522,6 +539,125 @@ function SettingsPage() {
               }
             >
               Enregistrer le document de devis
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Calcul des prix de vente des pièces</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Ces coefficients sont appliqués au prix d’achat uniquement quand vous cliquez sur le
+              bouton de calcul dans une fiche pièce. Le prix reste ensuite fixe jusqu’à modification
+              manuelle ou augmentation annuelle.
+            </p>
+            <div className="space-y-2">
+              {partMarkupTiers.map((tier: any, index: number) => (
+                <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                  <div>
+                    <Label>Prix achat min (€)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={tier.min ?? 0}
+                      onChange={(e) => updatePartMarkupTier(index, { min: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Prix achat max (€)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Sans limite"
+                      value={tier.max ?? ""}
+                      onChange={(e) =>
+                        updatePartMarkupTier(index, {
+                          max: e.target.value === "" ? null : Number(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Coefficient</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={tier.coefficient ?? 1}
+                      onChange={(e) =>
+                        updatePartMarkupTier(index, { coefficient: Number(e.target.value) })
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="self-end"
+                    onClick={() =>
+                      setPartPricingDraft({
+                        ...effectivePartPricing,
+                        markupTiers: partMarkupTiers.filter((_: any, i: number) => i !== index),
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  setPartPricingDraft({
+                    ...effectivePartPricing,
+                    markupTiers: [...partMarkupTiers, { min: 0, max: null, coefficient: 1 }],
+                  })
+                }
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter une tranche
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  setPartPricingDraft({
+                    ...effectivePartPricing,
+                    markupTiers: DEFAULT_PART_MARKUP_TIERS,
+                  })
+                }
+              >
+                Réinitialiser
+              </Button>
+            </div>
+            <div className="max-w-xs">
+              <Label>Augmentation annuelle (%)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={effectivePartPricing.annualIncreasePct ?? 0}
+                onChange={(e) =>
+                  setPartPricingDraft({
+                    ...effectivePartPricing,
+                    annualIncreasePct: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+            <Button
+              onClick={() =>
+                upSetting.mutate({
+                  id: partPricingSetting?.id,
+                  key: "part_pricing",
+                  value: effectivePartPricing,
+                })
+              }
+            >
+              Enregistrer les paramètres de prix
             </Button>
           </CardContent>
         </Card>
