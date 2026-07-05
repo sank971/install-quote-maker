@@ -32,6 +32,19 @@ import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
 
+const splitCsvList = (value: string) =>
+  value
+    .split(/[|,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const normalizeName = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
 const raiseImportError = (message: string, error: unknown) => {
   console.error(message, error);
   toast.error(message);
@@ -87,12 +100,47 @@ function PartsPage() {
   const exportPartsSuppliers = () => {
     const rows = parts.flatMap((part: any) => {
       const brand = brands.find((b: any) => b.id === part.brand_id);
+      const compatibleTypeIds = new Set(
+        typeCompat
+          .filter((compat: any) => compat.part_id === part.id)
+          .map((compat: any) => compat.type_id),
+      );
+      const compatibleModelIds = new Set(
+        modelCompat
+          .filter((compat: any) => compat.part_id === part.id)
+          .map((compat: any) => compat.model_id),
+      );
+      const compatibleModels = models.filter((model: any) => compatibleModelIds.has(model.id));
+      const compatibleBrandNames = Array.from(
+        new Set(
+          compatibleModels
+            .map(
+              (model: any) =>
+                brands.find((candidate: any) => candidate.id === model.brand_id)?.name,
+            )
+            .filter(Boolean),
+        ),
+      );
       const links = supplierParts.filter((sp: any) => sp.part_id === part.id);
       const base = {
         piece_nom: part.name,
         piece_reference: part.reference,
         piece_categorie: part.category,
         marque: brand?.name,
+        types_portes_compatibles: types
+          .filter((type: any) => compatibleTypeIds.has(type.id))
+          .map((type: any) => type.name)
+          .join(" | "),
+        marques_portes_compatibles: compatibleBrandNames.join(" | "),
+        modeles_portes_compatibles: compatibleModels
+          .map((model: any) => {
+            const modelBrand = brands.find(
+              (candidate: any) => candidate.id === model.brand_id,
+            )?.name;
+            const modelType = types.find((type: any) => type.id === model.type_id)?.name;
+            return [modelBrand, modelType, model.name].filter(Boolean).join(" - ");
+          })
+          .join(" | "),
         description: part.description,
         prix_vente: part.sale_price,
         unite_chiffrage: part.pricing_unit,
@@ -117,6 +165,9 @@ function PartsPage() {
       "piece_reference",
       "piece_categorie",
       "marque",
+      "types_portes_compatibles",
+      "marques_portes_compatibles",
+      "modeles_portes_compatibles",
       "description",
       "prix_vente",
       "unite_chiffrage",
@@ -197,6 +248,85 @@ function PartsPage() {
         partCache.set(partKey, part);
         if (normalizedReference)
           partCache.set(`${normalizedReference}|${normalizedPartName}`, part);
+
+        const compatibleTypeNames = splitCsvList(
+          pick(row, "types_portes_compatibles", "type_porte", "type_de_porte", "door_type"),
+        );
+        const compatibleBrandNames = splitCsvList(
+          pick(row, "marques_portes_compatibles", "marque_porte", "marque_de_porte", "door_brand"),
+        );
+        const compatibleModelNames = splitCsvList(
+          pick(row, "modeles_portes_compatibles", "modele_porte", "modele_de_porte", "door_model"),
+        );
+        const compatibleTypes = types.filter((type: any) =>
+          compatibleTypeNames.some((name) => normalizeName(name) === normalizeName(type.name)),
+        );
+        if (compatibleTypes.length > 0) {
+          const existingTypeIds = new Set(
+            typeCompat
+              .filter((compat: any) => compat.part_id === part.id)
+              .map((compat: any) => compat.type_id),
+          );
+          const typeRows = compatibleTypes
+            .filter((type: any) => !existingTypeIds.has(type.id))
+            .map((type: any) => ({ owner_id, part_id: part.id, type_id: type.id }));
+          if (typeRows.length > 0) {
+            const { error } = await supabase
+              .from("part_type_compat")
+              .upsert(typeRows, { onConflict: "part_id,type_id" });
+            if (error)
+              raiseImportError(
+                `Impossible de créer les compatibilités type pour ${partName}`,
+                error,
+              );
+          }
+        }
+        const compatibleTypeIds = new Set(compatibleTypes.map((type: any) => type.id));
+        const compatibleBrandIds = new Set(
+          brands
+            .filter((brand: any) =>
+              compatibleBrandNames.some(
+                (name) => normalizeName(name) === normalizeName(brand.name),
+              ),
+            )
+            .map((brand: any) => brand.id),
+        );
+        const compatibleModels = models.filter((model: any) => {
+          const modelBrand = brands.find((brand: any) => brand.id === model.brand_id)?.name ?? "";
+          const modelType = types.find((type: any) => type.id === model.type_id)?.name ?? "";
+          const modelLabels = [
+            model.name,
+            [modelBrand, model.name].filter(Boolean).join(" - "),
+            [modelType, model.name].filter(Boolean).join(" - "),
+            [modelBrand, modelType, model.name].filter(Boolean).join(" - "),
+          ].map(normalizeName);
+          return (
+            compatibleModelNames.some((name) => modelLabels.includes(normalizeName(name))) &&
+            (compatibleBrandIds.size === 0 || compatibleBrandIds.has(model.brand_id)) &&
+            (compatibleTypeIds.size === 0 || compatibleTypeIds.has(model.type_id))
+          );
+        });
+        if (compatibleModels.length > 0) {
+          const existingModelIds = new Set(
+            modelCompat
+              .filter((compat: any) => compat.part_id === part.id)
+              .map((compat: any) => compat.model_id),
+          );
+          const modelRows = compatibleModels
+            .filter((model: any) => !existingModelIds.has(model.id))
+            .map((model: any) => ({ owner_id, part_id: part.id, model_id: model.id }));
+          if (modelRows.length > 0) {
+            const { error } = await supabase
+              .from("part_model_compat")
+              .upsert(modelRows, { onConflict: "part_id,model_id" });
+            if (error)
+              raiseImportError(
+                `Impossible de créer les compatibilités modèle pour ${partName}`,
+                error,
+              );
+          }
+        }
+
         const supplierName = pick(
           row,
           "fournisseur_nom",
@@ -263,7 +393,9 @@ function PartsPage() {
       qc.invalidateQueries({ queryKey: ["parts"] });
       qc.invalidateQueries({ queryKey: ["suppliers"] });
       qc.invalidateQueries({ queryKey: ["supplier_parts"] });
-      toast.success("Pièces et fournisseurs importés");
+      qc.invalidateQueries({ queryKey: ["part_type_compat"] });
+      qc.invalidateQueries({ queryKey: ["part_model_compat"] });
+      toast.success("Pièces, fournisseurs et compatibilités importés");
     });
 
   const filtered = parts.filter((p) =>
