@@ -52,6 +52,7 @@ type EditableItem = {
   category?: string;
   parent_part_id?: string;
   pricing_unit?: string;
+  relation_kind?: string;
 };
 
 function QuoteDetail() {
@@ -150,6 +151,8 @@ function QuoteDetail() {
         unit_price: Number(item.unit_price ?? 0),
         unit_cost: Number(item.unit_cost ?? 0),
         position: Number(item.position ?? index),
+        parent_part_id: item.parent_part_id ?? undefined,
+        relation_kind: item.relation_kind ?? undefined,
       })),
     );
   }, [items, isEditing]);
@@ -304,7 +307,10 @@ function QuoteDetail() {
       : 0;
     const componentCost = part.is_kit
       ? partComponents
-          .filter((component: any) => component.parent_part_id === part.id)
+          .filter(
+            (component: any) =>
+              component.parent_part_id === part.id && component.relation_kind === "kit_component",
+          )
           .reduce(
             (sum: number, component: any) =>
               sum + cheapestCost(component.component_part_id) * (Number(component.quantity) || 1),
@@ -328,9 +334,46 @@ function QuoteDetail() {
       ...patch,
     };
   };
+  const getEditComponentPrice = (component: any) => {
+    if (component.relation_kind === "kit_component") return 0;
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    return Number(componentPart?.sale_price ?? 0);
+  };
+
+  const buildEditComponentItem = (parentItem: EditableItem, component: any, label?: string) => {
+    const componentItem = buildEditPartItem(
+      component.component_part_id,
+      {
+        parent_part_id: parentItem.part_id,
+        quantity: Number(component.quantity) || 1,
+        unit_price: getEditComponentPrice(component),
+        relation_kind: component.relation_kind ?? "accessory",
+      },
+      parentItem.installation_id ?? editInstallationId,
+    );
+    if (!componentItem) return null;
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    return {
+      ...componentItem,
+      description: parentName
+        ? `${parentName} > ${componentItem.description}${label ? ` (${label})` : ""}`
+        : `${componentItem.description}${label ? ` (${label})` : ""}`,
+    };
+  };
+
   const addEditPart = (partId: string, sourceInstallationId = editInstallationId) => {
     const item = buildEditPartItem(partId, {}, sourceInstallationId);
-    if (item) setEditItems((current) => [...current, item]);
+    if (!item) return;
+    const kitComponents = parts.find((part: any) => part.id === partId)?.is_kit
+      ? (partComponents
+          .filter(
+            (component: any) =>
+              component.parent_part_id === partId && component.relation_kind === "kit_component",
+          )
+          .map((component: any) => buildEditComponentItem(item, component, "compris dans le kit"))
+          .filter(Boolean) as EditableItem[])
+      : [];
+    setEditItems((current) => [...current, item, ...kitComponents]);
   };
   const addEditPresentParts = () => {
     const existingPartIds = new Set(editItems.map((item) => item.part_id).filter(Boolean));
@@ -363,19 +406,13 @@ function QuoteDetail() {
     const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
     const relationLabel =
       component.relation_kind === "kit_component"
-        ? "composition"
+        ? "compris dans le kit"
         : component.relation_kind === "negotiated_option"
           ? "option prix négocié"
-          : "accessoire à l’unité";
-    setEditItems((current) => [
-      ...current,
-      {
-        ...componentItem,
-        description: parentName
-          ? `${parentName} > ${componentItem.description} (${relationLabel})`
-          : `${componentItem.description} (${relationLabel})`,
-      },
-    ]);
+          : "option";
+    const componentItem = buildEditComponentItem(parentItem, component, label);
+    if (!componentItem) return;
+    setEditItems((current) => [...current, componentItem]);
   };
 
   const changeQuoteStatus = async (status: string) => {
@@ -387,6 +424,15 @@ function QuoteDetail() {
     qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
     toast.success("Statut du devis mis à jour");
   };
+
+  const removeEditItem = (key: string) =>
+    setEditItems((current) => {
+      const removed = current.find((item) => item.key === key);
+      return current.filter(
+        (item) =>
+          item.key !== key && (!removed?.part_id || item.parent_part_id !== removed.part_id),
+      );
+    });
 
   const updateEditItem = (key: string, patch: Partial<EditableItem>) =>
     setEditItems((current) =>
@@ -476,6 +522,8 @@ function QuoteDetail() {
           unit_price: item.unit_price,
           unit_cost: item.unit_cost,
           position,
+          parent_part_id: item.parent_part_id ?? null,
+          relation_kind: item.relation_kind ?? null,
         };
         if (item.id) {
           const { error: itemError } = await (supabase.from("quote_items" as any) as any)
@@ -948,9 +996,7 @@ function QuoteDetail() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() =>
-                        setEditItems((current) => current.filter((row) => row.key !== item.key))
-                      }
+                      onClick={() => removeEditItem(item.key)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -960,8 +1006,7 @@ function QuoteDetail() {
                   ) && (
                     <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
                       <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        <Boxes className="h-3.5 w-3.5" /> Composition, options négociées et
-                        accessoires
+                        <Boxes className="h-3.5 w-3.5" /> Composition comprise et options
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {partComponents

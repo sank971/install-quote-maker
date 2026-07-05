@@ -29,6 +29,7 @@ interface Item {
   save_as_part?: boolean;
   parent_part_id?: string;
   pricing_unit?: string;
+  relation_kind?: string;
 }
 
 function NewQuote() {
@@ -253,6 +254,12 @@ function NewQuote() {
       });
   }, [installationParts, installationIds, partComponents, parts, selectedPartTypes]);
 
+  const getComponentPrice = (component: any) => {
+    if (component.relation_kind === "kit_component") return 0;
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    return Number(componentPart?.sale_price ?? 0);
+  };
+
   const addAccessoryToQuote = (component: any) => {
     const sourceInstallationId =
       installationParts.find(
@@ -281,8 +288,8 @@ function NewQuote() {
       {
         ...accessoryItem,
         description: parentName
-          ? `${parentName} > ${accessoryItem.description}`
-          : accessoryItem.description,
+          ? `${parentName} > ${accessoryItem.description} (option)`
+          : `${accessoryItem.description} (option)`,
       },
     ]);
   };
@@ -321,7 +328,10 @@ function NewQuote() {
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
     const componentCost = p.is_kit
       ? partComponents
-          .filter((component: any) => component.parent_part_id === p.id)
+          .filter(
+            (component: any) =>
+              component.parent_part_id === p.id && component.relation_kind === "kit_component",
+          )
           .reduce(
             (sum: number, component: any) =>
               sum + cheapestCost(component.component_part_id) * (Number(component.quantity) || 1),
@@ -345,10 +355,40 @@ function NewQuote() {
     };
   };
 
+  const buildComponentItem = (parentItem: Item, component: any, label?: string) => {
+    const componentItem = buildPartItem(
+      component.component_part_id,
+      {
+        parent_part_id: parentItem.part_id,
+        quantity: Number(component.quantity) || 1,
+        unit_price: getComponentPrice(component),
+        relation_kind: component.relation_kind ?? "accessory",
+      },
+      parentItem.installation_id ?? installationId,
+    );
+    if (!componentItem) return null;
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    return {
+      ...componentItem,
+      description: parentName
+        ? `${parentName} > ${componentItem.description}${label ? ` (${label})` : ""}`
+        : `${componentItem.description}${label ? ` (${label})` : ""}`,
+    };
+  };
+
   const addPart = (partId: string, sourceInstallationId = installationId) => {
     const item = buildPartItem(partId, {}, sourceInstallationId);
     if (!item) return;
-    setItems((prev) => [...prev, item]);
+    const kitComponents = parts.find((part: any) => part.id === partId)?.is_kit
+      ? (partComponents
+          .filter(
+            (component: any) =>
+              component.parent_part_id === partId && component.relation_kind === "kit_component",
+          )
+          .map((component: any) => buildComponentItem(item, component, "compris dans le kit"))
+          .filter(Boolean) as Item[])
+      : [];
+    setItems((prev) => [...prev, item, ...kitComponents]);
   };
 
   const addComponentToQuote = (parentItem: Item, component: any) => {
@@ -364,23 +404,13 @@ function NewQuote() {
     }
     const componentItem = buildPartItem(component.component_part_id, componentPatch);
     if (!componentItem) return;
-    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
-    setItems((prev) => [
-      ...prev,
-      {
-        ...componentItem,
-        description: parentName
-          ? `${parentName} > ${componentItem.description}`
-          : componentItem.description,
-      },
-    ]);
+    setItems((prev) => [...prev, componentItem]);
   };
 
   const addAllComponentsToQuote = (parentItem: Item) => {
     const components = partComponents.filter(
       (component: any) => component.parent_part_id === parentItem.part_id,
     );
-    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
     setItems((prev) => {
       const additions = components
         .filter(
@@ -450,7 +480,14 @@ function NewQuote() {
   const update = (key: string, patch: Partial<Item>) =>
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
 
-  const remove = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
+  const remove = (key: string) =>
+    setItems((prev) => {
+      const removed = prev.find((item) => item.key === key);
+      return prev.filter(
+        (item) =>
+          item.key !== key && (!removed?.part_id || item.parent_part_id !== removed.part_id),
+      );
+    });
 
   const partsHT = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const laborHT = laborHours * effectiveTravelCount * effectiveLaborRate;
@@ -568,6 +605,8 @@ function NewQuote() {
           unit_price: i.unit_price,
           unit_cost: i.unit_cost,
           position: idx,
+          parent_part_id: i.parent_part_id ?? null,
+          relation_kind: i.relation_kind ?? null,
         }));
         const { error: e2 } = await supabase.from("quote_items").insert(rows);
         if (e2) throw e2;
@@ -929,7 +968,7 @@ function NewQuote() {
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           <Boxes className="h-3.5 w-3.5" />
-                          Pièces composantes à remplacer
+                          Composition comprise et options
                         </div>
                         <Button
                           variant="outline"
@@ -968,8 +1007,8 @@ function NewQuote() {
                           })}
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Gardez la référence composée comme repère, puis ajoutez uniquement les
-                        pièces à remplacer.
+                        Les pièces de composition du kit sont ajoutées à 0 €. Les options restent
+                        proposées au tarif optionnel.
                       </p>
                     </div>
                   )}
