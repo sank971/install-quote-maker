@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Plus, UserCheck, FileText, PackageCheck, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -51,6 +52,47 @@ function TicketsPage() {
   const { data: history = [] } = useList<any>("history_events");
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: parts = [] } = useList<any>("parts");
+  const [siteSearch, setSiteSearch] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedInstallationIds, setSelectedInstallationIds] = useState<string[]>([]);
+
+  const siteChoices = useMemo(() => {
+    const query = siteSearch.trim().toLowerCase();
+    return sites.filter((site: any) => {
+      const client = clients.find((c: any) => c.id === site.client_id);
+      const haystack = [
+        site.site_number,
+        site.name,
+        site.address,
+        site.contact_name,
+        client?.client_number,
+        client?.name,
+        client?.address,
+        client?.phone,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return !query || haystack.includes(query);
+    });
+  }, [clients, siteSearch, sites]);
+
+  const selectedSite = sites.find((site: any) => site.id === selectedSiteId);
+  const selectedClient = clients.find((client: any) => client.id === selectedSite?.client_id);
+  const siteInstallations = installations.filter((i: any) => i.site_id === selectedSiteId);
+
+  const toggleSelectedInstallation = (installationId: string) => {
+    setSelectedInstallationIds((current) =>
+      current.includes(installationId)
+        ? current.filter((id) => id !== installationId)
+        : [...current, installationId],
+    );
+  };
+
+  const chooseSite = (siteId: string) => {
+    setSelectedSiteId(siteId);
+    setSelectedInstallationIds([]);
+  };
 
   const invalidate = () =>
     [
@@ -62,6 +104,8 @@ function TicketsPage() {
       "part_orders",
       "history_events",
       "installation_parts",
+      "ticket_groups",
+      "ticket_group_tickets",
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
 
   const createTicket = useMutation({
@@ -69,70 +113,93 @@ function TicketsPage() {
       e.preventDefault();
       const fd = new FormData(e.currentTarget);
       const owner_id = await currentUserId();
-      const title = String(fd.get("title") ?? "").trim();
-      const description = String(fd.get("description") ?? "").trim();
-      const installationId = newTicketInstallationId || String(fd.get("installation_id") ?? "");
-      const installation = installations.find((i: any) => i.id === installationId);
-
-      if (!installationId) {
-        throw new Error("Veuillez sélectionner une installation.");
+      const site = sites.find((s: any) => s.id === selectedSiteId);
+      if (!site) throw new Error("Sélectionnez d’abord un client ou un site");
+      if (selectedInstallationIds.length === 0) {
+        throw new Error("Sélectionnez au moins une installation du site");
       }
 
-      if (!installation) {
-        throw new Error("Installation introuvable. Rechargez la page puis réessayez.");
+      const title = String(fd.get("title") || "").trim();
+      const description = String(fd.get("description") || "").trim();
+      let group: any = null;
+
+      if (selectedInstallationIds.length > 1) {
+        const { data, error } = await (supabase.from("ticket_groups" as any) as any)
+          .insert({
+            owner_id,
+            client_id: site.client_id,
+            site_id: site.id,
+            title,
+            status: "ouvert",
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        group = data;
       }
 
-      const site = sites.find((s: any) => s.id === installation.site_id);
+      for (const installationId of selectedInstallationIds) {
+        const installation = installations.find((i: any) => i.id === installationId);
+        if (!installation || installation.site_id !== site.id) continue;
+        const payload = {
+          owner_id,
+          ticket_number: num("TCK"),
+          title,
+          description,
+          client_id: site.client_id,
+          site_id: site.id,
+          installation_id: installation.id,
+          status: "en_attente_assignation",
+        };
+        const { data: ticket, error } = await (supabase.from("tickets" as any) as any)
+          .insert(payload)
+          .select()
+          .single();
+        if (error) throw error;
 
-      if (!site) {
-        throw new Error("Site associé à l’installation introuvable.");
+        if (group) {
+          const { error: groupError } = await (
+            supabase.from("ticket_group_tickets" as any) as any
+          ).insert({ owner_id, group_id: group.id, ticket_id: ticket.id });
+          if (groupError) throw groupError;
+        }
+
+        await addHistoryEvent(
+          owner_id,
+          { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
+          "ticket_created",
+          group ? "Ticket créé et lié au dossier site" : "Ticket créé",
+          String(payload.title),
+          group ? { ticket_group_id: group.id } : {},
+        );
+        const { error: iErr } = await (supabase.from("interventions" as any) as any).insert({
+          owner_id,
+          ticket_id: ticket.id,
+          site_id: site.id,
+          installation_id: installation.id,
+          title: `Diagnostic ${ticket.ticket_number}`,
+          type: "diagnostic",
+          status: "non_assignee",
+          description: payload.description,
+        });
+        if (iErr) throw iErr;
+        await addHistoryEvent(
+          owner_id,
+          { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
+          "intervention_created",
+          "Intervention de diagnostic créée",
+          group ? "Ticket lié automatiquement aux autres installations sélectionnées" : undefined,
+          group ? { ticket_group_id: group.id } : {},
+        );
       }
-
-      const payload = {
-        owner_id,
-        ticket_number: num("TCK"),
-        title,
-        description: description || null,
-        client_id: site.client_id,
-        site_id: site.id,
-        installation_id: installation.id,
-        status: "en_attente_assignation",
-      };
-      const { data: ticket, error } = await (supabase.from("tickets" as any) as any)
-        .insert(payload)
-        .select()
-        .single();
-      if (error) throw error;
-      await addHistoryEvent(
-        owner_id,
-        { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
-        "ticket_created",
-        "Ticket créé",
-        String(payload.title),
-      );
-      const { error: iErr } = await (supabase.from("interventions" as any) as any).insert({
-        owner_id,
-        ticket_id: ticket.id,
-        site_id: site.id,
-        installation_id: installation.id,
-        title: `Diagnostic ${ticket.ticket_number}`,
-        type: "diagnostic",
-        status: "non_assignee",
-        description: payload.description,
-      });
-      if (iErr) throw iErr;
-      await addHistoryEvent(
-        owner_id,
-        { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
-        "intervention_created",
-        "Intervention de diagnostic créée",
-      );
+      const ticketCount = selectedInstallationIds.length;
       (e.target as HTMLFormElement).reset();
-      setNewTicketInstallationId("");
+      setSelectedInstallationIds([]);
+      return ticketCount;
     },
-    onSuccess: () => {
+    onSuccess: (ticketCount) => {
       invalidate();
-      toast.success("Ticket créé");
+      toast.success(ticketCount > 1 ? "Tickets créés et liés" : "Ticket créé");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -340,41 +407,93 @@ function TicketsPage() {
           <CardTitle className="text-base">Créer un ticket</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => createTicket.mutate(e)} className="grid gap-3 md:grid-cols-4">
-            <div>
-              <Label>Installation</Label>
-              <Select
-                name="installation_id"
-                value={newTicketInstallationId}
-                onValueChange={setNewTicketInstallationId}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Installation" />
-                </SelectTrigger>
-                <SelectContent>
-                  {installations.map((i: any) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <form onSubmit={(e) => createTicket.mutate(e)} className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>1. Rechercher puis choisir le client ou le site</Label>
+              <Input
+                value={siteSearch}
+                onChange={(e) => setSiteSearch(e.target.value)}
+                placeholder="Nom, numéro client/site, adresse..."
+              />
+              <div className="grid max-h-56 gap-2 overflow-auto rounded-md border p-2">
+                {siteChoices.map((site: any) => {
+                  const client = clients.find((c: any) => c.id === site.client_id);
+                  return (
+                    <button
+                      key={site.id}
+                      type="button"
+                      onClick={() => chooseSite(site.id)}
+                      className={`rounded-md border p-3 text-left text-sm transition hover:bg-muted ${
+                        selectedSiteId === site.id ? "border-primary bg-muted" : ""
+                      }`}
+                    >
+                      <b>{client?.name ?? "Client"}</b>
+                      <span className="text-muted-foreground">
+                        {client?.client_number ? ` · ${client.client_number}` : ""}
+                      </span>
+                      <div>
+                        {site.name}
+                        {site.site_number ? ` · ${site.site_number}` : ""}
+                      </div>
+                      {site.address ? (
+                        <div className="text-xs text-muted-foreground">{site.address}</div>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                {siteChoices.length === 0 ? (
+                  <p className="p-2 text-sm text-muted-foreground">Aucun client/site trouvé.</p>
+                ) : null}
+              </div>
             </div>
-            <div>
-              <Label>Titre</Label>
-              <Input name="title" required />
+
+            <div className="grid gap-2">
+              <Label>2. Sélectionner les installations du site concerné</Label>
+              {selectedSite ? (
+                <div className="rounded-md border p-3">
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    {selectedClient?.name} · {selectedSite.name}
+                  </p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {siteInstallations.map((installation: any) => (
+                      <label key={installation.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedInstallationIds.includes(installation.id)}
+                          onChange={() => toggleSelectedInstallation(installation.id)}
+                        />
+                        {installation.name}
+                      </label>
+                    ))}
+                  </div>
+                  {siteInstallations.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Aucune installation n’est rattachée à ce site.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="rounded-md border p-3 text-sm text-muted-foreground">
+                  Choisissez d’abord un client ou un site dans la liste ci-dessus.
+                </p>
+              )}
             </div>
-            <div className="md:col-span-2">
-              <Label>Description</Label>
-              <Input name="description" />
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <Label>Titre</Label>
+                <Input name="title" required />
+              </div>
+              <div className="md:col-span-2">
+                <Label>Description</Label>
+                <Input name="description" />
+              </div>
             </div>
-            <Button
-              className="md:col-span-4"
-              disabled={createTicket.isPending || !installations.length}
-            >
+            <Button disabled={!selectedSiteId || selectedInstallationIds.length === 0}>
               <Plus className="mr-2 h-4 w-4" />
-              Créer + diagnostic
+              {selectedInstallationIds.length > 1
+                ? `Créer ${selectedInstallationIds.length} tickets liés + diagnostics`
+                : "Créer + diagnostic"}
             </Button>
           </form>
         </CardContent>
