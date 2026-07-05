@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { downloadCsv } from "@/lib/csv";
 import { Download, Plus, Trash2, Pencil, X } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -99,6 +100,13 @@ function SettingsPage() {
   const defaultParts = useList<any>("installation_type_default_parts");
   const modelDefaultParts = useList<any>("model_default_parts" as any);
   const settings = useList<any>("app_settings");
+  const familyFields = useList<any>("part_family_fields", {
+    orderBy: "family_name",
+    ascending: true,
+  });
+  const formulas = useList<any>("calculation_formulas", { orderBy: "position", ascending: true });
+  const rules = useList<any>("business_rules", { orderBy: "priority", ascending: true });
+  const bomTemplates = useList<any>("bom_templates", { orderBy: "name", ascending: true });
   const upType = useUpsert("installation_types");
   const rmType = useRemove("installation_types");
   const upPartCategory = useUpsert("part_categories");
@@ -116,6 +124,9 @@ function SettingsPage() {
   const rmBrand = useRemove("brands");
   const upModel = useUpsert("models");
   const rmModel = useRemove("models");
+  const upFormula = useUpsert("calculation_formulas", [["calculation_formulas"]]);
+  const upRule = useUpsert("business_rules", [["business_rules"]]);
+  const upFamilyField = useUpsert("part_family_fields", [["part_family_fields"]]);
 
   const [typeName, setTypeName] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -132,6 +143,25 @@ function SettingsPage() {
   const [quoteDescription, setQuoteDescription] = useState("");
   const [quoteTerms, setQuoteTerms] = useState("");
   const [partPricingDraft, setPartPricingDraft] = useState<any | null>(null);
+  const [formulaDraft, setFormulaDraft] = useState({
+    code: "surface_m2",
+    name: "Surface",
+    target_key: "surfaceM2",
+    expression: "widthMm * heightMm / 1000000",
+  });
+  const [ruleDraft, setRuleDraft] = useState({
+    code: "R-001",
+    name: "Règle configurable",
+    conditions: "[]",
+    actions: "[]",
+  });
+  const [fieldDraft, setFieldDraft] = useState({
+    family_name: "Moteur",
+    field_key: "couple_max",
+    label: "Couple maximum",
+    field_type: "number",
+    unit: "Nm",
+  });
   const effectiveQuoteDescription = quoteDescription || quoteSetting?.value?.description || "";
   const effectiveQuoteTerms =
     quoteTerms ||
@@ -140,6 +170,20 @@ function SettingsPage() {
   const effectivePartPricing = partPricingDraft ??
     partPricingSetting?.value ?? { markupTiers: DEFAULT_PART_MARKUP_TIERS, annualIncreasePct: 0 };
   const partMarkupTiers = effectivePartPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
+
+  const saveRuleDraft = () => {
+    try {
+      upRule.mutate({
+        code: ruleDraft.code,
+        name: ruleDraft.name,
+        conditions: JSON.parse(ruleDraft.conditions || "[]"),
+        actions: JSON.parse(ruleDraft.actions || "[]"),
+        is_active: true,
+      });
+    } catch {
+      toast.error("Le JSON de la règle est invalide");
+    }
+  };
 
   const updatePartMarkupTier = (index: number, patch: any) => {
     const tiers = [...partMarkupTiers];
@@ -270,6 +314,107 @@ function SettingsPage() {
           </Button>
         }
       />
+
+      <Card className="mb-6 border-primary/20 bg-primary/5">
+        <CardHeader>
+          <CardTitle className="text-base">Architecture ERP paramétrable</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-md border bg-background/70 p-3">
+            <div className="font-medium">Champs dynamiques par famille</div>
+            <p className="text-sm text-muted-foreground">
+              {familyFields.data?.length ?? 0} champ(s) configuré(s) pour enrichir les pièces sans
+              coder de propriétés métier.
+            </p>
+            <div className="mt-2 grid gap-2">
+              <Input
+                value={fieldDraft.family_name}
+                onChange={(e) => setFieldDraft({ ...fieldDraft, family_name: e.target.value })}
+                placeholder="Famille"
+              />
+              <Input
+                value={fieldDraft.label}
+                onChange={(e) =>
+                  setFieldDraft({
+                    ...fieldDraft,
+                    label: e.target.value,
+                    field_key: toKey(e.target.value),
+                  })
+                }
+                placeholder="Libellé"
+              />
+              <Input
+                value={fieldDraft.unit}
+                onChange={(e) => setFieldDraft({ ...fieldDraft, unit: e.target.value })}
+                placeholder="Unité"
+              />
+              <Button size="sm" onClick={() => upFamilyField.mutate(fieldDraft)}>
+                Ajouter le champ
+              </Button>
+            </div>
+          </div>
+          <div className="rounded-md border bg-background/70 p-3">
+            <div className="font-medium">Formula Engine</div>
+            <p className="text-sm text-muted-foreground">
+              {formulas.data?.length ?? 0} formule(s) active(s) ou préparée(s).
+            </p>
+            <div className="mt-2 grid gap-2">
+              <Input
+                value={formulaDraft.code}
+                onChange={(e) => setFormulaDraft({ ...formulaDraft, code: e.target.value })}
+                placeholder="Code"
+              />
+              <Input
+                value={formulaDraft.target_key}
+                onChange={(e) => setFormulaDraft({ ...formulaDraft, target_key: e.target.value })}
+                placeholder="Clé résultat"
+              />
+              <Input
+                value={formulaDraft.expression}
+                onChange={(e) => setFormulaDraft({ ...formulaDraft, expression: e.target.value })}
+                placeholder="Expression"
+              />
+              <Button
+                size="sm"
+                onClick={() => upFormula.mutate({ ...formulaDraft, is_active: true })}
+              >
+                Enregistrer la formule
+              </Button>
+            </div>
+          </div>
+          <div className="rounded-md border bg-background/70 p-3">
+            <div className="font-medium">Rule Engine & BOM</div>
+            <p className="text-sm text-muted-foreground">
+              {rules.data?.length ?? 0} règle(s), {bomTemplates.data?.length ?? 0} nomenclature(s).
+            </p>
+            <div className="mt-2 grid gap-2">
+              <Input
+                value={ruleDraft.code}
+                onChange={(e) => setRuleDraft({ ...ruleDraft, code: e.target.value })}
+                placeholder="Code"
+              />
+              <Input
+                value={ruleDraft.name}
+                onChange={(e) => setRuleDraft({ ...ruleDraft, name: e.target.value })}
+                placeholder="Nom"
+              />
+              <Textarea
+                value={ruleDraft.conditions}
+                onChange={(e) => setRuleDraft({ ...ruleDraft, conditions: e.target.value })}
+                placeholder='Conditions JSON [{"field":"surfaceM2","operator":">","value":10}]'
+              />
+              <Textarea
+                value={ruleDraft.actions}
+                onChange={(e) => setRuleDraft({ ...ruleDraft, actions: e.target.value })}
+                placeholder='Actions JSON [{"type":"add_part_family","part_family":"Ressorts","quantity":2}]'
+              />
+              <Button size="sm" onClick={saveRuleDraft}>
+                Enregistrer la règle
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>

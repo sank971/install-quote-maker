@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Boxes, CheckCircle2, ChevronLeft, Circle, Plus, Trash2 } from "lucide-react";
+import { Boxes, CheckCircle2, ChevronLeft, Circle, Plus, Trash2, Wand2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { calculateInstallationQuote } from "@/lib/erp/installation-calculator";
+import type { CalculationLog } from "@/lib/erp/types";
 
 export const Route = createFileRoute("/_authenticated/quotes/new")({
   component: NewQuote,
@@ -32,6 +34,7 @@ interface Item {
   pricing_unit?: string;
   relation_kind?: string;
   is_oversized?: boolean;
+  supplier_id?: string;
 }
 
 function NewQuote() {
@@ -57,6 +60,20 @@ function NewQuote() {
     orderBy: "name",
     ascending: true,
   });
+  const { data: formulas = [] } = useList<any>("calculation_formulas", {
+    orderBy: "position",
+    ascending: true,
+  });
+  const { data: rules = [] } = useList<any>("business_rules", {
+    orderBy: "priority",
+    ascending: true,
+  });
+  const { data: bomTemplates = [] } = useList<any>("bom_templates");
+  const { data: bomItems = [] } = useList<any>("bom_template_items", {
+    orderBy: "position",
+    ascending: true,
+  });
+  const { data: partCompatibilities = [] } = useList<any>("part_compatibilities");
 
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -77,6 +94,7 @@ function NewQuote() {
   const [liftingEquipmentFee, setLiftingEquipmentFee] = useState(0);
   const [vatRate, setVatRate] = useState(20);
   const [notes, setNotes] = useState("");
+  const [calculationLogs, setCalculationLogs] = useState<CalculationLog[]>([]);
   const [busy, setBusy] = useState(false);
 
   const clientSites = sites.filter((s: any) => s.client_id === clientId);
@@ -159,7 +177,9 @@ function NewQuote() {
   });
 
   useEffect(() => {
-    setOversizedShippingFee(hasOversizedPart && contract ? Number(contract.oversized_shipping_fee ?? 0) : 0);
+    setOversizedShippingFee(
+      hasOversizedPart && contract ? Number(contract.oversized_shipping_fee ?? 0) : 0,
+    );
   }, [hasOversizedPart, contract]);
 
   const presentPartIds = useMemo(
@@ -371,7 +391,10 @@ function NewQuote() {
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
       quantity: 1,
-      length_meters: p.pricing_unit === "linear_meter" && length > 0 ? length : Number(p.length_meters ?? 0) || undefined,
+      length_meters:
+        p.pricing_unit === "linear_meter" && length > 0
+          ? length
+          : Number(p.length_meters ?? 0) || undefined,
       unit_price: negotiatedKitPrice
         ? Number(negotiatedKitPrice.negotiated_price)
         : Number(p.sale_price) * (1 - discount),
@@ -473,6 +496,73 @@ function NewQuote() {
     });
   };
 
+  const getSelectedInstallationType = () => {
+    const installationModel = models.find((m: any) => m.id === installation?.model_id);
+    const effectiveTypeId = installation?.type_id || installationModel?.type_id;
+    return types.find((t: any) => t.id === effectiveTypeId);
+  };
+
+  const autoCalculateInstallation = () => {
+    if (!installation) return toast.error("Sélectionnez une installation");
+    const installationType = getSelectedInstallationType();
+    const activeBom = bomTemplates.find(
+      (template: any) =>
+        template.installation_type_id === installationType?.id && template.is_active !== false,
+    );
+    const configuredBomItems = activeBom
+      ? bomItems.filter((item: any) => item.bom_template_id === activeBom.id)
+      : availablePartTypes.map((name, index) => ({ part_family: name, position: index }));
+    const activeFormulas = formulas.length
+      ? formulas
+      : [
+          {
+            code: "surface_m2",
+            name: "Surface",
+            target_key: "surfaceM2",
+            expression: "widthMm * heightMm / 1000000",
+            position: 1,
+          },
+        ];
+    const widthMm = Number(
+      installation.width_mm ?? installation.width ?? installation.characteristics?.largeur ?? 0,
+    );
+    const heightMm = Number(
+      installation.height_mm ?? installation.height ?? installation.characteristics?.hauteur ?? 0,
+    );
+    const result = calculateInstallationQuote({
+      input: {
+        installationTypeId: installationType?.id,
+        installationTypeName: installationType?.name,
+        brandId: installation.brand_id,
+        modelId: installation.model_id,
+        widthMm,
+        heightMm,
+        isMotorized: Boolean(installation.characteristics?.motorise),
+      },
+      parts: compatibleParts,
+      supplierOffers: sp,
+      formulas: activeFormulas,
+      rules,
+      bomItems: configuredBomItems,
+      compatibilities: partCompatibilities,
+    });
+    setItems((prev) => [
+      ...prev,
+      ...result.lines.map((line) => ({
+        key: crypto.randomUUID(),
+        installation_id: installation.id,
+        ...line,
+      })),
+    ]);
+    setCalculationLogs((current) => [...current, ...result.logs]);
+    setNotes((current) =>
+      [current, "Journal des calculs:", ...result.logs.map((log) => `- ${log.message}`)]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    toast.success(`${result.lines.length} ligne(s) générée(s) par le moteur`);
+  };
+
   const addPresentParts = () => {
     const existingPartIds = new Set(items.map((item) => item.part_id).filter(Boolean));
     const compatiblePartIds = new Set(compatibleParts.map((part: any) => part.id));
@@ -516,7 +606,8 @@ function NewQuote() {
       );
     });
 
-  const getItemBillableQuantity = (i: Item) => i.quantity * (i.pricing_unit === "linear_meter" ? Number(i.length_meters || 0) || 1 : 1);
+  const getItemBillableQuantity = (i: Item) =>
+    i.quantity * (i.pricing_unit === "linear_meter" ? Number(i.length_meters || 0) || 1 : 1);
   const partsHT = items.reduce((s, i) => s + i.unit_price * getItemBillableQuantity(i), 0);
   const laborHT = laborHours * effectiveTravelCount * effectiveLaborRate;
   const feesHT =
@@ -623,6 +714,19 @@ function NewQuote() {
         );
         if (qiError) throw qiError;
       }
+      if (calculationLogs.length > 0) {
+        const { error: logError } = await supabase.from("quote_calculation_logs").insert(
+          calculationLogs.map((log) => ({
+            owner_id,
+            quote_id: quote.id,
+            session_key: number,
+            step: log.step,
+            message: log.message,
+            details: log.details ?? {},
+          })),
+        );
+        if (logError) throw logError;
+      }
       if (resolvedItems.length > 0) {
         const rows = resolvedItems.map((i, idx) => ({
           owner_id,
@@ -631,12 +735,13 @@ function NewQuote() {
           installation_id: i.installation_id ?? null,
           description: i.description,
           quantity: i.quantity,
-          length_meters: i.pricing_unit === "linear_meter" ? i.length_meters ?? null : null,
+          length_meters: i.pricing_unit === "linear_meter" ? (i.length_meters ?? null) : null,
           unit_price: i.unit_price,
           unit_cost: i.unit_cost,
           position: idx,
           parent_part_id: i.parent_part_id ?? null,
           relation_kind: i.relation_kind ?? null,
+          supplier_id: i.supplier_id ?? null,
         }));
         const { error: e2 } = await supabase.from("quote_items").insert(rows);
         if (e2) throw e2;
@@ -880,6 +985,15 @@ function NewQuote() {
                     })}
                   </select>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={autoCalculateInstallation}
+                  disabled={installationIds.length === 0}
+                >
+                  <Wand2 className="mr-1 h-4 w-4" />
+                  Calcul ERP automatique
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
