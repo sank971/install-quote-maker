@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
+import { useList, useUpsert, useRemove, useOne } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Wrench, Pencil, Trash2, Package } from "lucide-react";
+import { Plus, Search, Wrench, Pencil, Trash2, Package, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -60,6 +60,7 @@ function InstallationsList() {
   const { data: installationParts = [] } = useList<any>("installation_parts");
   const { data: defaultParts = [] } = useList<any>("installation_type_default_parts");
   const { data: modelDefaultParts = [] } = useList<any>("model_default_parts" as any);
+  const { data: installationRequirements = [] } = useList<any>("installation_requirements");
   const upsert = useUpsert("installations");
   const remove = useRemove("installations");
   const qc = useQueryClient();
@@ -72,6 +73,10 @@ function InstallationsList() {
   const [modelId, setModelId] = useState<string>("");
   const [partsOpen, setPartsOpen] = useState<any>(null);
   const [partDrafts, setPartDrafts] = useState<Record<string, InstalledPartDraft>>({});
+  
+  // Requirements state
+  const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
+  const [requirementsForm, setRequirementsForm] = useState<any>({});
 
   const normalizeName = (value: unknown) =>
     String(value ?? "")
@@ -130,6 +135,22 @@ function InstallationsList() {
     setPartsOpen(installation);
   };
 
+  const openRequirementsDialog = (installation: any) => {
+    const existing = installationRequirements.find((r: any) => r.installation_id === installation.id);
+    setRequirementsForm({
+      installation_id: installation.id,
+      requires_multiple_technicians: existing?.requires_multiple_technicians ?? false,
+      multiple_technicians_count: existing?.multiple_technicians_count ?? 1,
+      requires_lifting_equipment: existing?.requires_lifting_equipment ?? false,
+      lifting_equipment_type: existing?.lifting_equipment_type ?? "",
+      requires_special_equipment: existing?.requires_special_equipment ?? false,
+      special_equipment_description: existing?.special_equipment_description ?? "",
+      price_adjustment_pct: existing?.price_adjustment_pct ?? 0,
+      notes: existing?.notes ?? "",
+    });
+    setRequirementsOpen(installation);
+  };
+
   const updatePartDraft = (partId: string, patch: InstalledPartDraft) =>
     setPartDrafts((current) => ({
       ...current,
@@ -186,6 +207,44 @@ function InstallationsList() {
     if (error) return toast.error(error.message);
     toast.success("Pièce mise à jour");
     qc.invalidateQueries({ queryKey: ["installation_parts"] });
+  };
+
+  const saveRequirements = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+
+    const existing = installationRequirements.find(
+      (r: any) => r.installation_id === requirementsForm.installation_id
+    );
+
+    const payload = {
+      owner_id,
+      installation_id: requirementsForm.installation_id,
+      requires_multiple_technicians: requirementsForm.requires_multiple_technicians,
+      multiple_technicians_count: Number(requirementsForm.multiple_technicians_count) || 1,
+      requires_lifting_equipment: requirementsForm.requires_lifting_equipment,
+      lifting_equipment_type: requirementsForm.lifting_equipment_type || null,
+      requires_special_equipment: requirementsForm.requires_special_equipment,
+      special_equipment_description: requirementsForm.special_equipment_description || null,
+      price_adjustment_pct: Number(requirementsForm.price_adjustment_pct) || 0,
+      notes: requirementsForm.notes || null,
+    };
+
+    if (existing) {
+      const { error } = await (supabase.from("installation_requirements" as any) as any)
+        .update(payload)
+        .eq("id", existing.id);
+      if (error) return toast.error(error.message);
+    } else {
+      const { error } = await (supabase.from("installation_requirements" as any) as any).insert(
+        payload
+      );
+      if (error) return toast.error(error.message);
+    }
+
+    toast.success("Exigences mises à jour");
+    qc.invalidateQueries({ queryKey: ["installation_requirements"] });
+    setRequirementsOpen(null);
   };
 
   const filtered = installs.filter((i) => {
@@ -319,14 +378,16 @@ function InstallationsList() {
             const brand = brands.find((b: any) => b.id === i.brand_id);
             const model = models.find((m: any) => m.id === i.model_id);
             const presentParts = getPresentParts(i.id);
+            const requirements = installationRequirements.find((r: any) => r.installation_id === i.id);
+            
             return (
               <Card key={i.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 flex-1">
                     <div className="rounded-md bg-primary/10 p-2 text-primary">
                       <Wrench className="h-4 w-4" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <Link
                         to="/installations/$installationId"
                         params={{ installationId: i.id }}
@@ -343,6 +404,40 @@ function InstallationsList() {
                           Pièces: {type.component_types.join(", ")}
                         </div>
                       ) : null}
+                      
+                      {/* Special requirements indicator */}
+                      {requirements && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {requirements.requires_multiple_technicians && (
+                            <span className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-800 flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              {requirements.multiple_technicians_count} techniciens
+                            </span>
+                          )}
+                          {requirements.requires_lifting_equipment && (
+                            <span className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-800 flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Engin levage
+                            </span>
+                          )}
+                          {requirements.requires_special_equipment && (
+                            <span className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-800 flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Équipement spécial
+                            </span>
+                          )}
+                          {requirements.price_adjustment_pct !== 0 && (
+                            <span className={`rounded px-2 py-0.5 text-xs flex items-center gap-1 ${
+                              requirements.price_adjustment_pct > 0 
+                                ? "bg-red-100 text-red-800" 
+                                : "bg-green-100 text-green-800"
+                            }`}>
+                              {requirements.price_adjustment_pct > 0 ? "+" : ""}{requirements.price_adjustment_pct}% prix
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      
                       {presentParts.length ? (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {presentParts.slice(0, 4).map((x: any) => (
@@ -408,9 +503,12 @@ function InstallationsList() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Button variant="ghost" size="icon" onClick={() => openPartsDialog(i)}>
                       <Package className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openRequirementsDialog(i)}>
+                      <AlertCircle className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(i)}>
                       <Pencil className="h-4 w-4" />
@@ -432,6 +530,7 @@ function InstallationsList() {
         </div>
       )}
 
+      {/* Edit installation dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
@@ -592,6 +691,7 @@ function InstallationsList() {
         </DialogContent>
       </Dialog>
 
+      {/* Parts dialog */}
       <Dialog open={!!partsOpen} onOpenChange={(o) => !o && setPartsOpen(null)}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -699,6 +799,164 @@ function InstallationsList() {
               )}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Requirements dialog */}
+      <Dialog open={!!requirementsOpen} onOpenChange={(o) => !o && setRequirementsOpen(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Exigences spéciales : {requirementsOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs text-blue-900">
+                Indiquez les exigences spéciales de cette installation pour ajuster automatiquement
+                le prix du contrat.
+              </p>
+            </div>
+
+            {/* Multiple technicians */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={requirementsForm.requires_multiple_technicians}
+                  onChange={(e) =>
+                    setRequirementsForm({
+                      ...requirementsForm,
+                      requires_multiple_technicians: e.target.checked,
+                    })
+                  }
+                />
+                <span className="text-sm font-medium">Nécessite plusieurs techniciens</span>
+              </label>
+              {requirementsForm.requires_multiple_technicians && (
+                <div className="ml-6">
+                  <Label className="text-xs">Nombre de techniciens</Label>
+                  <Input
+                    type="number"
+                    min="2"
+                    value={requirementsForm.multiple_technicians_count}
+                    onChange={(e) =>
+                      setRequirementsForm({
+                        ...requirementsForm,
+                        multiple_technicians_count: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Lifting equipment */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={requirementsForm.requires_lifting_equipment}
+                  onChange={(e) =>
+                    setRequirementsForm({
+                      ...requirementsForm,
+                      requires_lifting_equipment: e.target.checked,
+                    })
+                  }
+                />
+                <span className="text-sm font-medium">Nécessite un engin de levage</span>
+              </label>
+              {requirementsForm.requires_lifting_equipment && (
+                <div className="ml-6">
+                  <Label className="text-xs">Type d'engin (ex: grue, nacelle...)</Label>
+                  <Input
+                    value={requirementsForm.lifting_equipment_type}
+                    onChange={(e) =>
+                      setRequirementsForm({
+                        ...requirementsForm,
+                        lifting_equipment_type: e.target.value,
+                      })
+                    }
+                    placeholder="Description"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Special equipment */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={requirementsForm.requires_special_equipment}
+                  onChange={(e) =>
+                    setRequirementsForm({
+                      ...requirementsForm,
+                      requires_special_equipment: e.target.checked,
+                    })
+                  }
+                />
+                <span className="text-sm font-medium">Nécessite du matériel spécial</span>
+              </label>
+              {requirementsForm.requires_special_equipment && (
+                <div className="ml-6">
+                  <Label className="text-xs">Description du matériel</Label>
+                  <Input
+                    value={requirementsForm.special_equipment_description}
+                    onChange={(e) =>
+                      setRequirementsForm({
+                        ...requirementsForm,
+                        special_equipment_description: e.target.value,
+                      })
+                    }
+                    placeholder="Ex: Équipement de mesure laser, outillage spécifique..."
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Price adjustment */}
+            <div className="space-y-2">
+              <Label className="text-sm">Ajustement de prix du contrat (%)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={requirementsForm.price_adjustment_pct}
+                onChange={(e) =>
+                  setRequirementsForm({
+                    ...requirementsForm,
+                    price_adjustment_pct: e.target.value,
+                  })
+                }
+                placeholder="Ex: +25 pour +25%, -10 pour -10%"
+              />
+              <p className="text-xs text-muted-foreground">
+                {requirementsForm.price_adjustment_pct > 0
+                  ? `+${requirementsForm.price_adjustment_pct}% de surcharge`
+                  : requirementsForm.price_adjustment_pct < 0
+                    ? `${requirementsForm.price_adjustment_pct}% de réduction`
+                    : "Aucun ajustement"}
+              </p>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label className="text-sm">Notes supplémentaires</Label>
+              <Textarea
+                value={requirementsForm.notes}
+                onChange={(e) =>
+                  setRequirementsForm({ ...requirementsForm, notes: e.target.value })
+                }
+                placeholder="Détails sur les exigences spéciales..."
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setRequirementsOpen(null)}>
+              Annuler
+            </Button>
+            <Button onClick={saveRequirements}>Enregistrer les exigences</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
