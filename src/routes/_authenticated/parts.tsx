@@ -92,6 +92,7 @@ function PartsPage() {
       description: fd.get("description") || null,
       sale_price: Number(fd.get("sale_price") ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
+      is_kit: fd.get("is_kit") === "on",
     });
     setOpen(false);
   };
@@ -124,7 +125,7 @@ function PartsPage() {
 
   const addComponents = async (parentPartId: string) => {
     if (selectedComponentPartIds.length === 0) {
-      return toast.error("Sélectionnez au moins un accessoire");
+      return toast.error("Sélectionnez au moins une pièce");
     }
     if (selectedComponentPartIds.includes(parentPartId)) {
       return toast.error("Une pièce ne peut pas être composante d’elle-même");
@@ -136,7 +137,7 @@ function PartsPage() {
     const componentsToAdd = selectedComponentPartIds.filter((id) => !existingComponentIds.has(id));
 
     if (componentsToAdd.length === 0) {
-      return toast.info("Toutes les pièces sélectionnées sont déjà liées comme accessoires");
+      return toast.info("Toutes les pièces sélectionnées sont déjà liées");
     }
 
     const { error } = await (supabase.from("part_components" as any) as any).upsert(
@@ -154,9 +155,7 @@ function PartsPage() {
     setSelectedComponentPartIds([]);
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success(
-      componentsToAdd.length > 1
-        ? `${componentsToAdd.length} accessoires liés`
-        : "Accessoire lié",
+      componentsToAdd.length > 1 ? `${componentsToAdd.length} pièces liées` : "Pièce liée",
     );
   };
 
@@ -175,7 +174,7 @@ function PartsPage() {
       .eq("component_part_id", componentPartId);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["part_components"] });
-    toast.success("Accessoire supprimé");
+    toast.success("Pièce supprimée");
   };
 
   const toggleTypeCompat = async (partId: string, typeId: string, present: boolean) => {
@@ -261,7 +260,8 @@ function PartsPage() {
                         </span>
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-muted-foreground">
-                          Compat. : {typeCompatCount} types · {modelCompatCount} modèles
+                          {p.is_kit ? "Kit" : "Pièce"} · Compat. : {typeCompatCount} types ·{" "}
+                          {modelCompatCount} modèles
                         </span>
                         {componentCount > 0 && (
                           <>
@@ -283,10 +283,10 @@ function PartsPage() {
                         setSelectedComponentPartIds([]);
                         setComponentDraft({ quantity: 1, notes: "" });
                       }}
-                      title="Lier des accessoires à cette pièce"
+                      title="Gérer la composition de cette pièce ou de ce kit"
+                      aria-label="Gérer la composition"
                     >
-                      <Boxes className="mr-2 h-4 w-4" />
-                      Accessoires
+                      <Boxes className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -381,6 +381,10 @@ function PartsPage() {
                   <option value="linear_meter">Au mètre linéaire</option>
                 </select>
               </div>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <input name="is_kit" type="checkbox" defaultChecked={Boolean(edit?.is_kit)} />
+                Vendre comme kit / prix de lot
+              </label>
             </div>
             <div>
               <Label>Description</Label>
@@ -408,11 +412,14 @@ function PartsPage() {
       >
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Accessoires liés : {componentsOpen?.name}</DialogTitle>
+            <DialogTitle>
+              {componentsOpen?.is_kit ? "Composition du kit" : "Pièces liées"} :{" "}
+              {componentsOpen?.name}
+            </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Liez une ou plusieurs pièces en tant qu’accessoires de cette pièce. Exemple : un moteur
-            peut être lié à ses accessoires, kits ou organes complémentaires nécessaires dans un devis.
+            Liez une ou plusieurs pièces de la base pour composer un kit ou associer des organes
+            complémentaires nécessaires dans un devis.
           </p>
           <div className="space-y-2">
             {partComponents
@@ -449,7 +456,7 @@ function PartsPage() {
           <div className="space-y-3 rounded-md border border-border/60 p-3">
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Ajouter plusieurs accessoires
+                Ajouter plusieurs pièces
               </div>
               <div className="grid max-h-96 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
                 {parts
