@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Plus, UserCheck, FileText, PackageCheck, CheckCircle2 } from "lucide-react";
@@ -34,6 +35,7 @@ function num(prefix: string) {
 
 function TicketsPage() {
   const qc = useQueryClient();
+  const [newTicketInstallationId, setNewTicketInstallationId] = useState("");
   const { data: tickets = [] } = useList<any>("tickets");
   const { data: clients = [] } = useList<any>("clients", { orderBy: "name", ascending: true });
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
@@ -67,13 +69,30 @@ function TicketsPage() {
       e.preventDefault();
       const fd = new FormData(e.currentTarget);
       const owner_id = await currentUserId();
-      const installation = installations.find((i: any) => i.id === fd.get("installation_id"));
-      const site = sites.find((s: any) => s.id === installation?.site_id);
+      const title = String(fd.get("title") ?? "").trim();
+      const description = String(fd.get("description") ?? "").trim();
+      const installationId = newTicketInstallationId || String(fd.get("installation_id") ?? "");
+      const installation = installations.find((i: any) => i.id === installationId);
+
+      if (!installationId) {
+        throw new Error("Veuillez sélectionner une installation.");
+      }
+
+      if (!installation) {
+        throw new Error("Installation introuvable. Rechargez la page puis réessayez.");
+      }
+
+      const site = sites.find((s: any) => s.id === installation.site_id);
+
+      if (!site) {
+        throw new Error("Site associé à l’installation introuvable.");
+      }
+
       const payload = {
         owner_id,
         ticket_number: num("TCK"),
-        title: fd.get("title"),
-        description: fd.get("description"),
+        title,
+        description: description || null,
         client_id: site.client_id,
         site_id: site.id,
         installation_id: installation.id,
@@ -109,6 +128,7 @@ function TicketsPage() {
         "Intervention de diagnostic créée",
       );
       (e.target as HTMLFormElement).reset();
+      setNewTicketInstallationId("");
     },
     onSuccess: () => {
       invalidate();
@@ -323,7 +343,12 @@ function TicketsPage() {
           <form onSubmit={(e) => createTicket.mutate(e)} className="grid gap-3 md:grid-cols-4">
             <div>
               <Label>Installation</Label>
-              <Select name="installation_id" required>
+              <Select
+                name="installation_id"
+                value={newTicketInstallationId}
+                onValueChange={setNewTicketInstallationId}
+                required
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Installation" />
                 </SelectTrigger>
@@ -344,7 +369,10 @@ function TicketsPage() {
               <Label>Description</Label>
               <Input name="description" />
             </div>
-            <Button className="md:col-span-4">
+            <Button
+              className="md:col-span-4"
+              disabled={createTicket.isPending || !installations.length}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Créer + diagnostic
             </Button>
