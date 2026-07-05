@@ -49,6 +49,7 @@ function NewQuote() {
   });
   const { data: sp = [] } = useList<any>("supplier_parts");
   const { data: contracts = [] } = useList<any>("contracts");
+  const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
   const { data: partCategories = [] } = useList<any>("part_categories", {
     orderBy: "name",
     ascending: true,
@@ -84,6 +85,7 @@ function NewQuote() {
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
   const contractRepairsIncluded = Boolean(contract?.repairs_included);
   const contractOnCallIncluded = Boolean(contract?.on_call_included);
+  const kits = parts.filter((part: any) => part.is_kit);
   const shouldUseContractWorkRates =
     interventionReason === "damage_vandalism" || interventionReason === "new_installation";
   const effectiveLaborRate = Number(laborRate);
@@ -297,7 +299,22 @@ function NewQuote() {
     ]
       .filter(Boolean)
       .join(" · ");
+    const negotiatedKitPrice =
+      p.is_kit && contractId
+        ? contractKitPrices.find(
+            (row: any) => row.contract_id === contractId && row.kit_part_id === p.id,
+          )
+        : null;
     const discount = contract?.parts_discount_pct ? Number(contract.parts_discount_pct) / 100 : 0;
+    const componentCost = p.is_kit
+      ? partComponents
+          .filter((component: any) => component.parent_part_id === p.id)
+          .reduce(
+            (sum: number, component: any) =>
+              sum + cheapestCost(component.component_part_id) * (Number(component.quantity) || 1),
+            0,
+          )
+      : null;
     return {
       key: crypto.randomUUID(),
       part_id: p.id,
@@ -306,8 +323,10 @@ function NewQuote() {
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
       quantity: p.pricing_unit === "linear_meter" && length > 0 ? length : 1,
-      unit_price: Number(p.sale_price) * (1 - discount),
-      unit_cost: cheapestCost(p.id),
+      unit_price: negotiatedKitPrice
+        ? Number(negotiatedKitPrice.negotiated_price)
+        : Number(p.sale_price) * (1 - discount),
+      unit_cost: componentCost ?? cheapestCost(p.id),
       pricing_unit: p.pricing_unit ?? "unit",
       ...patch,
     };
@@ -728,6 +747,34 @@ function NewQuote() {
                     </option>
                   ))}
                 </select>
+                {kits.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        addPart(e.target.value);
+                        e.target.value = "";
+                      }
+                    }}
+                    className="flex h-9 min-w-[180px] rounded-md border border-input bg-transparent px-3 text-sm"
+                  >
+                    <option value="">+ Ajouter un kit</option>
+                    {kits.map((kit: any) => {
+                      const negotiatedPrice = contractId
+                        ? contractKitPrices.find(
+                            (row: any) =>
+                              row.contract_id === contractId && row.kit_part_id === kit.id,
+                          )
+                        : null;
+                      return (
+                        <option key={kit.id} value={kit.id}>
+                          {kit.name} —{" "}
+                          {Number(negotiatedPrice?.negotiated_price ?? kit.sale_price).toFixed(2)}€
+                          {negotiatedPrice ? " contrat" : " lot"}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -903,7 +950,9 @@ function NewQuote() {
                   )}
                   {contractDiscountPct > 0 && (
                     <div className="mt-2 text-xs text-muted-foreground">
-                      Réduction contrat appliquée : {contractDiscountPct.toFixed(2)}%
+                      {i.part_id && parts.find((part: any) => part.id === i.part_id)?.is_kit
+                        ? "Tarif kit appliqué"
+                        : `Réduction contrat appliquée : ${contractDiscountPct.toFixed(2)}%`}
                     </div>
                   )}
                 </div>
