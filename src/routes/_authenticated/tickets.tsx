@@ -20,12 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useList } from "@/lib/db-hooks";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  addHistoryEvent,
-  canCloseTicket,
-  currentUserId,
-  setTicketStatus,
-} from "@/lib/ticket-workflow";
+import { canCloseTicket, currentUserId, setTicketStatus } from "@/lib/ticket-workflow";
 
 export const Route = createFileRoute("/_authenticated/tickets")({ component: TicketsPage });
 
@@ -107,9 +102,8 @@ function TicketsPage() {
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
 
   const createTicket = useMutation({
-    mutationFn: async (e: any) => {
-      e.preventDefault();
-      const fd = new FormData(e.currentTarget);
+    mutationFn: async (form: HTMLFormElement) => {
+      const fd = new FormData(form);
       const owner_id = await currentUserId();
       const site = sites.find((s: any) => s.id === selectedSiteId);
       if (!site) throw new Error("Sélectionnez d’abord un client ou un site");
@@ -149,49 +143,23 @@ function TicketsPage() {
           installation_id: installation.id,
           status: "en_attente_assignation",
         };
-        const { data: ticket, error } = await (supabase.from("tickets" as any) as any)
-          .insert(payload)
-          .select()
-          .single();
+        const { data: ticket, error } = await (supabase.rpc as any)(
+          "create_ticket_with_diagnostic",
+          {
+            p_client_id: payload.client_id,
+            p_site_id: payload.site_id,
+            p_installation_id: payload.installation_id,
+            p_ticket_number: payload.ticket_number,
+            p_title: payload.title,
+            p_description: payload.description || null,
+            p_ticket_group_id: group?.id ?? null,
+          },
+        );
         if (error) throw error;
-
-        if (group) {
-          const { error: groupError } = await (
-            supabase.from("ticket_group_tickets" as any) as any
-          ).insert({ owner_id, group_id: group.id, ticket_id: ticket.id });
-          if (groupError) throw groupError;
-        }
-
-        await addHistoryEvent(
-          owner_id,
-          { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
-          "ticket_created",
-          group ? "Ticket créé et lié au dossier site" : "Ticket créé",
-          String(payload.title),
-          group ? { ticket_group_id: group.id } : {},
-        );
-        const { error: iErr } = await (supabase.from("interventions" as any) as any).insert({
-          owner_id,
-          ticket_id: ticket.id,
-          site_id: site.id,
-          installation_id: installation.id,
-          title: `Diagnostic ${ticket.ticket_number}`,
-          type: "diagnostic",
-          status: "non_assignee",
-          description: payload.description,
-        });
-        if (iErr) throw iErr;
-        await addHistoryEvent(
-          owner_id,
-          { ticket_id: ticket.id, site_id: site.id, installation_id: installation.id },
-          "intervention_created",
-          "Intervention de diagnostic créée",
-          group ? "Ticket lié automatiquement aux autres installations sélectionnées" : undefined,
-          group ? { ticket_group_id: group.id } : {},
-        );
+        if (!ticket) throw new Error("Le ticket n’a pas pu être créé");
       }
       const ticketCount = selectedInstallationIds.length;
-      (e.target as HTMLFormElement).reset();
+      form.reset();
       setSelectedInstallationIds([]);
       return ticketCount;
     },
@@ -405,7 +373,13 @@ function TicketsPage() {
           <CardTitle className="text-base">Créer un ticket</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => createTicket.mutate(e)} className="grid gap-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createTicket.mutate(e.currentTarget);
+            }}
+            className="grid gap-4"
+          >
             <div className="grid gap-2">
               <Label>1. Rechercher puis choisir le client ou le site</Label>
               <Input
