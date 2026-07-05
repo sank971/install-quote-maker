@@ -7,6 +7,7 @@ import {
   Package,
   Truck,
   FileText,
+  ClipboardList,
   ScrollText,
   Settings,
   LogOut,
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 const nav = [
   { title: "Tableau de bord", to: "/dashboard", icon: LayoutDashboard },
   { title: "Devis", to: "/quotes", icon: FileText },
+  { title: "Tickets", to: "/tickets", icon: ClipboardList },
   { title: "Clients", to: "/clients", icon: Users },
   { title: "Sites", to: "/sites", icon: MapPin },
   { title: "Installations", to: "/installations", icon: Wrench },

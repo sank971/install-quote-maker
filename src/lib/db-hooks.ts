@@ -26,7 +26,13 @@ export type TableName =
   | "contracts"
   | "interventions"
   | "quotes"
-  | "quote_items";
+  | "quote_items"
+  | "tickets"
+  | "history_events"
+  | "intervention_reports"
+  | "purchase_orders"
+  | "part_orders"
+  | "part_order_items";
 
 export function useList<T = any>(
   table: TableName,
