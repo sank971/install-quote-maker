@@ -248,15 +248,18 @@ function QuoteDetail() {
   }
   const componentTypes = new Set(componentTypeNames.map((name) => normalizeName(name)));
   const selectedTypes = new Set(selectedPartTypes.map((name) => normalizeName(name)));
-  const compatibleParts = (!editInstallation?.model_id && !editInstallation?.type_id
-    ? parts
-    : parts.filter((part: any) => {
-        const category = normalizeName(part.category);
-        const matchesSelectedType = selectedTypes.size === 0 || selectedTypes.has(category);
-        const matchesCompatibility =
-          compatibilityPartIds.has(part.id) || (Boolean(category) && componentTypes.has(category));
-        return matchesSelectedType && matchesCompatibility;
-      })) as any[];
+  const compatibleParts = (
+    !editInstallation?.model_id && !editInstallation?.type_id
+      ? parts
+      : parts.filter((part: any) => {
+          const category = normalizeName(part.category);
+          const matchesSelectedType = selectedTypes.size === 0 || selectedTypes.has(category);
+          const matchesCompatibility =
+            compatibilityPartIds.has(part.id) ||
+            (Boolean(category) && componentTypes.has(category));
+          return matchesSelectedType && matchesCompatibility;
+        })
+  ) as any[];
   const cheapestCost = (partId: string) => {
     const offers = supplierParts.filter((row: any) => row.part_id === partId);
     if (offers.length === 0) return 0;
@@ -330,23 +333,35 @@ function QuoteDetail() {
       .forEach((row: any) => addEditPart(row.part_id, row.installation_id));
   };
   const addEditComponentToQuote = (parentItem: EditableItem, component: any) => {
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    const isUnitAccessory = component.relation_kind === "accessory";
+    const componentPatch: Partial<EditableItem> = {
+      parent_part_id: parentItem.part_id,
+      quantity: Number(component.quantity) || 1,
+    };
+    if (isUnitAccessory && componentPart) {
+      componentPatch.unit_price = Number(componentPart.sale_price);
+    }
     const componentItem = buildEditPartItem(
       component.component_part_id,
-      {
-        parent_part_id: parentItem.part_id,
-        quantity: Number(component.quantity) || 1,
-      },
+      componentPatch,
       parentItem.installation_id ?? editInstallationId,
     );
     if (!componentItem) return;
     const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    const relationLabel =
+      component.relation_kind === "kit_component"
+        ? "composition"
+        : component.relation_kind === "negotiated_option"
+          ? "option prix négocié"
+          : "accessoire à l’unité";
     setEditItems((current) => [
       ...current,
       {
         ...componentItem,
         description: parentName
-          ? `${parentName} > ${componentItem.description}`
-          : componentItem.description,
+          ? `${parentName} > ${componentItem.description} (${relationLabel})`
+          : `${componentItem.description} (${relationLabel})`,
       },
     ]);
   };
@@ -933,7 +948,8 @@ function QuoteDetail() {
                   ) && (
                     <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
                       <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        <Boxes className="h-3.5 w-3.5" /> Pièces composantes à remplacer
+                        <Boxes className="h-3.5 w-3.5" /> Composition, options négociées et
+                        accessoires
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {partComponents
@@ -959,6 +975,11 @@ function QuoteDetail() {
                               >
                                 {alreadyAdded ? "✓ " : "+ "}
                                 {componentPart?.name ?? "Pièce inconnue"} · Qté {component.quantity}
+                                {component.relation_kind === "kit_component"
+                                  ? " · composition"
+                                  : component.relation_kind === "negotiated_option"
+                                    ? " · option négociée"
+                                    : " · accessoire unité"}
                               </Button>
                             );
                           })}
