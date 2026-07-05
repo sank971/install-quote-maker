@@ -92,6 +92,7 @@ function PartsPage() {
   const [componentsOpen, setComponentsOpen] = useState<any>(null);
   const [componentDraft, setComponentDraft] = useState({
     quantity: 1,
+    relation_kind: "accessory",
     notes: "",
   });
   const [selectedComponentPartIds, setSelectedComponentPartIds] = useState<string[]>([]);
@@ -460,8 +461,8 @@ function PartsPage() {
       .includes(q.toLowerCase()),
   );
 
-  const openNew = () => {
-    setEdit({});
+  const openNew = (isKit = false) => {
+    setEdit({ is_kit: isKit });
     setOpen(true);
   };
   const openEdit = (p: any) => {
@@ -556,16 +557,17 @@ function PartsPage() {
         component_part_id: componentPartId,
         owner_id,
         quantity: Number(componentDraft.quantity) || 1,
+        relation_kind: componentDraft.relation_kind,
         position: siblings.length + index,
         notes: componentDraft.notes || null,
       })),
     );
     if (error) return toast.error(error.message);
-    setComponentDraft({ quantity: 1, notes: "" });
+    setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
     setSelectedComponentPartIds([]);
     qc.invalidateQueries({ queryKey: ["part_components"] });
     toast.success(
-      componentsToAdd.length > 1 ? `${componentsToAdd.length} accessoires liés` : "Accessoire lié",
+      componentsToAdd.length > 1 ? `${componentsToAdd.length} pièces liées` : "Pièce liée",
     );
   };
 
@@ -624,9 +626,13 @@ function PartsPage() {
               <Upload className="mr-2 h-4 w-4" />
               Importer CSV
             </Button>
-            <Button onClick={openNew}>
+            <Button onClick={() => openNew(false)}>
               <Plus className="mr-2 h-4 w-4" />
               Nouvelle pièce
+            </Button>
+            <Button onClick={() => openNew(true)}>
+              <Boxes className="mr-2 h-4 w-4" />
+              Nouveau kit
             </Button>
           </div>
         }
@@ -643,9 +649,9 @@ function PartsPage() {
 
       {filtered.length === 0 ? (
         <EmptyState
-          title="Aucune pièce"
+          title="Aucune pièce ou kit"
           action={
-            <Button onClick={openNew}>
+            <Button onClick={() => openNew(false)}>
               <Plus className="mr-2 h-4 w-4" />
               Nouvelle pièce
             </Button>
@@ -716,7 +722,7 @@ function PartsPage() {
                       onClick={() => {
                         setComponentsOpen(p);
                         setSelectedComponentPartIds([]);
-                        setComponentDraft({ quantity: 1, notes: "" });
+                        setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
                       }}
                       title="Gérer la composition de cette pièce ou de ce kit"
                       aria-label="Gérer la composition"
@@ -754,7 +760,9 @@ function PartsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{edit?.id ? "Modifier" : "Nouvelle"} pièce</DialogTitle>
+            <DialogTitle>
+              {edit?.id ? "Modifier" : edit?.is_kit ? "Nouveau kit" : "Nouvelle pièce"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3">
             <div>
@@ -837,7 +845,7 @@ function PartsPage() {
               </div>
               <label className="flex items-center gap-2 text-sm sm:col-span-2">
                 <input name="is_kit" type="checkbox" defaultChecked={Boolean(edit?.is_kit)} />
-                Vendre comme kit / prix de lot
+                Kit (référence de lot disponible dans les pièces)
               </label>
             </div>
             <div>
@@ -860,21 +868,20 @@ function PartsPage() {
           if (!o) {
             setComponentsOpen(null);
             setSelectedComponentPartIds([]);
-            setComponentDraft({ quantity: 1, notes: "" });
+            setComponentDraft({ quantity: 1, relation_kind: "accessory", notes: "" });
           }
         }}
       >
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {componentsOpen?.is_kit ? "Composition du kit" : "Pièces liées"} :{" "}
-              {componentsOpen?.name}
+              {componentsOpen?.is_kit ? "Composition et options du kit" : "Accessoires de la pièce"}{" "}
+              : {componentsOpen?.name}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Liez une ou plusieurs pièces en tant qu’accessoires de cette pièce. Exemple : un moteur
-            peut être lié à ses accessoires, kits ou organes complémentaires nécessaires dans un
-            devis.
+            Séparez les pièces qui composent réellement un kit, les options qui bénéficient du prix
+            négocié du kit et les accessoires facturables à l’unité.
           </p>
           <div className="space-y-2">
             {partComponents
@@ -891,7 +898,13 @@ function PartsPage() {
                     <div>
                       <div className="font-medium">{part?.name ?? "Pièce inconnue"}</div>
                       <div className="text-xs text-muted-foreground">
-                        Qté {component.quantity} {part?.reference ? `· Réf. ${part.reference}` : ""}{" "}
+                        Qté {component.quantity} ·{" "}
+                        {component.relation_kind === "kit_component"
+                          ? "Composition du kit"
+                          : component.relation_kind === "negotiated_option"
+                            ? "Option prix négocié"
+                            : "Accessoire à l’unité"}{" "}
+                        {part?.reference ? `· Réf. ${part.reference}` : ""}{" "}
                         {component.notes ? `· ${component.notes}` : ""}
                       </div>
                     </div>
@@ -951,7 +964,7 @@ function PartsPage() {
                   })}
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-[90px_1fr_auto]">
+            <div className="grid gap-2 sm:grid-cols-[90px_220px_1fr_auto]">
               <Input
                 type="number"
                 step="0.01"
@@ -962,6 +975,17 @@ function PartsPage() {
                 }
                 placeholder="Qté"
               />
+              <select
+                value={componentDraft.relation_kind}
+                onChange={(e) =>
+                  setComponentDraft((draft) => ({ ...draft, relation_kind: e.target.value }))
+                }
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="kit_component">Composition du kit</option>
+                <option value="negotiated_option">Option prix négocié</option>
+                <option value="accessory">Accessoire à l’unité</option>
+              </select>
               <Input
                 value={componentDraft.notes}
                 onChange={(e) =>

@@ -615,6 +615,7 @@ export type Database = {
           parent_part_id: string
           position: number
           quantity: number
+          relation_kind: string
         }
         Insert: {
           component_part_id: string
@@ -624,6 +625,7 @@ export type Database = {
           parent_part_id: string
           position?: number
           quantity?: number
+          relation_kind?: string
         }
         Update: {
           component_part_id?: string
@@ -633,6 +635,7 @@ export type Database = {
           parent_part_id?: string
           position?: number
           quantity?: number
+          relation_kind?: string
         }
         Relationships: [
           {
