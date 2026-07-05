@@ -162,6 +162,7 @@ export type Database = {
         Row: {
           client_id: string | null
           created_at: string
+          dump_evacuation_fee: number | null
           flat_fee: number | null
           hourly_rate: number | null
           id: string
@@ -171,6 +172,7 @@ export type Database = {
           on_call_hourly_rate: number | null
           on_call_included: boolean
           on_call_travel_fee: number | null
+          oversized_shipping_fee: number | null
           owner_id: string
           parts_discount_pct: number | null
           repairs_included: boolean
@@ -183,6 +185,7 @@ export type Database = {
         Insert: {
           client_id?: string | null
           created_at?: string
+          dump_evacuation_fee?: number | null
           flat_fee?: number | null
           hourly_rate?: number | null
           id?: string
@@ -192,6 +195,7 @@ export type Database = {
           on_call_hourly_rate?: number | null
           on_call_included?: boolean
           on_call_travel_fee?: number | null
+          oversized_shipping_fee?: number | null
           owner_id: string
           parts_discount_pct?: number | null
           repairs_included?: boolean
@@ -204,6 +208,7 @@ export type Database = {
         Update: {
           client_id?: string | null
           created_at?: string
+          dump_evacuation_fee?: number | null
           flat_fee?: number | null
           hourly_rate?: number | null
           id?: string
@@ -213,6 +218,7 @@ export type Database = {
           on_call_hourly_rate?: number | null
           on_call_included?: boolean
           on_call_travel_fee?: number | null
+          oversized_shipping_fee?: number | null
           owner_id?: string
           parts_discount_pct?: number | null
           repairs_included?: boolean
@@ -878,6 +884,7 @@ export type Database = {
           client_id: string
           contract_id: string | null
           created_at: string
+          dump_evacuation_fee: number
           id: string
           installation_id: string | null
           intervention_reason: string
@@ -887,6 +894,7 @@ export type Database = {
           labor_rate: number | null
           lifting_equipment_fee: number
           notes: string | null
+          oversized_shipping_fee: number
           owner_id: string
           quote_number: string
           shipping_fee: number
@@ -901,6 +909,7 @@ export type Database = {
           client_id: string
           contract_id?: string | null
           created_at?: string
+          dump_evacuation_fee?: number
           id?: string
           installation_id?: string | null
           intervention_reason?: string
@@ -910,6 +919,7 @@ export type Database = {
           labor_rate?: number | null
           lifting_equipment_fee?: number
           notes?: string | null
+          oversized_shipping_fee?: number
           owner_id: string
           quote_number: string
           shipping_fee?: number
@@ -924,6 +934,7 @@ export type Database = {
           client_id?: string
           contract_id?: string | null
           created_at?: string
+          dump_evacuation_fee?: number
           id?: string
           installation_id?: string | null
           intervention_reason?: string
@@ -933,6 +944,7 @@ export type Database = {
           labor_rate?: number | null
           lifting_equipment_fee?: number
           notes?: string | null
+          oversized_shipping_fee?: number
           owner_id?: string
           quote_number?: string
           shipping_fee?: number

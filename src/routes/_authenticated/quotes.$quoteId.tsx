@@ -65,6 +65,8 @@ function QuoteDetail() {
   const laborHT = Number(quote.labor_hours ?? 0) * Number(quote.labor_rate ?? 0);
   const shippingFee = Number(quote.shipping_fee ?? 0);
   const wasteTreatmentFee = Number(quote.waste_treatment_fee ?? 0);
+  const oversizedShippingFee = Number(quote.oversized_shipping_fee ?? 0);
+  const dumpEvacuationFee = Number(quote.dump_evacuation_fee ?? 0);
   const liftingEquipmentFee = Number(quote.lifting_equipment_fee ?? 0);
   const totalHT =
     partsHT +
@@ -72,6 +74,8 @@ function QuoteDetail() {
     Number(quote.travel_fee ?? 0) +
     shippingFee +
     wasteTreatmentFee +
+    oversizedShippingFee +
+    dumpEvacuationFee +
     liftingEquipmentFee;
   const vat = (totalHT * Number(quote.vat_rate)) / 100;
   const totalTTC = totalHT + vat;
@@ -244,6 +248,22 @@ function QuoteDetail() {
                     Traitement déchets
                   </td>
                   <td className="py-2 text-right">{fmt(wasteTreatmentFee)}</td>
+                </tr>
+              )}
+              {oversizedShippingFee > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Frais de port hors gabarit
+                  </td>
+                  <td className="py-2 text-right">{fmt(oversizedShippingFee)}</td>
+                </tr>
+              )}
+              {dumpEvacuationFee > 0 && (
+                <tr>
+                  <td className="py-2" colSpan={4}>
+                    Évacuation déchetterie
+                  </td>
+                  <td className="py-2 text-right">{fmt(dumpEvacuationFee)}</td>
                 </tr>
               )}
               {liftingEquipmentFee > 0 && (

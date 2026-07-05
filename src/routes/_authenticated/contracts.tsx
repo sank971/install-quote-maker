@@ -71,6 +71,8 @@ function ContractsPage() {
       on_call_travel_fee: asNumberOrNull(fd.get("on_call_travel_fee")),
       shipping_fee: asNumberOrNull(fd.get("shipping_fee")),
       waste_treatment_fee: asNumberOrNull(fd.get("waste_treatment_fee")),
+      oversized_shipping_fee: asNumberOrNull(fd.get("oversized_shipping_fee")),
+      dump_evacuation_fee: asNumberOrNull(fd.get("dump_evacuation_fee")),
       lifting_equipment_fee: asNumberOrNull(fd.get("lifting_equipment_fee")),
       notes: fd.get("notes") || null,
     });
@@ -313,6 +315,24 @@ function ContractsPage() {
                   type="number"
                   step="0.01"
                   defaultValue={edit?.waste_treatment_fee ?? ""}
+                />
+              </div>
+              <div>
+                <Label>Frais de port hors gabarit (€)</Label>
+                <Input
+                  name="oversized_shipping_fee"
+                  type="number"
+                  step="0.01"
+                  defaultValue={edit?.oversized_shipping_fee ?? ""}
+                />
+              </div>
+              <div>
+                <Label>Évacuation déchetterie (€)</Label>
+                <Input
+                  name="dump_evacuation_fee"
+                  type="number"
+                  step="0.01"
+                  defaultValue={edit?.dump_evacuation_fee ?? ""}
                 />
               </div>
               <div>

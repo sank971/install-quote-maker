@@ -68,6 +68,8 @@ function NewQuote() {
   const [isOnCall, setIsOnCall] = useState(false);
   const [shippingFee, setShippingFee] = useState(0);
   const [wasteTreatmentFee, setWasteTreatmentFee] = useState(0);
+  const [oversizedShippingFee, setOversizedShippingFee] = useState(0);
+  const [dumpEvacuationFee, setDumpEvacuationFee] = useState(0);
   const [liftingEquipmentFee, setLiftingEquipmentFee] = useState(0);
   const [vatRate, setVatRate] = useState(20);
   const [notes, setNotes] = useState("");
@@ -114,6 +116,8 @@ function NewQuote() {
 
     setShippingFee(Number(c.shipping_fee ?? 0));
     setWasteTreatmentFee(Number(c.waste_treatment_fee ?? 0));
+    setOversizedShippingFee(Number(c.oversized_shipping_fee ?? 0));
+    setDumpEvacuationFee(Number(c.dump_evacuation_fee ?? 0));
     setLiftingEquipmentFee(Number(c.lifting_equipment_fee ?? 0));
   };
 
@@ -427,7 +431,13 @@ function NewQuote() {
 
   const partsHT = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
   const laborHT = laborHours * effectiveLaborRate;
-  const feesHT = effectiveTravelFee + shippingFee + wasteTreatmentFee + liftingEquipmentFee;
+  const feesHT =
+    effectiveTravelFee +
+    shippingFee +
+    wasteTreatmentFee +
+    oversizedShippingFee +
+    dumpEvacuationFee +
+    liftingEquipmentFee;
   const totalHT = partsHT + laborHT + feesHT;
   const vat = totalHT * (vatRate / 100);
   const totalTTC = totalHT + vat;
@@ -475,6 +485,8 @@ function NewQuote() {
           is_on_call: isOnCall,
           shipping_fee: shippingFee,
           waste_treatment_fee: wasteTreatmentFee,
+          oversized_shipping_fee: oversizedShippingFee,
+          dump_evacuation_fee: dumpEvacuationFee,
           lifting_equipment_fee: liftingEquipmentFee,
           vat_rate: vatRate,
           notes: notes || null,
@@ -1011,6 +1023,24 @@ function NewQuote() {
                 />
               </div>
               <div>
+                <Label>Frais de port hors gabarit €</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={oversizedShippingFee}
+                  onChange={(e) => setOversizedShippingFee(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <Label>Évacuation déchetterie €</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={dumpEvacuationFee}
+                  onChange={(e) => setDumpEvacuationFee(Number(e.target.value))}
+                />
+              </div>
+              <div>
                 <Label>Engin de levage €</Label>
                 <Input
                   type="number"
@@ -1057,6 +1087,11 @@ function NewQuote() {
               <Row label="Pièces HT" value={partsHT} />
               <Row label="Main-d'œuvre" value={laborHT} />
               <Row label="Déplacement" value={travelFee} />
+              <Row label="Frais de port" value={shippingFee} />
+              <Row label="Traitement déchets" value={wasteTreatmentFee} />
+              <Row label="Frais de port hors gabarit" value={oversizedShippingFee} />
+              <Row label="Évacuation déchetterie" value={dumpEvacuationFee} />
+              <Row label="Engin de levage" value={liftingEquipmentFee} />
               <div className="my-2 border-t border-border/60" />
               <Row label="Total HT" value={totalHT} strong />
               <Row label={`TVA ${vatRate}%`} value={vat} />
