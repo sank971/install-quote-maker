@@ -266,14 +266,19 @@ function NewQuote() {
         (x: any) =>
           installationIds.includes(x.installation_id) && x.part_id === component.parent_part_id,
       )?.installation_id ?? installationId;
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    const componentPatch: Partial<Item> = {
+      parent_part_id: component.parent_part_id,
+      quantity: Number(component.quantity) || 1,
+    };
+    if (component.relation_kind === "negotiated_option") {
+      componentPatch.unit_price = Number(
+        component.negotiated_price ?? componentPart?.sale_price ?? 0,
+      );
+    }
     const accessoryItem = buildPartItem(
       component.component_part_id,
-      {
-        parent_part_id: component.parent_part_id,
-        quantity: Number(component.quantity) || 1,
-        unit_price: getComponentPrice(component),
-        relation_kind: component.relation_kind ?? "accessory",
-      },
+      componentPatch,
       sourceInstallationId,
     );
     if (!accessoryItem) return;
@@ -387,8 +392,17 @@ function NewQuote() {
   };
 
   const addComponentToQuote = (parentItem: Item, component: any) => {
-    const label = component.relation_kind === "kit_component" ? "compris dans le kit" : "option";
-    const componentItem = buildComponentItem(parentItem, component, label);
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    const componentPatch: Partial<Item> = {
+      parent_part_id: parentItem.part_id,
+      quantity: Number(component.quantity) || 1,
+    };
+    if (component.relation_kind === "negotiated_option") {
+      componentPatch.unit_price = Number(
+        component.negotiated_price ?? componentPart?.sale_price ?? 0,
+      );
+    }
+    const componentItem = buildPartItem(component.component_part_id, componentPatch);
     if (!componentItem) return;
     setItems((prev) => [...prev, componentItem]);
   };
@@ -407,13 +421,26 @@ function NewQuote() {
                 item.part_id === component.component_part_id,
             ),
         )
-        .map((component: any) =>
-          buildComponentItem(
-            parentItem,
-            component,
-            component.relation_kind === "kit_component" ? "compris dans le kit" : "option",
-          ),
-        )
+        .map((component: any) => {
+          const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+          const componentPatch: Partial<Item> = {
+            parent_part_id: parentItem.part_id,
+            quantity: Number(component.quantity) || 1,
+          };
+          if (component.relation_kind === "negotiated_option") {
+            componentPatch.unit_price = Number(
+              component.negotiated_price ?? componentPart?.sale_price ?? 0,
+            );
+          }
+          const componentItem = buildPartItem(component.component_part_id, componentPatch);
+          if (!componentItem) return null;
+          return {
+            ...componentItem,
+            description: parentName
+              ? `${parentName} > ${componentItem.description}`
+              : componentItem.description,
+          };
+        })
         .filter(Boolean) as Item[];
       return [...prev, ...additions];
     });

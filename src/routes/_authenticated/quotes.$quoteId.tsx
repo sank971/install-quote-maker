@@ -383,7 +383,28 @@ function QuoteDetail() {
       .forEach((row: any) => addEditPart(row.part_id, row.installation_id));
   };
   const addEditComponentToQuote = (parentItem: EditableItem, component: any) => {
-    const label =
+    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
+    const isUnitAccessory = component.relation_kind === "accessory";
+    const componentPatch: Partial<EditableItem> = {
+      parent_part_id: parentItem.part_id,
+      quantity: Number(component.quantity) || 1,
+    };
+    if (isUnitAccessory && componentPart) {
+      componentPatch.unit_price = Number(componentPart.sale_price);
+    }
+    if (component.relation_kind === "negotiated_option") {
+      componentPatch.unit_price = Number(
+        component.negotiated_price ?? componentPart?.sale_price ?? 0,
+      );
+    }
+    const componentItem = buildEditPartItem(
+      component.component_part_id,
+      componentPatch,
+      parentItem.installation_id ?? editInstallationId,
+    );
+    if (!componentItem) return;
+    const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    const relationLabel =
       component.relation_kind === "kit_component"
         ? "compris dans le kit"
         : component.relation_kind === "negotiated_option"
