@@ -39,6 +39,8 @@ function PartsPage() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
+  const { data: supplierParts = [] } = useList<any>("supplier_parts");
   const { data: types = [] } = useList<any>("installation_types", {
     orderBy: "name",
     ascending: true,
@@ -83,7 +85,7 @@ function PartsPage() {
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    await upsert.mutateAsync({
+    const savedPart = await upsert.mutateAsync({
       id: edit.id,
       name: fd.get("name"),
       reference: fd.get("reference") || null,
@@ -94,6 +96,27 @@ function PartsPage() {
       pricing_unit: fd.get("pricing_unit") || "unit",
       is_kit: fd.get("is_kit") === "on",
     });
+    const supplierId = fd.get("supplier_id") as string | null;
+    if (supplierId) {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user!.id;
+      const { error } = await (supabase.from("supplier_parts" as any) as any).upsert(
+        {
+          owner_id,
+          supplier_id: supplierId,
+          part_id: savedPart.id,
+          purchase_price: 0,
+          shipping_cost: 0,
+          price_updated_at: new Date().toISOString(),
+        },
+        { onConflict: "supplier_id,part_id" },
+      );
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: ["supplier_parts"] });
+    }
     setOpen(false);
   };
 
@@ -240,6 +263,13 @@ function PartsPage() {
             const componentCount = partComponents.filter(
               (c: any) => c.parent_part_id === p.id,
             ).length;
+            const linkedSupplierParts = supplierParts.filter((sp: any) => sp.part_id === p.id);
+            const linkedSupplierNames = linkedSupplierParts
+              .map(
+                (sp: any) =>
+                  suppliers.find((supplier: any) => supplier.id === sp.supplier_id)?.name,
+              )
+              .filter(Boolean);
             return (
               <Card key={p.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -263,6 +293,14 @@ function PartsPage() {
                           {p.is_kit ? "Kit" : "Pièce"} · Compat. : {typeCompatCount} types ·{" "}
                           {modelCompatCount} modèles
                         </span>
+                        {linkedSupplierNames.length > 0 && (
+                          <>
+                            <span className="mx-2 text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">
+                              Fournisseur : {linkedSupplierNames.join(", ")}
+                            </span>
+                          </>
+                        )}
                         {componentCount > 0 && (
                           <>
                             <span className="mx-2 text-muted-foreground">·</span>
@@ -369,6 +407,25 @@ function PartsPage() {
                   step="0.01"
                   defaultValue={edit?.sale_price ?? 0}
                 />
+              </div>
+              <div>
+                <Label>Fournisseur</Label>
+                <select
+                  name="supplier_id"
+                  defaultValue={
+                    edit?.id
+                      ? (supplierParts.find((sp: any) => sp.part_id === edit.id)?.supplier_id ?? "")
+                      : ""
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">—</option>
+                  {suppliers.map((supplier: any) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Chiffrage</Label>
