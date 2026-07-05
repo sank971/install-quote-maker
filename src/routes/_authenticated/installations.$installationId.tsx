@@ -37,6 +37,16 @@ function InstallationDetail() {
     key: ["quotes", "byInstallation", installationId],
   });
   const { data: quoteItems = [] } = useList<any>("quote_items");
+  const { data: allQuotes = [] } = useList<any>("quotes");
+  const { data: quoteInstallations = [] } = useList<any>("quote_installations", {
+    filter: (q) => q.eq("installation_id", installationId),
+    key: ["quote_installations", "byInstallation", installationId],
+  });
+  const { data: tickets = [] } = useList<any>("tickets", {
+    filter: (q) => q.eq("installation_id", installationId),
+    key: ["tickets", "byInstallation", installationId],
+  });
+  const { data: quoteTickets = [] } = useList<any>("quote_tickets");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const { data: installationParts = [] } = useList<any>("installation_parts");
 
@@ -61,6 +71,17 @@ function InstallationDetail() {
         String(a.quote?.issued_at ?? a.item.created_at),
       ),
     );
+  const globalQuoteIds = new Set(quoteInstallations.map((row: any) => row.quote_id));
+  const globalQuotes = allQuotes.filter((quote: any) => globalQuoteIds.has(quote.id));
+  const globalQuoteTicketIds = new Set(
+    quoteTickets
+      .filter((row: any) => globalQuoteIds.has(row.quote_id))
+      .map((row: any) => row.ticket_id),
+  );
+  const relatedTickets = tickets.filter(
+    (ticket: any) =>
+      !globalQuoteTicketIds.has(ticket.id) || ticket.installation_id === installationId,
+  );
   const presentParts = installationParts
     .filter((item: any) => item.installation_id === installationId)
     .map((item: any) => ({ ...item, part: parts.find((part: any) => part.id === item.part_id) }))
@@ -133,6 +154,55 @@ function InstallationDetail() {
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">Notes :</span> {installation.notes || "—"}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Tickets et devis globaux liés</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {relatedTickets.length === 0 && globalQuotes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Aucun ticket ou devis global lié à cette installation.
+            </p>
+          ) : null}
+          {relatedTickets.map((ticket: any) => (
+            <div key={ticket.id} className="rounded-md border p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <b>{ticket.ticket_number}</b> · {ticket.title}
+                </span>
+                <Badge>{ticket.status}</Badge>
+              </div>
+            </div>
+          ))}
+          {globalQuotes.map((quote: any) => {
+            const ticketNumbers = quoteTickets
+              .filter((row: any) => row.quote_id === quote.id)
+              .map(
+                (row: any) =>
+                  tickets.find((ticket: any) => ticket.id === row.ticket_id)?.ticket_number,
+              )
+              .filter(Boolean);
+            return (
+              <Link key={quote.id} to="/quotes/$quoteId" params={{ quoteId: quote.id }}>
+                <Card className="p-3 text-sm transition-colors hover:bg-accent/50">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      <b>{quote.quote_number}</b> · devis global
+                    </span>
+                    <Badge variant="secondary">{quote.status ?? "brouillon"}</Badge>
+                  </div>
+                  {ticketNumbers.length > 0 && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Tickets : {ticketNumbers.join(", ")}
+                    </div>
+                  )}
+                </Card>
+              </Link>
+            );
+          })}
         </CardContent>
       </Card>
 

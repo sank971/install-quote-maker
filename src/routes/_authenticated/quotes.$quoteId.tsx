@@ -3,10 +3,12 @@ import { useOne, useList, useRemove } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, Printer, Trash2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ChevronLeft, Printer, Send, ThumbsUp, PackageCheck, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "@tanstack/react-router";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/quotes/$quoteId")({
   component: QuoteDetail,
@@ -15,6 +17,7 @@ export const Route = createFileRoute("/_authenticated/quotes/$quoteId")({
 function QuoteDetail() {
   const { quoteId } = Route.useParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: quote } = useOne<any>("quotes", quoteId);
   const { data: items = [] } = useQuery({
     queryKey: ["quote_items", "byQuote", quoteId],
@@ -39,6 +42,13 @@ function QuoteDetail() {
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
   const { data: contracts = [] } = useList<any>("contracts");
+  const { data: quoteTickets = [] } = useList<any>("quote_tickets", {
+    filter: (q: any) => q.eq("quote_id", quoteId),
+    key: ["quote_tickets", quoteId],
+  });
+  const { data: tickets = [] } = useList<any>("tickets");
+  const { data: reports = [] } = useList<any>("intervention_reports");
+  const { data: history = [] } = useList<any>("history_events");
   const remove = useRemove("quotes");
 
   if (!quote) return <p className="text-muted-foreground">Chargement...</p>;
@@ -57,6 +67,37 @@ function QuoteDetail() {
   const contract = contracts.find((c: any) => c.id === quote.contract_id);
   const contractDiscountPct = Number(contract?.parts_discount_pct ?? 0);
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
+  const linkedTickets = quoteTickets
+    .map((row: any) => tickets.find((ticket: any) => ticket.id === row.ticket_id))
+    .filter(Boolean);
+  const reportsByTicket = (ticketId: string) =>
+    reports.filter((report: any) => report.ticket_id === ticketId);
+  const eventsByTicket = history.filter((event: any) =>
+    linkedTickets.some((ticket: any) => ticket.id === event.ticket_id),
+  );
+  const ticketNumbersForInstallation = (installationId: string) =>
+    linkedTickets
+      .filter((ticket: any) => ticket.installation_id === installationId)
+      .map((ticket: any) => ticket.ticket_number);
+
+  const updateGlobalStatus = async (quoteStatus: string, ticketStatus: string) => {
+    const { error } = await (supabase.from("quotes" as any) as any)
+      .update({ status: quoteStatus })
+      .eq("id", quoteId);
+    if (error) return toast.error(error.message);
+    if (linkedTickets.length > 0) {
+      const { error: ticketError } = await (supabase.from("tickets" as any) as any)
+        .update({ status: ticketStatus })
+        .in(
+          "id",
+          linkedTickets.map((ticket: any) => ticket.id),
+        );
+      if (ticketError) return toast.error(ticketError.message);
+    }
+    qc.invalidateQueries({ queryKey: ["quotes"] });
+    qc.invalidateQueries({ queryKey: ["tickets"] });
+    toast.success("Statuts mis à jour");
+  };
 
   const partsHT = items.reduce(
     (s: number, i: any) => s + Number(i.unit_price) * Number(i.quantity),
@@ -104,7 +145,32 @@ function QuoteDetail() {
         title={quote.quote_number}
         description={`Émis le ${new Date(quote.issued_at).toLocaleDateString("fr-FR")}`}
         actions={
-          <div className="print:hidden flex gap-2">
+          <div className="print:hidden flex flex-wrap gap-2">
+            {linkedTickets.length > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => updateGlobalStatus("envoye", "devis_envoye")}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Envoyé
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => updateGlobalStatus("accepte", "devis_accepte")}
+                >
+                  <ThumbsUp className="mr-2 h-4 w-4" />
+                  Accepté
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => updateGlobalStatus("pieces_commandees", "en_attente_pieces")}
+                >
+                  <PackageCheck className="mr-2 h-4 w-4" />
+                  Commande pièces
+                </Button>
+              </>
+            )}
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Imprimer / PDF
@@ -154,6 +220,11 @@ function QuoteDetail() {
                 Installations : {linkedInstallations.map((x: any) => x.name).join(", ")}
               </div>
             )}
+            {linkedTickets.length > 0 && (
+              <div className="text-muted-foreground">
+                Tickets : {linkedTickets.map((ticket: any) => ticket.ticket_number).join(", ")}
+              </div>
+            )}
             {contractTypeLabel && (
               <div className="text-muted-foreground">Type de contrat : {contractTypeLabel}</div>
             )}
@@ -194,6 +265,11 @@ function QuoteDetail() {
                 <tr key={`inst-${inst.id}`} className="bg-muted/40 font-semibold">
                   <td className="py-2" colSpan={5}>
                     Installation : {inst.name}
+                    {ticketNumbersForInstallation(inst.id).length > 0 && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        Tickets concernés : {ticketNumbersForInstallation(inst.id).join(", ")}
+                      </span>
+                    )}
                   </td>
                 </tr>,
                 ...items
@@ -298,6 +374,41 @@ function QuoteDetail() {
             <span>{fmt(totalTTC)}</span>
           </div>
         </div>
+
+        {linkedTickets.length > 0 && (
+          <div className="mt-8 rounded-md bg-muted/40 p-4 text-sm print:bg-transparent">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Détail tickets / rapports
+            </div>
+            <div className="grid gap-3">
+              {linkedTickets.map((ticket: any) => (
+                <div key={ticket.id} className="rounded border border-border/60 p-2">
+                  <div className="flex flex-wrap items-center gap-2 font-medium">
+                    {ticket.ticket_number} · {ticket.title}{" "}
+                    <Badge variant="secondary">{ticket.status}</Badge>
+                  </div>
+                  {reportsByTicket(ticket.id).map((report: any) => (
+                    <p key={report.id} className="mt-1 text-xs text-muted-foreground">
+                      Rapport / constat : {report.constat}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+            {eventsByTicket.length > 0 && (
+              <div className="mt-3 border-t pt-2">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Historique commun du dossier
+                </div>
+                {eventsByTicket.slice(0, 8).map((event: any) => (
+                  <p key={event.id} className="text-xs text-muted-foreground">
+                    {new Date(event.created_at).toLocaleString("fr-FR")} · {event.title}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {quote.notes && (
           <div className="mt-8 rounded-md bg-muted/40 p-4 text-sm print:bg-transparent">
