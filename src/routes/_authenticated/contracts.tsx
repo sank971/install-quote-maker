@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, ScrollText, Pencil, Trash2 } from "lucide-react";
+import { Plus, ScrollText, Pencil, Trash2, Euro, Wrench } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -37,7 +37,13 @@ function ContractsPage() {
   const { data: contracts = [] } = useList<any>("contracts", { orderBy: "name", ascending: true });
   const { data: clients = [] } = useList<any>("clients");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
+  const { data: types = [] } = useList<any>("installation_types", {
+    orderBy: "name",
+    ascending: true,
+  });
   const { data: kitPrices = [] } = useList<any>("contract_kit_prices");
+  const { data: pricingTiers = [] } = useList<any>("contract_pricing_tiers");
+  const { data: clientPricing = [] } = useList<any>("contract_client_pricing");
   const upsert = useUpsert("contracts");
   const remove = useRemove("contracts");
   const qc = useQueryClient();
@@ -107,7 +113,74 @@ function ContractsPage() {
       );
       if (insertError) return toast.error(insertError.message);
     }
+
+    const pricingRows = types
+      .map((type: any) => ({
+        installation_type_id: type.id,
+        base_annual_price: fd.get(`type_price_${type.id}`),
+        min_installations: fd.get(`type_min_${type.id}`),
+      }))
+      .filter((row: any) => row.base_annual_price !== null && row.base_annual_price !== "");
+
+    const { error: deletePricingError } = await (
+      supabase.from("contract_pricing_tiers" as any) as any
+    )
+      .delete()
+      .eq("contract_id", saved.id);
+    if (deletePricingError) return toast.error(deletePricingError.message);
+
+    if (pricingRows.length > 0) {
+      const { error: insertPricingError } = await (
+        supabase.from("contract_pricing_tiers" as any) as any
+      ).insert(
+        pricingRows.map((row: any) => ({
+          owner_id,
+          contract_id: saved.id,
+          installation_type_id: row.installation_type_id,
+          base_annual_price: Number(row.base_annual_price),
+          min_installations: row.min_installations ? Number(row.min_installations) : 1,
+        })),
+      );
+      if (insertPricingError) return toast.error(insertPricingError.message);
+    }
+
+    const clientRows = clients
+      .map((client: any) => ({
+        client_id: client.id,
+        adjustment_pct: fd.get(`client_adjustment_${client.id}`),
+        notes: fd.get(`client_notes_${client.id}`),
+      }))
+      .filter(
+        (row: any) =>
+          (row.adjustment_pct !== null && row.adjustment_pct !== "") ||
+          (row.notes !== null && row.notes !== ""),
+      );
+
+    const { error: deleteClientPricingError } = await (
+      supabase.from("contract_client_pricing" as any) as any
+    )
+      .delete()
+      .eq("contract_id", saved.id);
+    if (deleteClientPricingError) return toast.error(deleteClientPricingError.message);
+
+    if (clientRows.length > 0) {
+      const { error: insertClientPricingError } = await (
+        supabase.from("contract_client_pricing" as any) as any
+      ).insert(
+        clientRows.map((row: any) => ({
+          owner_id,
+          contract_id: saved.id,
+          client_id: row.client_id,
+          adjustment_pct: row.adjustment_pct === "" ? 0 : Number(row.adjustment_pct),
+          notes: row.notes || null,
+        })),
+      );
+      if (insertClientPricingError) return toast.error(insertClientPricingError.message);
+    }
+
     qc.invalidateQueries({ queryKey: ["contract_kit_prices"] });
+    qc.invalidateQueries({ queryKey: ["contract_pricing_tiers"] });
+    qc.invalidateQueries({ queryKey: ["contract_client_pricing"] });
     setOpen(false);
   };
 
@@ -138,6 +211,10 @@ function ContractsPage() {
         <div className="grid gap-3">
           {contracts.map((c: any) => {
             const client = clients.find((x: any) => x.id === c.client_id);
+            const contractTiers = pricingTiers.filter((row: any) => row.contract_id === c.id);
+            const contractClientPricing = clientPricing.filter(
+              (row: any) => row.contract_id === c.id,
+            );
             return (
               <Card key={c.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -159,6 +236,43 @@ function ContractsPage() {
                         {c.repairs_included && " · Réparations hors casse incluses"}
                         {c.on_call_included && " · Astreinte incluse"}
                       </div>
+                      {contractTiers.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {contractTiers.map((tier: any) => {
+                            const type = types.find((t: any) => t.id === tier.installation_type_id);
+                            return (
+                              <span
+                                key={tier.id}
+                                className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs"
+                              >
+                                <Wrench className="h-3 w-3" />
+                                {type?.name ?? "Type supprimé"} :{" "}
+                                {Number(tier.base_annual_price).toFixed(2)}
+                                €/an
+                                {Number(tier.min_installations ?? 1) > 1 &&
+                                  ` dès ${tier.min_installations} installations`}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {contractClientPricing.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {contractClientPricing.map((row: any) => {
+                            const pricedClient = clients.find((x: any) => x.id === row.client_id);
+                            return (
+                              <span
+                                key={row.id}
+                                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+                              >
+                                <Euro className="h-3 w-3" />
+                                {pricedClient?.name ?? "Client supprimé"} :{" "}
+                                {Number(row.adjustment_pct)}%
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -183,7 +297,7 @@ function ContractsPage() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>{edit?.id ? "Modifier" : "Nouveau"} contrat</DialogTitle>
           </DialogHeader>
@@ -345,6 +459,88 @@ function ContractsPage() {
                 />
               </div>
             </div>
+            {types.length > 0 && (
+              <div className="rounded-md border border-border/60 p-3">
+                <div className="mb-1 text-sm font-medium">Tarifs par type d'installation</div>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Saisissez le prix annuel négocié pour chaque catégorie d'installation couverte par
+                  le contrat.
+                </p>
+                <div className="space-y-3">
+                  {types.map((type: any) => {
+                    const tier = pricingTiers.find(
+                      (row: any) =>
+                        row.contract_id === edit?.id && row.installation_type_id === type.id,
+                    );
+                    return (
+                      <div
+                        key={type.id}
+                        className="grid gap-2 sm:grid-cols-[1fr_150px_150px] sm:items-center"
+                      >
+                        <div className="text-sm">
+                          <div className="font-medium">{type.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {type.description || "Tarif de base à appliquer aux devis de contrat"}
+                          </div>
+                        </div>
+                        <Input
+                          name={`type_price_${type.id}`}
+                          type="number"
+                          step="0.01"
+                          placeholder="€/an"
+                          defaultValue={tier?.base_annual_price ?? ""}
+                        />
+                        <Input
+                          name={`type_min_${type.id}`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Min. installations"
+                          defaultValue={tier?.min_installations ?? ""}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {clients.length > 0 && (
+              <div className="rounded-md border border-border/60 p-3">
+                <div className="mb-1 text-sm font-medium">Ajustements par client</div>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Ajoutez une remise ou majoration spécifique en complément des tarifs par
+                  installation. Utilisez une valeur négative pour une remise.
+                </p>
+                <div className="space-y-3">
+                  {clients.map((client: any) => {
+                    const row = clientPricing.find(
+                      (pricing: any) =>
+                        pricing.contract_id === edit?.id && pricing.client_id === client.id,
+                    );
+                    return (
+                      <div
+                        key={client.id}
+                        className="grid gap-2 sm:grid-cols-[1fr_130px_1fr] sm:items-center"
+                      >
+                        <div className="text-sm font-medium">{client.name}</div>
+                        <Input
+                          name={`client_adjustment_${client.id}`}
+                          type="number"
+                          step="0.01"
+                          placeholder="%"
+                          defaultValue={row?.adjustment_pct ?? ""}
+                        />
+                        <Input
+                          name={`client_notes_${client.id}`}
+                          placeholder="Note"
+                          defaultValue={row?.notes ?? ""}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {parts.some((part: any) => part.is_kit) && (
               <div className="rounded-md border border-border/60 p-3">
                 <div className="mb-3 text-sm font-medium">Tarifs négociés des kits</div>
