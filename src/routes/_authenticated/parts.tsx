@@ -34,6 +34,9 @@ import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
 
+const parseCsvBoolean = (value: string) =>
+  ["1", "true", "oui", "yes", "y", "kit"].includes(normalizeName(value));
+
 const DEFAULT_PART_MARKUP_TIERS = [
   { min: 0, max: 50, coefficient: 2 },
   { min: 50, max: 200, coefficient: 1.7 },
@@ -67,6 +70,62 @@ const normalizeName = (value: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+const serializeLinkedParts = (
+  components: any[],
+  parts: any[],
+  relationKind: string,
+  includeNegotiatedPrice = false,
+) =>
+  components
+    .filter((component: any) => component.relation_kind === relationKind)
+    .map((component: any) => {
+      const part = parts.find((candidate: any) => candidate.id === component.component_part_id);
+      return [
+        part?.reference || part?.name || component.component_part_id,
+        component.quantity ?? 1,
+        includeNegotiatedPrice ? (component.negotiated_price ?? "") : "",
+        component.notes ?? "",
+      ].join(":");
+    })
+    .join(" | ");
+
+const parseLinkedParts = (value: string) =>
+  splitCsvList(value).map((item) => {
+    const [identifier = "", quantity = "1", negotiatedPrice = "", ...notes] = item
+      .split(":")
+      .map((part) => part.trim());
+    return {
+      identifier,
+      quantity: parseCsvNumber(quantity) || 1,
+      negotiated_price: negotiatedPrice ? parseCsvNumber(negotiatedPrice) : null,
+      notes: notes.join(":") || null,
+    };
+  });
+
+const serializeKitContractPrices = (kitPrices: any[], contracts: any[]) =>
+  kitPrices
+    .map((price: any) => {
+      const contract = contracts.find((candidate: any) => candidate.id === price.contract_id);
+      return [
+        contract?.name || price.contract_id,
+        price.negotiated_price ?? "",
+        price.notes ?? "",
+      ].join(":");
+    })
+    .join(" | ");
+
+const parseKitContractPrices = (value: string) =>
+  splitCsvList(value).map((item) => {
+    const [contractName = "", negotiatedPrice = "", ...notes] = item
+      .split(":")
+      .map((part) => part.trim());
+    return {
+      contractName,
+      negotiated_price: parseCsvNumber(negotiatedPrice),
+      notes: notes.join(":") || null,
+    };
+  });
+
 const raiseImportError = (message: string, error: unknown) => {
   console.error(message, error);
   toast.error(message);
@@ -93,6 +152,8 @@ function PartsPage() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: contracts = [] } = useList<any>("contracts", { orderBy: "name", ascending: true });
+  const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
   const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
   const { data: supplierParts = [] } = useList<any>("supplier_parts");
   const { data: settings = [] } = useList<any>("app_settings");
@@ -174,6 +235,10 @@ function PartsPage() {
         ),
       );
       const links = supplierParts.filter((sp: any) => sp.part_id === part.id);
+      const components = partComponents.filter(
+        (component: any) => component.parent_part_id === part.id,
+      );
+      const kitPrices = contractKitPrices.filter((price: any) => price.kit_part_id === part.id);
       const base = {
         piece_nom: part.name,
         piece_reference: part.reference,
@@ -199,6 +264,11 @@ function PartsPage() {
         poids_kg: part.weight_kg,
         prix_vente: part.sale_price,
         unite_chiffrage: part.pricing_unit,
+        est_kit: part.is_kit ? "oui" : "non",
+        pieces_composantes: serializeLinkedParts(components, parts, "kit_component"),
+        options_prix_negocie: serializeLinkedParts(components, parts, "negotiated_option", true),
+        accessoires_lies: serializeLinkedParts(components, parts, "accessory"),
+        tarifs_negocies_kit: serializeKitContractPrices(kitPrices, contracts),
       };
       if (links.length === 0) return [{ ...base }];
       return links.map((link: any) => {
@@ -229,6 +299,11 @@ function PartsPage() {
       "poids_kg",
       "prix_vente",
       "unite_chiffrage",
+      "est_kit",
+      "pieces_composantes",
+      "options_prix_negocie",
+      "accessoires_lies",
+      "tarifs_negocies_kit",
       "fournisseur_nom",
       "fournisseur_email",
       "fournisseur_telephone",
@@ -250,6 +325,9 @@ function PartsPage() {
       const supplierCache = new Map(suppliers.map((s: any) => [s.name.toLowerCase(), s]));
       const brandCache = new Map(brands.map((brand: any) => [normalizeName(brand.name), brand]));
       const typeCache = new Map(types.map((type: any) => [normalizeName(type.name), type]));
+      const contractCache = new Map(
+        contracts.map((contract: any) => [normalizeName(contract.name), contract]),
+      );
       const modelCache = new Map(
         models.map((model: any) => [
           `${model.brand_id}|${model.type_id ?? ""}|${normalizeName(model.name)}`,
@@ -329,6 +407,7 @@ function PartsPage() {
           );
         const partBrandName = pick(row, "marque", "piece_marque", "marque_piece", "brand");
         const partBrand = partBrandName ? await getOrCreateBrand(partBrandName) : null;
+        const isKitValue = pick(row, "est_kit", "kit", "is_kit");
         const partPayload = {
           owner_id,
           name: partName,
@@ -359,6 +438,7 @@ function PartsPage() {
           part = data;
         }
         partCache.set(partKey, part);
+        partCache.set(`|${normalizedPartName}`, part);
         if (normalizedReference)
           partCache.set(`${normalizedReference}|${normalizedPartName}`, part);
 
@@ -439,6 +519,81 @@ function PartsPage() {
             );
         }
 
+        const findPartByIdentifier = (identifier: string) => {
+          const normalizedIdentifier = normalizeName(identifier);
+          return Array.from(partCache.values()).find(
+            (candidate: any) =>
+              normalizeName(candidate.reference || "") === normalizedIdentifier ||
+              normalizeName(candidate.name) === normalizedIdentifier,
+          );
+        };
+
+        const componentImports = [
+          {
+            value: pick(row, "pieces_composantes", "composants", "components"),
+            relation_kind: "kit_component",
+          },
+          {
+            value: pick(row, "options_prix_negocie", "options_prix_négocié", "options"),
+            relation_kind: "negotiated_option",
+          },
+          {
+            value: pick(row, "accessoires_lies", "accessoires_liés", "accessoires", "accessories"),
+            relation_kind: "accessory",
+          },
+        ];
+        const componentRows = componentImports.flatMap(({ value, relation_kind }) =>
+          parseLinkedParts(value).flatMap((linkedPart, index) => {
+            const componentPart = findPartByIdentifier(linkedPart.identifier);
+            if (!componentPart || componentPart.id === part.id) return [];
+            return [
+              {
+                owner_id,
+                parent_part_id: part.id,
+                component_part_id: componentPart.id,
+                quantity: linkedPart.quantity,
+                relation_kind,
+                negotiated_price:
+                  relation_kind === "negotiated_option" ? (linkedPart.negotiated_price ?? 0) : null,
+                notes: linkedPart.notes,
+                position: index,
+              },
+            ];
+          }),
+        );
+        if (componentRows.length > 0) {
+          const { error } = await (supabase.from("part_components" as any) as any).upsert(
+            componentRows,
+            { onConflict: "parent_part_id,component_part_id" },
+          );
+          if (error)
+            raiseImportError(`Impossible d’importer les liens de pièces pour ${partName}`, error);
+        }
+
+        const kitPriceRows = parseKitContractPrices(
+          pick(row, "tarifs_negocies_kit", "tarifs_négociés_kit", "kit_prices"),
+        ).flatMap((kitPrice) => {
+          const contract = contractCache.get(normalizeName(kitPrice.contractName));
+          if (!contract) return [];
+          return [
+            {
+              owner_id,
+              contract_id: contract.id,
+              kit_part_id: part.id,
+              negotiated_price: kitPrice.negotiated_price,
+              notes: kitPrice.notes,
+            },
+          ];
+        });
+        if (kitPriceRows.length > 0) {
+          const { error } = await (supabase.from("contract_kit_prices" as any) as any).upsert(
+            kitPriceRows,
+            { onConflict: "contract_id,kit_part_id" },
+          );
+          if (error)
+            raiseImportError(`Impossible d’importer les tarifs négociés du kit ${partName}`, error);
+        }
+
         const supplierName = pick(
           row,
           "fournisseur_nom",
@@ -510,7 +665,9 @@ function PartsPage() {
       qc.invalidateQueries({ queryKey: ["models"] });
       qc.invalidateQueries({ queryKey: ["part_type_compat"] });
       qc.invalidateQueries({ queryKey: ["part_model_compat"] });
-      toast.success("Pièces, fournisseurs et compatibilités importés");
+      qc.invalidateQueries({ queryKey: ["part_components"] });
+      qc.invalidateQueries({ queryKey: ["contract_kit_prices"] });
+      toast.success("Pièces, fournisseurs, kits et compatibilités importés");
     });
 
   const applyAnnualIncrease = async () => {
