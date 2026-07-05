@@ -76,6 +76,31 @@ export function useOne<T = any>(table: TableName, id: string | undefined) {
   });
 }
 
+export function useOneByRouteParam<T = any>(
+  table: TableName,
+  param: string | undefined,
+  numberColumn: string,
+) {
+  return useQuery({
+    queryKey: [table, "route-param", param, numberColumn],
+    enabled: !!param,
+    queryFn: async () => {
+      const value = decodeURIComponent(param!);
+      const numberValues = Array.from(new Set([value, value.replace("-", "/")]));
+      const idQuery = (supabase.from(table) as any).select("*").eq("id", value).maybeSingle();
+      const numberQuery = (supabase.from(table) as any)
+        .select("*")
+        .in(numberColumn, numberValues)
+        .maybeSingle();
+      const [{ data: byId, error: idError }, { data: byNumber, error: numberError }] =
+        await Promise.all([idQuery, numberQuery]);
+      if (idError && idError.code !== "22P02") throw idError;
+      if (numberError) throw numberError;
+      return (byId ?? byNumber) as T | null;
+    },
+  });
+}
+
 async function getOwnerId() {
   const { data } = await supabase.auth.getUser();
   if (!data.user) throw new Error("Non authentifié");

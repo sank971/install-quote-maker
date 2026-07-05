@@ -2,9 +2,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, FileText, PackageCheck, CheckCircle2, UserCheck, History, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  FileText,
+  PackageCheck,
+  CheckCircle2,
+  UserCheck,
+  History,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
-import { useList, useOne } from "@/lib/db-hooks";
+import { useList, useOneByRouteParam } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +29,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { canCloseTicket, currentUserId, setTicketStatus } from "@/lib/ticket-workflow";
 
-export const Route = createFileRoute("/_authenticated/tickets/$ticketId")({
+export const Route = createFileRoute("/_authenticated/ticket/$ticketSlug")({
   component: TicketDetail,
 });
 
@@ -36,29 +44,30 @@ function formatDate(value?: string | null) {
 
 function getStatusColor(status: string) {
   const colors: Record<string, string> = {
-    "en_attente_assignation": "bg-gray-100 text-gray-800",
-    "diagnostic_en_cours": "bg-blue-100 text-blue-800",
-    "diagnostic_termine": "bg-blue-200 text-blue-900",
-    "rapport_a_rediger": "bg-yellow-100 text-yellow-800",
-    "devis_a_creer": "bg-orange-100 text-orange-800",
-    "en_attente_pieces": "bg-orange-100 text-orange-800",
-    "pieces_recues": "bg-green-100 text-green-800",
-    "reparation_a_planifier": "bg-purple-100 text-purple-800",
-    "reparation_en_cours": "bg-purple-200 text-purple-900",
-    "bon_de_commande_recu": "bg-green-200 text-green-900",
-    "probleme_persistant": "bg-red-100 text-red-800",
-    "termine": "bg-green-300 text-green-900",
-    "cloture": "bg-gray-300 text-gray-900",
+    en_attente_assignation: "bg-gray-100 text-gray-800",
+    diagnostic_en_cours: "bg-blue-100 text-blue-800",
+    diagnostic_termine: "bg-blue-200 text-blue-900",
+    rapport_a_rediger: "bg-yellow-100 text-yellow-800",
+    devis_a_creer: "bg-orange-100 text-orange-800",
+    en_attente_pieces: "bg-orange-100 text-orange-800",
+    pieces_recues: "bg-green-100 text-green-800",
+    reparation_a_planifier: "bg-purple-100 text-purple-800",
+    reparation_en_cours: "bg-purple-200 text-purple-900",
+    bon_de_commande_recu: "bg-green-200 text-green-900",
+    probleme_persistant: "bg-red-100 text-red-800",
+    termine: "bg-green-300 text-green-900",
+    cloture: "bg-gray-300 text-gray-900",
   };
   return colors[status] || "bg-gray-100 text-gray-800";
 }
 
 function TicketDetail() {
-  const { ticketId } = Route.useParams();
+  const { ticketSlug } = Route.useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  
-  const { data: ticket } = useOne<any>("tickets", ticketId);
+
+  const { data: ticket } = useOneByRouteParam<any>("tickets", ticketSlug, "ticket_number");
+  const ticketId = ticket?.id;
   const { data: clients = [] } = useList<any>("clients");
   const { data: sites = [] } = useList<any>("sites");
   const { data: installations = [] } = useList<any>("installations");
@@ -99,7 +108,7 @@ function TicketDetail() {
   const site = sites.find((s: any) => s.id === ticket.site_id);
   const client = clients.find((c: any) => c.id === ticket.client_id);
   const installation = installations.find((i: any) => i.id === ticket.installation_id);
-  
+
   // Get related data
   const ticketInterventions = interventions.filter((i: any) => i.ticket_id === ticketId);
   const ticketReports = reports.filter((r: any) => r.ticket_id === ticketId);
@@ -110,9 +119,7 @@ function TicketDetail() {
 
   // Get quotes linked to this ticket via quote_tickets
   const linkedQuoteIds = new Set(
-    quoteTickets
-      .filter((qt: any) => qt.ticket_id === ticketId)
-      .map((qt: any) => qt.quote_id)
+    quoteTickets.filter((qt: any) => qt.ticket_id === ticketId).map((qt: any) => qt.quote_id),
   );
   const linkedQuotes = quotes.filter((q: any) => linkedQuoteIds.has(q.id));
 
@@ -187,7 +194,7 @@ function TicketDetail() {
     };
     const { error } = await (supabase.from("intervention_reports" as any) as any).insert(report);
     if (error) return toast.error(error.message);
-    
+
     await setTicketStatus(
       ticket,
       report.besoin_devis
@@ -211,11 +218,11 @@ function TicketDetail() {
     const owner_id = await currentUserId();
     try {
       const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
-      
+
       // Get linked tickets with the same installation
       const groupTicketIds = new Set<string>();
       groupTicketIds.add(ticketId);
-      
+
       // Create quote
       const { data: quote, error: quoteError } = await supabase
         .from("quotes")
@@ -230,13 +237,11 @@ function TicketDetail() {
         })
         .select()
         .single();
-      
+
       if (quoteError) throw quoteError;
 
       // Add installation to quote
-      const { error: qiError } = await (
-        supabase.from("quote_installations" as any) as any
-      ).insert({
+      const { error: qiError } = await (supabase.from("quote_installations" as any) as any).insert({
         owner_id,
         quote_id: quote.id,
         installation_id: ticket.installation_id,
@@ -245,14 +250,12 @@ function TicketDetail() {
       if (qiError) throw qiError;
 
       // Link quote to ticket
-      const { error: qtError } = await (
-        supabase.from("quote_tickets" as any) as any
-      ).insert(
+      const { error: qtError } = await (supabase.from("quote_tickets" as any) as any).insert(
         Array.from(groupTicketIds).map((tickId) => ({
           owner_id,
           quote_id: quote.id,
           ticket_id: tickId,
-        }))
+        })),
       );
       if (qtError) throw qtError;
 
@@ -267,14 +270,14 @@ function TicketDetail() {
       // Add pre-filled parts if problem part type is specified
       if (problemPartType && installation.id) {
         const presentParts = installationParts.filter(
-          (p: any) => p.installation_id === installation.id
+          (p: any) => p.installation_id === installation.id,
         );
 
         const quoteItems = presentParts
           .map((ip: any) => {
             const part = parts.find((p: any) => p.id === ip.part_id);
             if (!part || part.category !== problemPartType) return null;
-            
+
             return {
               owner_id,
               quote_id: quote.id,
@@ -290,16 +293,14 @@ function TicketDetail() {
           .filter(Boolean);
 
         if (quoteItems.length > 0) {
-          const { error: itemsError } = await supabase
-            .from("quote_items")
-            .insert(quoteItems);
+          const { error: itemsError } = await supabase.from("quote_items").insert(quoteItems);
           if (itemsError) throw itemsError;
         }
       }
 
       qc.invalidateQueries({ queryKey: ["quotes"] });
       qc.invalidateQueries({ queryKey: ["quote_tickets"] });
-      
+
       toast.success("Devis créé avec succès");
       navigate({ to: "/quotes/$quoteId", params: { quoteId: quote.id } });
     } catch (e: any) {
@@ -421,11 +422,7 @@ function TicketDetail() {
 
       <PageHeader
         title={`${ticket.ticket_number} · ${ticket.title}`}
-        description={[
-          client?.name,
-          site?.name,
-          installation?.name,
-        ].filter(Boolean).join(" · ")}
+        description={[client?.name, site?.name, installation?.name].filter(Boolean).join(" · ")}
       />
 
       {/* Ticket Info */}
@@ -433,9 +430,7 @@ function TicketDetail() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Informations du ticket</CardTitle>
-            <Badge className={getStatusColor(ticket.status)}>
-              {ticket.status}
-            </Badge>
+            <Badge className={getStatusColor(ticket.status)}>{ticket.status}</Badge>
           </div>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
@@ -449,7 +444,8 @@ function TicketDetail() {
             <span className="text-muted-foreground">Site :</span> {site?.name || "—"}
           </div>
           <div>
-            <span className="text-muted-foreground">Installation :</span> {installation?.name || "—"}
+            <span className="text-muted-foreground">Installation :</span>{" "}
+            {installation?.name || "—"}
           </div>
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">Titre :</span> {ticket.title}
@@ -478,16 +474,12 @@ function TicketDetail() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <button
-                      onClick={() =>
-                        setExpandedIntervention(isExpanded ? null : intervention.id)
-                      }
+                      onClick={() => setExpandedIntervention(isExpanded ? null : intervention.id)}
                       className="flex flex-1 items-center justify-between text-left"
                     >
                       <CardTitle className="text-base">📋 Diagnostic</CardTitle>
                       <ChevronLeft
-                        className={`h-5 w-5 transition-transform ${
-                          isExpanded ? "rotate-90" : ""
-                        }`}
+                        className={`h-5 w-5 transition-transform ${isExpanded ? "rotate-90" : ""}`}
                       />
                     </button>
                   </div>
@@ -495,9 +487,7 @@ function TicketDetail() {
                 {isExpanded && (
                   <CardContent className="space-y-4 border-t pt-4">
                     <div className="flex items-center justify-between gap-2">
-                      <Badge variant="outline">
-                        {intervention.status}
-                      </Badge>
+                      <Badge variant="outline">{intervention.status}</Badge>
                       {intervention.status === "non_assignee" && (
                         <Button size="sm" onClick={() => assign(intervention)}>
                           <UserCheck className="mr-2 h-4 w-4" />
@@ -530,17 +520,14 @@ function TicketDetail() {
                           <Input name="actions" placeholder="Actions réalisées" />
                         </div>
                         <Input name="conclusion" placeholder="Conclusion" />
-                        
+
                         {/* Part Type Selection */}
                         {availablePartTypes.length > 0 && (
                           <div className="rounded-md border border-dashed border-orange-200 bg-orange-50 p-3">
                             <Label className="text-xs font-semibold text-orange-900">
                               ⚠️ Type de pièce défaillante (pour pré-remplir le devis)
                             </Label>
-                            <Select 
-                              value={selectedPartType} 
-                              onValueChange={setSelectedPartType}
-                            >
+                            <Select value={selectedPartType} onValueChange={setSelectedPartType}>
                               <SelectTrigger className="mt-2" name="problem_part_type">
                                 <SelectValue placeholder="Sélectionner le type de pièce en panne" />
                               </SelectTrigger>
@@ -599,11 +586,19 @@ function TicketDetail() {
                       <div className="rounded-md border border-green-200 bg-green-50 p-3">
                         <p className="text-sm font-medium text-green-900">✓ Rapport créé</p>
                         <div className="mt-2 space-y-1 text-xs text-green-800">
-                          <p><b>Constat :</b> {report.constat}</p>
-                          <p><b>Actions :</b> {report.actions_realisees}</p>
-                          <p><b>Conclusion :</b> {report.conclusion}</p>
+                          <p>
+                            <b>Constat :</b> {report.constat}
+                          </p>
+                          <p>
+                            <b>Actions :</b> {report.actions_realisees}
+                          </p>
+                          <p>
+                            <b>Conclusion :</b> {report.conclusion}
+                          </p>
                           {report.problem_part_type && (
-                            <p><b>Type de pièce défaillante :</b> {report.problem_part_type}</p>
+                            <p>
+                              <b>Type de pièce défaillante :</b> {report.problem_part_type}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -616,11 +611,7 @@ function TicketDetail() {
 
         {/* Create Quote Button - appears when report is done */}
         {ticketReports.length > 0 && ticketQuotes.length === 0 && linkedQuotes.length === 0 && (
-          <Button 
-            onClick={createQuoteFromTicket} 
-            className="w-full"
-            size="lg"
-          >
+          <Button onClick={createQuoteFromTicket} className="w-full" size="lg">
             <Plus className="mr-2 h-5 w-5" />
             Créer un devis depuis ce ticket
           </Button>
@@ -683,10 +674,7 @@ function TicketDetail() {
             </CardHeader>
             <CardContent className="space-y-2">
               {ticketPOs.map((po: any) => (
-                <div
-                  key={po.id}
-                  className="rounded-md border p-3"
-                >
+                <div key={po.id} className="rounded-md border p-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <b>{po.order_number}</b>
@@ -763,12 +751,7 @@ function TicketDetail() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Input
-                    name="quantity"
-                    type="number"
-                    defaultValue="1"
-                    placeholder="Qté"
-                  />
+                  <Input name="quantity" type="number" defaultValue="1" placeholder="Qté" />
                 </div>
                 <Button size="sm" className="w-full" variant="outline">
                   <PackageCheck className="mr-2 h-4 w-4" />
@@ -790,16 +773,12 @@ function TicketDetail() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <button
-                      onClick={() =>
-                        setExpandedIntervention(isExpanded ? null : intervention.id)
-                      }
+                      onClick={() => setExpandedIntervention(isExpanded ? null : intervention.id)}
                       className="flex flex-1 items-center justify-between text-left"
                     >
                       <CardTitle className="text-base">🔧 Réparation</CardTitle>
                       <ChevronLeft
-                        className={`h-5 w-5 transition-transform ${
-                          isExpanded ? "rotate-90" : ""
-                        }`}
+                        className={`h-5 w-5 transition-transform ${isExpanded ? "rotate-90" : ""}`}
                       />
                     </button>
                   </div>
@@ -847,11 +826,7 @@ function TicketDetail() {
           )}
 
         {/* Close Button */}
-        <Button
-          onClick={close}
-          className="w-full"
-          disabled={ticket.status === "cloture"}
-        >
+        <Button onClick={close} className="w-full" disabled={ticket.status === "cloture"}>
           <CheckCircle2 className="mr-2 h-4 w-4" />
           {ticket.status === "cloture" ? "Ticket clôturé" : "Clôturer le ticket"}
         </Button>
@@ -873,9 +848,7 @@ function TicketDetail() {
               {ticketHistory.map((h: any) => (
                 <div key={h.id} className="text-xs">
                   <span className="font-medium">{h.title}</span>
-                  <div className="text-muted-foreground">
-                    {formatDate(h.created_at)}
-                  </div>
+                  <div className="text-muted-foreground">{formatDate(h.created_at)}</div>
                 </div>
               ))}
             </div>
