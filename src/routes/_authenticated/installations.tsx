@@ -139,6 +139,7 @@ function InstallationsList() {
     final_blade_part_id: "",
     curtain_weight_kg: "",
     optional_part_ids: [] as string[],
+    lacquer_enabled: false,
     winding_direction: "interieur",
   });
   const configuratorSetting = settings.find(
@@ -228,6 +229,7 @@ function InstallationsList() {
       curtain_weight_kg:
         installation.characteristics?.poids ?? installation.characteristics?.weight ?? "",
       optional_part_ids: [],
+      lacquer_enabled: false,
       winding_direction: installation.characteristics?.sens_enroulement ?? "interieur",
     });
   };
@@ -345,31 +347,30 @@ function InstallationsList() {
     })[0];
   };
 
-  const saveConfiguratorParts = async () => {
-    if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
+  const getConfiguratorQuoteData = (owner_id: string) => {
     const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
     const width = Number(configForm.width_meters) || 0;
     const height = Number(configForm.height_meters) || 0;
     const bladeCount = getBladeCount(blade);
     const curtainWeight = getCalculatedCurtainWeight();
-    const { data: userData } = await supabase.auth.getUser();
-    const owner_id = userData.user!.id;
     const suggestedAxis = getSuggestedAxis();
+    const suggestedCoulisse = getSuggestedCoulisse();
     const lacquerPart = parts.find((part: any) => normalizeName(part.reference) === "lacrid");
     const lacquerLengthMeters = bladeCount * width;
     const lacquerPricePerMeter = getBladeLacquerPricePerMeter(configForm.blade_part_id);
     const selectedExtraPartIds = [
       ...configuratorRequiredPartIds,
       suggestedAxis?.partId,
-      getSuggestedCoulisse()?.id,
+      suggestedCoulisse?.id,
       configForm.final_blade_part_id || null,
-      lacquerPart?.id,
+      configForm.lacquer_enabled ? lacquerPart?.id : null,
       ...configForm.optional_part_ids,
     ].filter(Boolean) as string[];
     const requiredRows = Array.from(new Set(selectedExtraPartIds))
       .filter((partId) => partId !== configForm.blade_part_id)
       .map((partId) => {
         const part = parts.find((item: any) => item.id === partId);
+        const optional = configuratorOptionalParts.find((item) => item.partId === partId);
         return {
           owner_id,
           installation_id: configOpen.id,
@@ -386,19 +387,54 @@ function InstallationsList() {
                   unitPriceOverride: lacquerPricePerMeter,
                 }
               : undefined,
-          notes: configuratorOptionalParts.some((item) => item.partId === partId)
-            ? `Option configurateur rideau métallique${configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice ? ` · tarif promotionnel ${Number(configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice).toFixed(2)} €` : ""}.`
+          notes: optional
+            ? `Option configurateur rideau métallique${optional.promotionalPrice ? ` · tarif promotionnel ${Number(optional.promotionalPrice).toFixed(2)} €` : ""}.`
             : partId === lacquerPart?.id
               ? `Laquage rideau calculé par le configurateur : ${bladeCount} lame(s) × ${width || "?"} ml = ${lacquerLengthMeters || "?"} ml${lacquerPricePerMeter ? ` · ${lacquerPricePerMeter.toFixed(2)} €/ml` : ""}.`
               : partId === suggestedAxis?.partId
                 ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
-                : partId === getSuggestedCoulisse()?.id
+                : partId === suggestedCoulisse?.id
                   ? `Coulisses suggérées par le configurateur (${configForm.height_meters || "?"} m de hauteur, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
                   : partId === configForm.final_blade_part_id
                     ? "Lame finale ajoutée par le configurateur rideau métallique."
                     : "Ajouté automatiquement par le configurateur rideau métallique.",
         };
       });
+    return {
+      blade,
+      width,
+      height,
+      bladeCount,
+      curtainWeight,
+      lacquerPart,
+      lacquerLengthMeters,
+      lacquerPricePerMeter,
+      requiredRows,
+    };
+  };
+
+  const getConfiguratorTotal = () => {
+    if (!configOpen || !configForm.blade_part_id) return 0;
+    const data = getConfiguratorQuoteData("");
+    const bladeTotal = Number(data.blade?.sale_price || 0) * data.bladeCount * data.width;
+    const extrasTotal = data.requiredRows.reduce((sum: number, row: any) => {
+      const part = parts.find((item: any) => item.id === row.part_id);
+      const optional = configuratorOptionalParts.find((item) => item.partId === row.part_id);
+      const unitPrice =
+        row.part_id === data.lacquerPart?.id
+          ? data.lacquerPricePerMeter
+          : Number(optional?.promotionalPrice ?? part?.sale_price ?? 0);
+      return sum + unitPrice * (row.length_meters || 1);
+    }, 0);
+    return bladeTotal + extrasTotal;
+  };
+
+  const saveConfiguratorParts = async () => {
+    if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+    const { blade, width, height, bladeCount, curtainWeight, requiredRows } =
+      getConfiguratorQuoteData(owner_id);
     const { error } = await (supabase.from("installation_parts" as any) as any).upsert(
       [
         {
@@ -421,6 +457,79 @@ function InstallationsList() {
       `${bladeCount} lame(s) calculée(s) et ${requiredRows.length} pièce(s) nécessaire(s) ajoutée(s) à l'installation`,
     );
     setConfigOpen(null);
+  };
+
+  const createQuoteFromConfigurator = async () => {
+    if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
+    const site = sites.find((item: any) => item.id === configOpen.site_id);
+    const clientId = site?.client_id;
+    if (!clientId) return toast.error("Aucun client trouvé pour cette installation");
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user!.id;
+    const data = getConfiguratorQuoteData(owner_id);
+    const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const { data: quote, error } = await supabase
+      .from("quotes")
+      .insert({
+        owner_id,
+        quote_number: number,
+        client_id: clientId,
+        site_id: configOpen.site_id || null,
+        installation_id: configOpen.id,
+        notes: "Devis créé depuis le configurateur rideau métallique.",
+      })
+      .select()
+      .single();
+    if (error) return toast.error(error.message);
+    await (supabase.from("quote_installations" as any) as any).insert({
+      owner_id,
+      quote_id: quote.id,
+      installation_id: configOpen.id,
+      position: 0,
+    });
+    const allRows = [
+      {
+        part_id: data.blade?.id,
+        description: data.blade?.name,
+        quantity: data.bladeCount,
+        length_meters: data.width || null,
+        unit_price: Number(data.blade?.sale_price || 0),
+        unit_cost: Number(data.blade?.purchase_price || 0),
+      },
+      ...data.requiredRows.map((row: any) => {
+        const part = parts.find((item: any) => item.id === row.part_id);
+        const optional = configuratorOptionalParts.find((item) => item.partId === row.part_id);
+        return {
+          part_id: row.part_id,
+          description: part?.name ?? "Pièce",
+          quantity: 1,
+          length_meters: row.length_meters ?? null,
+          unit_price:
+            row.part_id === data.lacquerPart?.id
+              ? data.lacquerPricePerMeter
+              : Number(optional?.promotionalPrice ?? part?.sale_price ?? 0),
+          unit_cost: Number(part?.purchase_price || 0),
+        };
+      }),
+    ].filter((row) => row.part_id);
+    const { error: itemError } = await (supabase.from("quote_items" as any) as any).insert(
+      allRows.map((row, index) => ({
+        owner_id,
+        quote_id: quote.id,
+        installation_id: configOpen.id,
+        part_id: row.part_id,
+        description: row.description,
+        quantity: row.quantity,
+        length_meters: row.length_meters,
+        unit_price: row.unit_price,
+        unit_cost: row.unit_cost,
+        position: index,
+      })),
+    );
+    if (itemError) return toast.error(itemError.message);
+    toast.success("Devis créé avec les pièces du configurateur");
+    setConfigOpen(null);
+    window.location.href = `/quotes/${quote.id}`;
   };
 
   const openRequirementsDialog = (installation: any) => {
@@ -1241,6 +1350,31 @@ function InstallationsList() {
                 ))}
               </select>
             </div>
+            {(() => {
+              const lacquerPart = parts.find(
+                (part: any) => normalizeName(part.reference) === "lacrid",
+              );
+              const data = configForm.blade_part_id ? getConfiguratorQuoteData("") : null;
+              const lacquerTotal = data ? data.lacquerLengthMeters * data.lacquerPricePerMeter : 0;
+              return lacquerPart ? (
+                <label className="flex items-center gap-2 rounded-md border border-border/60 p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={configForm.lacquer_enabled}
+                    onChange={(e) =>
+                      setConfigForm({ ...configForm, lacquer_enabled: e.target.checked })
+                    }
+                  />
+                  <span>
+                    Laquage +{lacquerTotal.toFixed(2)} €
+                    {data?.lacquerLengthMeters
+                      ? ` (${data.lacquerLengthMeters.toFixed(2)} ml × ${data.lacquerPricePerMeter.toFixed(2)} €/ml)`
+                      : ""}
+                  </span>
+                </label>
+              ) : null;
+            })()}
+
             <div className="rounded-md border border-border/60 p-3 text-sm">
               <div className="font-medium">Axe suggéré</div>
               <div className="mt-1 text-muted-foreground">
@@ -1336,12 +1470,29 @@ function InstallationsList() {
                   : "renseignez la hauteur de la lame dans la fiche pièce (largeur)";
               })()}
             </div>
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+              <div className="flex items-center justify-between font-semibold">
+                <span>Total devis estimé</span>
+                <span>{getConfiguratorTotal().toFixed(2)} € HT</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Total calculé avec les lames, les pièces suggérées, les options cochées et le
+                laquage si sélectionné.
+              </p>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
             <Button type="button" variant="ghost" onClick={() => setConfigOpen(null)}>
               Annuler
             </Button>
-            <Button onClick={saveConfiguratorParts}>Ajouter aux pièces présentes</Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={saveConfiguratorParts}>
+                Ajouter les pièces à l'installation
+              </Button>
+              <Button type="button" onClick={createQuoteFromConfigurator}>
+                Créer un devis avec ces pièces
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
