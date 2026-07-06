@@ -58,6 +58,69 @@ const componentRole = (part: any) => {
 const parseCsvBoolean = (value: string) =>
   ["1", "true", "oui", "yes", "y", "kit"].includes(normalizeName(value));
 
+const getPartSpecNumber = (part: any, keys: string[]) => {
+  const specs = part?.technical_specs ?? {};
+  for (const key of keys) {
+    const value = specs[key] ?? part?.[key];
+    if (value !== undefined && value !== null && value !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+};
+
+const getVantailRebates = (part: any) => ({
+  left: getPartSpecNumber(part, [
+    "rebateLeftMm",
+    "rebate_left_mm",
+    "empattementGaucheMm",
+    "empattement_gauche_mm",
+  ]),
+  right: getPartSpecNumber(part, [
+    "rebateRightMm",
+    "rebate_right_mm",
+    "empattementDroitMm",
+    "empattement_droit_mm",
+  ]),
+  top: getPartSpecNumber(part, [
+    "rebateTopMm",
+    "rebate_top_mm",
+    "empattementHautMm",
+    "empattement_haut_mm",
+  ]),
+  bottom: getPartSpecNumber(part, [
+    "rebateBottomMm",
+    "rebate_bottom_mm",
+    "empattementBasMm",
+    "empattement_bas_mm",
+  ]),
+});
+
+const calculateGlassSize = (draft: {
+  widthMm: number;
+  heightMm: number;
+  sideProfileMm: number;
+  bottomProfileMm: number;
+  topProfileMm: number;
+  rebateLeftMm: number;
+  rebateRightMm: number;
+  rebateTopMm: number;
+  rebateBottomMm: number;
+}) => ({
+  widthMm:
+    Number(draft.widthMm) -
+    Number(draft.sideProfileMm) * 2 +
+    Number(draft.rebateLeftMm) +
+    Number(draft.rebateRightMm),
+  heightMm:
+    Number(draft.heightMm) -
+    Number(draft.bottomProfileMm) -
+    Number(draft.topProfileMm) +
+    Number(draft.rebateTopMm) +
+    Number(draft.rebateBottomMm),
+});
+
 const DEFAULT_PART_MARKUP_TIERS = [
   { min: 0, max: 50, coefficient: 2 },
   { min: 50, max: 200, coefficient: 1.7 },
@@ -244,17 +307,7 @@ function PartsPage() {
   );
 
   const vantailCalculation = useMemo(() => {
-    const glassWidthMm =
-      Number(vantailDraft.widthMm) -
-      Number(vantailDraft.sideProfileMm) * 2 +
-      Number(vantailDraft.rebateLeftMm) +
-      Number(vantailDraft.rebateRightMm);
-    const glassHeightMm =
-      Number(vantailDraft.heightMm) -
-      Number(vantailDraft.bottomProfileMm) -
-      Number(vantailDraft.topProfileMm) +
-      Number(vantailDraft.rebateTopMm) +
-      Number(vantailDraft.rebateBottomMm);
+    const { widthMm: glassWidthMm, heightMm: glassHeightMm } = calculateGlassSize(vantailDraft);
 
     const suggestions = parts
       .filter(isVantailPart)
@@ -274,11 +327,23 @@ function PartsPage() {
         const sideMm = toMm(side?.part?.width_meters || side?.part?.length_meters);
         const bottomMm = toMm(bottom?.part?.width_meters || bottom?.part?.length_meters);
         const topMm = toMm(top?.part?.width_meters || top?.part?.length_meters);
+        const rebates = getVantailRebates(part);
+        const suggestedDraft = {
+          ...vantailDraft,
+          sideProfileMm: sideMm || Number(vantailDraft.sideProfileMm),
+          bottomProfileMm: bottomMm || Number(vantailDraft.bottomProfileMm),
+          topProfileMm: topMm || Number(vantailDraft.topProfileMm),
+          rebateLeftMm: rebates.left ?? Number(vantailDraft.rebateLeftMm),
+          rebateRightMm: rebates.right ?? Number(vantailDraft.rebateRightMm),
+          rebateTopMm: rebates.top ?? Number(vantailDraft.rebateTopMm),
+          rebateBottomMm: rebates.bottom ?? Number(vantailDraft.rebateBottomMm),
+        };
+        const glassSize = calculateGlassSize(suggestedDraft);
         const score =
           scoreDimension(sideMm, Number(vantailDraft.sideProfileMm)) * 2 +
           scoreDimension(bottomMm, Number(vantailDraft.bottomProfileMm)) +
           scoreDimension(topMm, Number(vantailDraft.topProfileMm));
-        return { part, components, sideMm, bottomMm, topMm, score };
+        return { part, components, sideMm, bottomMm, topMm, rebates, glassSize, score };
       })
       .sort((a, b) => a.score - b.score)
       .slice(0, 5);
@@ -288,6 +353,19 @@ function PartsPage() {
 
   const updateVantailDraft = (key: keyof typeof vantailDraft, value: string) => {
     setVantailDraft((draft) => ({ ...draft, [key]: Number(value) || 0 }));
+  };
+
+  const selectSuggestedVantail = (suggestion: (typeof vantailCalculation.suggestions)[number]) => {
+    setVantailDraft((draft) => ({
+      ...draft,
+      sideProfileMm: suggestion.sideMm || draft.sideProfileMm,
+      bottomProfileMm: suggestion.bottomMm || draft.bottomProfileMm,
+      topProfileMm: suggestion.topMm || draft.topProfileMm,
+      rebateLeftMm: suggestion.rebates.left ?? draft.rebateLeftMm,
+      rebateRightMm: suggestion.rebates.right ?? draft.rebateRightMm,
+      rebateTopMm: suggestion.rebates.top ?? draft.rebateTopMm,
+      rebateBottomMm: suggestion.rebates.bottom ?? draft.rebateBottomMm,
+    }));
   };
 
   const exportPartsSuppliers = () => {
@@ -1613,9 +1691,22 @@ function PartsPage() {
                             .join(" · ") || "—"}
                         </div>
                       </div>
-                      <div className="text-right text-xs text-muted-foreground">
-                        Écart total : {suggestion.score.toFixed(0)} mm
+                      <div className="space-y-2 text-right text-xs text-muted-foreground">
+                        <div>Écart total : {suggestion.score.toFixed(0)} mm</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => selectSuggestedVantail(suggestion)}
+                        >
+                          Sélectionner
+                        </Button>
                       </div>
+                    </div>
+                    <div className="mt-2 rounded-md bg-muted/40 p-2 text-xs">
+                      <span className="font-medium">Vitrage réel du modèle : </span>
+                      {Math.max(0, suggestion.glassSize.widthMm).toFixed(0)} ×{" "}
+                      {Math.max(0, suggestion.glassSize.heightMm).toFixed(0)} mm
                     </div>
                     <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
                       <span>
@@ -1632,6 +1723,12 @@ function PartsPage() {
                         Cimaise :{" "}
                         {suggestion.topMm ? `${suggestion.topMm.toFixed(0)} mm` : "non renseignée"}
                       </span>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-4">
+                      <span>Emp. G : {suggestion.rebates.left?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. D : {suggestion.rebates.right?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. H : {suggestion.rebates.top?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. B : {suggestion.rebates.bottom?.toFixed(0) ?? "—"} mm</span>
                     </div>
                   </Card>
                 ))
