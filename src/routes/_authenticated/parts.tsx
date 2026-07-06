@@ -385,18 +385,19 @@ function PartsPage() {
         const profileWidthMm = frontSection.widthMm || backSection.widthMm;
         const plinthTopWidthMm = topSection.widthMm;
         const plinthBottomWidthMm = bottomSection.widthMm;
+        const rebates = getVantailRebates(part);
         const glassWidthMm =
           Number(vantailDraft.widthMm) -
           (frontSection.widthMm || Number(vantailDraft.sideProfileMm)) -
           (backSection.widthMm || Number(vantailDraft.sideProfileMm)) +
-          Number(vantailDraft.rebateLeftMm) +
-          Number(vantailDraft.rebateRightMm);
+          (rebates.left ?? Number(vantailDraft.rebateLeftMm)) +
+          (rebates.right ?? Number(vantailDraft.rebateRightMm));
         const glassHeightMm =
           Number(vantailDraft.heightMm) -
           (bottomSection.widthMm || Number(vantailDraft.bottomProfileMm)) -
           (topSection.widthMm || Number(vantailDraft.topProfileMm)) +
-          Number(vantailDraft.rebateTopMm) +
-          Number(vantailDraft.rebateBottomMm);
+          (rebates.top ?? Number(vantailDraft.rebateTopMm)) +
+          (rebates.bottom ?? Number(vantailDraft.rebateBottomMm));
         const score =
           scoreDimension(profileWidthMm, Number(vantailDraft.sideProfileMm)) * 2 +
           scoreDimension(plinthBottomWidthMm, Number(vantailDraft.bottomProfileMm)) +
@@ -408,6 +409,10 @@ function PartsPage() {
           backSection,
           topSection,
           bottomSection,
+          sideMm: profileWidthMm,
+          bottomMm: plinthBottomWidthMm,
+          topMm: plinthTopWidthMm,
+          rebates,
           glassWidthMm,
           glassHeightMm,
           score,
@@ -433,10 +438,10 @@ function PartsPage() {
       sideProfileMm: suggestion.sideMm || draft.sideProfileMm,
       bottomProfileMm: suggestion.bottomMm || draft.bottomProfileMm,
       topProfileMm: suggestion.topMm || draft.topProfileMm,
-      rebateLeftMm: suggestion.rebates.left ?? draft.rebateLeftMm,
-      rebateRightMm: suggestion.rebates.right ?? draft.rebateRightMm,
-      rebateTopMm: suggestion.rebates.top ?? draft.rebateTopMm,
-      rebateBottomMm: suggestion.rebates.bottom ?? draft.rebateBottomMm,
+      rebateLeftMm: suggestion.rebates?.left ?? draft.rebateLeftMm,
+      rebateRightMm: suggestion.rebates?.right ?? draft.rebateRightMm,
+      rebateTopMm: suggestion.rebates?.top ?? draft.rebateTopMm,
+      rebateBottomMm: suggestion.rebates?.bottom ?? draft.rebateBottomMm,
     }));
   };
 
@@ -1839,10 +1844,10 @@ function PartsPage() {
                       {Math.max(0, suggestion.glassHeightMm).toFixed(0)} mm
                     </div>
                     <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-4">
-                      <span>Emp. G : {suggestion.rebates.left?.toFixed(0) ?? "—"} mm</span>
-                      <span>Emp. D : {suggestion.rebates.right?.toFixed(0) ?? "—"} mm</span>
-                      <span>Emp. H : {suggestion.rebates.top?.toFixed(0) ?? "—"} mm</span>
-                      <span>Emp. B : {suggestion.rebates.bottom?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. G : {suggestion.rebates?.left?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. D : {suggestion.rebates?.right?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. H : {suggestion.rebates?.top?.toFixed(0) ?? "—"} mm</span>
+                      <span>Emp. B : {suggestion.rebates?.bottom?.toFixed(0) ?? "—"} mm</span>
                     </div>
                   </Card>
                 ))
