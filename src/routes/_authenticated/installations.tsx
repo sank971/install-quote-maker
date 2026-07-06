@@ -29,6 +29,52 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 type CustomField = { key: string; label: string; type: "text" | "number" | "date" | "checkbox" };
+
+const normalizeText = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const parseCustomFields = (fields: unknown) => {
+  if (typeof fields !== "string") return fields;
+  try {
+    return JSON.parse(fields || "[]");
+  } catch {
+    return [];
+  }
+};
+
+const normalizeCustomFields = (fields: unknown): CustomField[] => {
+  const parsed = parseCustomFields(fields);
+  return Array.isArray(parsed)
+    ? parsed.filter((field): field is CustomField =>
+        Boolean(
+          field?.key && field?.label && ["text", "number", "date", "checkbox"].includes(field.type),
+        ),
+      )
+    : [];
+};
+
+const numberFrom = (value: unknown, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const valuesList = (value: unknown) =>
+  Array.isArray(value)
+    ? value.map(normalizeText).filter(Boolean)
+    : String(value ?? "")
+        .split(/[|,]/)
+        .map(normalizeText)
+        .filter(Boolean);
+
+const includesConfiguredValue = (configured: unknown, actual: unknown) => {
+  const values = valuesList(configured);
+  if (values.length === 0 || !actual) return true;
+  return values.includes(normalizeText(actual));
+};
 type InstalledPartDraft = {
   component_type?: string;
   dimensions?: string;
@@ -110,10 +156,7 @@ function InstallationsList() {
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
   const [requirementsForm, setRequirementsForm] = useState<any>({});
 
-  const normalizeName = (value: unknown) =>
-    String(value ?? "")
-      .trim()
-      .toLowerCase();
+  const normalizeName = normalizeText;
 
   const getCompatibleParts = (installation: any) => {
     if (!installation?.id) return [];
@@ -238,6 +281,67 @@ function InstallationsList() {
     });
   };
 
+  const getSuggestedCoulisse = () => {
+    const widthMm = (Number(configForm.width_meters) || 0) * 1000;
+    const heightMm = (Number(configForm.height_meters) || 0) * 1000;
+    const surfaceM2 = (widthMm * heightMm) / 1_000_000;
+    const weightKg = getCalculatedCurtainWeight();
+    const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
+    const compatibleCoulisses = parts
+      .filter((part: any) => normalizeName(part.category) === "coulisse")
+      .filter((part: any) => {
+        const specs = part.technical_specs ?? {};
+        if (specs.actif === false || specs.active === false) return false;
+        if (widthMm > 0 && widthMm < numberFrom(specs.largeur_min_rideau_mm, 0)) return false;
+        if (widthMm > 0 && widthMm > numberFrom(specs.largeur_max_rideau_mm, Infinity))
+          return false;
+        if (heightMm > 0 && heightMm < numberFrom(specs.hauteur_min_rideau_mm, 0)) return false;
+        if (heightMm > 0 && heightMm > numberFrom(specs.hauteur_max_rideau_mm, Infinity))
+          return false;
+        if (surfaceM2 > 0 && surfaceM2 > numberFrom(specs.surface_max_tablier_m2, Infinity))
+          return false;
+        if (weightKg > 0 && weightKg > numberFrom(specs.poids_max_tablier_kg, Infinity))
+          return false;
+        if (!includesConfiguredValue(specs.types_lame_compatibles, blade?.name ?? blade?.category))
+          return false;
+        if (
+          !includesConfiguredValue(
+            specs.largeurs_lame_compatibles_mm,
+            blade?.width_meters ? Number(blade.width_meters) * 1000 : null,
+          )
+        )
+          return false;
+        if (
+          !includesConfiguredValue(
+            specs.usages_compatibles,
+            configForm.winding_direction === "exterieur" ? "exterieur" : null,
+          )
+        )
+          return false;
+        return true;
+      });
+
+    return compatibleCoulisses.sort((a: any, b: any) => {
+      const aSpecs = a.technical_specs ?? {};
+      const bSpecs = b.technical_specs ?? {};
+      const aSection =
+        numberFrom(aSpecs.hauteur_exterieure_gauche_mm) +
+        numberFrom(aSpecs.hauteur_exterieure_droite_mm) +
+        numberFrom(aSpecs.largeur_interieure_utile_mm) +
+        numberFrom(aSpecs.profondeur_interieure_mm);
+      const bSection =
+        numberFrom(bSpecs.hauteur_exterieure_gauche_mm) +
+        numberFrom(bSpecs.hauteur_exterieure_droite_mm) +
+        numberFrom(bSpecs.largeur_interieure_utile_mm) +
+        numberFrom(bSpecs.profondeur_interieure_mm);
+      return (
+        aSection - bSection ||
+        numberFrom(a.purchase_price) - numberFrom(b.purchase_price) ||
+        numberFrom(aSpecs.priorite_selection, 100) - numberFrom(bSpecs.priorite_selection, 100)
+      );
+    })[0];
+  };
+
   const saveConfiguratorParts = async () => {
     if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
     const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
@@ -251,6 +355,7 @@ function InstallationsList() {
     const selectedExtraPartIds = [
       ...configuratorRequiredPartIds,
       suggestedAxis?.partId,
+      getSuggestedCoulisse()?.id,
       configForm.final_blade_part_id || null,
       ...configForm.optional_part_ids,
     ].filter(Boolean) as string[];
@@ -267,9 +372,11 @@ function InstallationsList() {
             ? `Option configurateur rideau métallique${configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice ? ` · tarif promotionnel ${Number(configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice).toFixed(2)} €` : ""}.`
             : partId === suggestedAxis?.partId
               ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
-              : partId === configForm.final_blade_part_id
-                ? "Lame finale ajoutée par le configurateur rideau métallique."
-                : "Ajouté automatiquement par le configurateur rideau métallique.",
+              : partId === getSuggestedCoulisse()?.id
+                ? `Coulisses suggérées par le configurateur (${configForm.height_meters || "?"} m de hauteur, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
+                : partId === configForm.final_blade_part_id
+                  ? "Lame finale ajoutée par le configurateur rideau métallique."
+                  : "Ajouté automatiquement par le configurateur rideau métallique.",
         };
       });
     const { error } = await (supabase.from("installation_parts" as any) as any).upsert(
@@ -456,7 +563,7 @@ function InstallationsList() {
   const openEdit = (i: any) => {
     setEdit({ ...i, characteristics: i.characteristics ?? {} });
     setBrandId(i.brand_id ?? "");
-    setTypeId(i.type_id ?? "");
+    setTypeId(i.type_id ?? models.find((model: any) => model.id === i.model_id)?.type_id ?? "");
     setModelId(i.model_id ?? "");
     setOpen(true);
   };
@@ -515,7 +622,7 @@ function InstallationsList() {
     (m: any) => m.brand_id === brandId && (!typeId || m.type_id === typeId),
   );
   const selectedType = types.find((t: any) => t.id === typeId);
-  const selectedTypeFields: CustomField[] = selectedType?.custom_fields ?? [];
+  const selectedTypeFields: CustomField[] = normalizeCustomFields(selectedType?.custom_fields);
 
   return (
     <div>
@@ -555,9 +662,9 @@ function InstallationsList() {
           {filtered.map((i) => {
             const site = sites.find((s) => s.id === i.site_id);
             const client = clients.find((c) => c.id === site?.client_id);
-            const type = types.find((t: any) => t.id === i.type_id);
-            const brand = brands.find((b: any) => b.id === i.brand_id);
             const model = models.find((m: any) => m.id === i.model_id);
+            const type = types.find((t: any) => t.id === (i.type_id || model?.type_id));
+            const brand = brands.find((b: any) => b.id === i.brand_id);
             const presentParts = getPresentParts(i.id);
             const requirements = installationRequirements.find(
               (r: any) => r.installation_id === i.id,
@@ -653,9 +760,9 @@ function InstallationsList() {
                           ) : null}
                         </div>
                       ) : null}
-                      {type?.custom_fields?.length ? (
+                      {normalizeCustomFields(type?.custom_fields).length ? (
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {type.custom_fields.map((field: CustomField) => {
+                          {normalizeCustomFields(type?.custom_fields).map((field: CustomField) => {
                             const value = i.characteristics?.[field.key];
                             if (value === undefined || value === null || value === "") return null;
                             return (
@@ -1123,6 +1230,19 @@ function InstallationsList() {
                   return part
                     ? `${part.name} (${axis.minLengthMeters || 0}-${axis.maxLengthMeters || "∞"} m · ${axis.maxWeightKg || "∞"} kg max · poids calculé ${getCalculatedCurtainWeight() ? getCalculatedCurtainWeight().toFixed(1) : "0"} kg)`
                     : "Aucun axe ne correspond à la longueur et au poids renseignés.";
+                })()}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-border/60 p-3 text-sm">
+              <div className="font-medium">Coulisses suggérées</div>
+              <div className="mt-1 text-muted-foreground">
+                {(() => {
+                  const coulisse = getSuggestedCoulisse();
+                  const specs = coulisse?.technical_specs ?? {};
+                  return coulisse
+                    ? `${coulisse.name} (${specs.largeur_max_rideau_mm || "∞"} mm max · ${specs.poids_max_tablier_kg || "∞"} kg max · ${specs.quantite_defaut || 2} pièce(s))`
+                    : "Aucune coulisse compatible ne correspond aux dimensions et au poids renseignés.";
                 })()}
               </div>
             </div>
