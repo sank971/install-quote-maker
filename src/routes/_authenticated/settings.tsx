@@ -80,6 +80,92 @@ const toKey = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+
+const COULISSE_FIELD_PRESETS = [
+  ["unite_vente", "Unité de vente", "text", ""],
+  ["longueur_barre_standard_mm", "Longueur standard de barre", "number", "mm"],
+  ["prix_achat_metre", "Prix achat au mètre", "number", "€ / m"],
+  ["prix_vente_metre", "Prix vente au mètre", "number", "€ / m"],
+  ["hauteur_exterieure_gauche_mm", "Hauteur extérieure gauche", "number", "mm"],
+  ["hauteur_exterieure_droite_mm", "Hauteur extérieure droite", "number", "mm"],
+  ["largeur_interieure_utile_mm", "Largeur intérieure utile", "number", "mm"],
+  ["profondeur_interieure_mm", "Profondeur intérieure", "number", "mm"],
+  ["epaisseur_acier_mm", "Épaisseur acier", "number", "mm"],
+  ["poids_metre_kg", "Poids au mètre", "number", "kg/m"],
+  ["largeur_max_rideau_mm", "Largeur maximale rideau", "number", "mm"],
+  ["poids_max_tablier_kg", "Poids maximum tablier", "number", "kg"],
+  ["usages_compatibles", "Usages compatibles", "text", ""],
+  ["types_pose_compatibles", "Types de pose compatibles", "text", ""],
+  ["depassement_haut_defaut_mm", "Dépassement haut par défaut", "number", "mm"],
+  ["depassement_bas_defaut_mm", "Dépassement bas par défaut", "number", "mm"],
+  ["quantite_defaut", "Quantité par défaut", "number", ""],
+  ["priorite_selection", "Priorité de sélection", "number", ""],
+  ["actif", "Actif", "checkbox", ""],
+];
+
+const DEFAULT_COULISSES = [
+  [
+    "COUL-GALVA-40-30-40-E2",
+    "Coulisse acier galva 40x30x40 ép. 2",
+    40,
+    30,
+    40,
+    2,
+    80,
+    3000,
+    "standard",
+    10,
+  ],
+  [
+    "COUL-GALVA-50-30-50-E2",
+    "Coulisse acier galva 50x30x50 ép. 2",
+    50,
+    30,
+    50,
+    2,
+    120,
+    4000,
+    "standard",
+    20,
+  ],
+  [
+    "COUL-GALVA-60-30-60-E25",
+    "Coulisse acier galva 60x30x60 ép. 2.5",
+    60,
+    30,
+    60,
+    2.5,
+    200,
+    5000,
+    "standard|intensif léger",
+    30,
+  ],
+  [
+    "COUL-GALVA-80-30-80-E25",
+    "Coulisse acier galva 80x30x80 ép. 2.5",
+    80,
+    30,
+    80,
+    2.5,
+    350,
+    7000,
+    "intensif",
+    40,
+  ],
+  [
+    "COUL-GALVA-100-30-100-E25",
+    "Coulisse acier galva 100x30x100 ép. 2.5",
+    100,
+    30,
+    100,
+    2.5,
+    500,
+    9000,
+    "intensif|grande dimension",
+    50,
+  ],
+];
+
 const DEFAULT_PART_MARKUP_TIERS = [
   { min: 0, max: 50, coefficient: 2 },
   { min: 50, max: 200, coefficient: 1.7 },
@@ -127,6 +213,7 @@ function SettingsPage() {
   const upFormula = useUpsert("calculation_formulas", [["calculation_formulas"]]);
   const upRule = useUpsert("business_rules", [["business_rules"]]);
   const upFamilyField = useUpsert("part_family_fields", [["part_family_fields"]]);
+  const upPart = useUpsert("parts", [["parts"]]);
 
   const [typeName, setTypeName] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -303,6 +390,68 @@ function SettingsPage() {
     setPartPricingDraft({ ...effectivePartPricing, markupTiers: tiers });
   };
 
+  const seedCoulisses = async () => {
+    if (!partCategories.data?.some((category: any) => category.name === "Coulisse")) {
+      await upPartCategory.mutateAsync({ name: "Coulisse" });
+    }
+    for (const [index, [field_key, label, field_type, unit]] of COULISSE_FIELD_PRESETS.entries()) {
+      await upFamilyField.mutateAsync({
+        family_name: "Coulisse",
+        field_key,
+        label,
+        field_type,
+        unit,
+        position: index * 10,
+      });
+    }
+    for (const [
+      reference,
+      name,
+      left,
+      inner,
+      right,
+      thickness,
+      maxWeight,
+      maxWidth,
+      usages,
+      priority,
+    ] of DEFAULT_COULISSES) {
+      if (parts.data?.some((part: any) => part.reference === reference)) continue;
+      await upPart.mutateAsync({
+        name,
+        reference,
+        category: "Coulisse",
+        purchase_price: 0,
+        sale_price: 0,
+        technical_specs: {
+          unite_vente: "metre_lineaire",
+          finition: "galvanisé",
+          hauteur_exterieure_gauche_mm: left,
+          largeur_interieure_utile_mm: inner,
+          hauteur_exterieure_droite_mm: right,
+          profondeur_interieure_mm: inner,
+          epaisseur_acier_mm: thickness,
+          largeur_min_rideau_mm: 0,
+          largeur_max_rideau_mm: maxWidth,
+          hauteur_min_rideau_mm: 0,
+          hauteur_max_rideau_mm: 999999,
+          surface_max_tablier_m2: 999999,
+          poids_max_tablier_kg: maxWeight,
+          usages_compatibles: usages,
+          depassement_haut_defaut_mm: 100,
+          depassement_bas_defaut_mm: 0,
+          quantite_defaut: 2,
+          unite_calcul: "mm",
+          arrondi_longueur: "mm",
+          gestion_chutes: "standard",
+          priorite_selection: priority,
+          actif: true,
+        },
+      });
+    }
+    toast.success("Famille Coulisse, champs et exemples configurables créés");
+  };
+
   const seedTypes = async () => {
     const defaultPartCategories = Array.from(
       new Set(DEFAULT_TYPES.flatMap((type) => type.component_types)),
@@ -431,7 +580,7 @@ function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-base">Architecture ERP paramétrable</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-3">
+        <CardContent className="grid gap-4 lg:grid-cols-4">
           <div className="rounded-md border bg-background/70 p-3">
             <div className="font-medium">Champs dynamiques par famille</div>
             <p className="text-sm text-muted-foreground">
@@ -493,6 +642,16 @@ function SettingsPage() {
                 Enregistrer la formule
               </Button>
             </div>
+          </div>
+          <div className="rounded-md border bg-background/70 p-3">
+            <div className="font-medium">Coulisses rideau métallique</div>
+            <p className="text-sm text-muted-foreground">
+              Crée la famille, les champs techniques et 5 coulisses d’exemple
+              modifiables/supprimables.
+            </p>
+            <Button className="mt-3" size="sm" variant="outline" onClick={seedCoulisses}>
+              Initialiser les coulisses
+            </Button>
           </div>
           <div className="rounded-md border bg-background/70 p-3">
             <div className="font-medium">Rule Engine & BOM</div>

@@ -1,0 +1,8 @@
+-- Configurable guide rails (coulisses) for rolling shutters.
+-- Coulisse data is stored in existing owner-scoped tables:
+--   part_categories.name = 'Coulisse'
+--   part_family_fields.family_name = 'Coulisse'
+--   parts.category = 'Coulisse'
+--   parts.technical_specs = all dimensions, thresholds, formula and options
+-- Defaults are created per user from the settings screen so they remain editable
+-- and deletable by each tenant.

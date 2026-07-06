@@ -1,4 +1,5 @@
 import { filterCompatibleParts } from "./compatibility-engine";
+import { calculateCoulisse } from "./coulisse-calculator";
 import { runFormulas } from "./formula-engine";
 import { runRules } from "./rule-engine";
 import { selectBestSupplier } from "./supplier-optimizer";
@@ -47,6 +48,16 @@ export function calculateInstallationQuote(args: {
   const compatibleParts = filterCompatibleParts(args.parts, args.compatibilities ?? [], args.input);
   const formulaByCode = new Map(args.formulas.map((formula) => [formula.code, formula]));
   const lines = families.flatMap((item) => {
+    if (normalize(item.part_family) === "coulisse") {
+      const result = calculateCoulisse({
+        input: args.input,
+        parts: compatibleParts,
+        supplierOffers: args.supplierOffers,
+        metrics: formulaResult.metrics,
+      });
+      logs.push(...result.logs);
+      return result.line ? [result.line] : [];
+    }
     const candidates = compatibleParts.filter(
       (part) => normalize(part.category) === normalize(item.part_family),
     );
