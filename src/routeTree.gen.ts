@@ -17,6 +17,7 @@ import { Route as AuthenticatedSuppliersRouteImport } from './routes/_authentica
 import { Route as AuthenticatedSitesRouteImport } from './routes/_authenticated/sites'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedPartsRouteImport } from './routes/_authenticated/parts'
+import { Route as AuthenticatedOrdersRouteImport } from './routes/_authenticated/orders'
 import { Route as AuthenticatedInstallationsRouteImport } from './routes/_authenticated/installations'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
@@ -66,6 +67,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
 const AuthenticatedPartsRoute = AuthenticatedPartsRouteImport.update({
   id: '/parts',
   path: '/parts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOrdersRoute = AuthenticatedOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedInstallationsRoute =
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installations': typeof AuthenticatedInstallationsRoute
+  '/orders': typeof AuthenticatedOrdersRoute
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/installations': typeof AuthenticatedInstallationsRoute
+  '/orders': typeof AuthenticatedOrdersRoute
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/_authenticated/contracts': typeof AuthenticatedContractsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/installations': typeof AuthenticatedInstallationsRoute
+  '/_authenticated/orders': typeof AuthenticatedOrdersRoute
   '/_authenticated/parts': typeof AuthenticatedPartsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/dashboard'
     | '/installations'
+    | '/orders'
     | '/parts'
     | '/settings'
     | '/sites'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/dashboard'
     | '/installations'
+    | '/orders'
     | '/parts'
     | '/settings'
     | '/sites'
@@ -243,6 +254,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contracts'
     | '/_authenticated/dashboard'
     | '/_authenticated/installations'
+    | '/_authenticated/orders'
     | '/_authenticated/parts'
     | '/_authenticated/settings'
     | '/_authenticated/sites'
@@ -319,6 +331,13 @@ declare module '@tanstack/react-router' {
       path: '/parts'
       fullPath: '/parts'
       preLoaderRoute: typeof AuthenticatedPartsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/orders': {
+      id: '/_authenticated/orders'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof AuthenticatedOrdersRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/installations': {
@@ -417,6 +436,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedContractsRoute: typeof AuthenticatedContractsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRoute
+  AuthenticatedOrdersRoute: typeof AuthenticatedOrdersRoute
   AuthenticatedPartsRoute: typeof AuthenticatedPartsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
@@ -435,6 +455,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedContractsRoute: AuthenticatedContractsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInstallationsRoute: AuthenticatedInstallationsRoute,
+  AuthenticatedOrdersRoute: AuthenticatedOrdersRoute,
   AuthenticatedPartsRoute: AuthenticatedPartsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSitesRoute: AuthenticatedSitesRoute,

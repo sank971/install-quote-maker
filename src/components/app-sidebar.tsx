@@ -5,6 +5,7 @@ import {
   MapPin,
   Wrench,
   Package,
+  PackageCheck,
   Truck,
   FileText,
   ClipboardList,
@@ -36,6 +37,7 @@ const nav = [
   { title: "Sites", to: "/sites", icon: MapPin },
   { title: "Installations", to: "/installations", icon: Wrench },
   { title: "Pièces", to: "/parts", icon: Package },
+  { title: "Commandes", to: "/orders", icon: PackageCheck },
   { title: "Fournisseurs", to: "/suppliers", icon: Truck },
   { title: "Contrats", to: "/contracts", icon: ScrollText },
 ];
