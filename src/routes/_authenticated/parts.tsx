@@ -47,6 +47,14 @@ const isVantailPart = (part: any) => {
   return label.includes("vantail") || label.includes("ovr");
 };
 
+const isVantailRelationKind = (relationKind?: string | null) =>
+  [
+    "vantail_profile_front",
+    "vantail_profile_back",
+    "vantail_plinth_top",
+    "vantail_plinth_bottom",
+  ].includes(relationKind ?? "");
+
 const relationKindLabel = (relationKind?: string | null) => {
   switch (relationKind) {
     case "kit_component":
@@ -1184,6 +1192,10 @@ function PartsPage() {
             const componentCount = partComponents.filter(
               (c: any) => c.parent_part_id === p.id,
             ).length;
+            const vantailComponentCount = partComponents.filter(
+              (c: any) => c.parent_part_id === p.id && isVantailRelationKind(c.relation_kind),
+            ).length;
+            const isVantail = isVantailPart(p);
             const linkedSupplierParts = supplierParts.filter((sp: any) => sp.part_id === p.id);
             const linkedSupplierNames = linkedSupplierParts
               .map(
@@ -1211,8 +1223,8 @@ function PartsPage() {
                         </span>
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-muted-foreground">
-                          {p.is_kit ? "Kit" : "Pièce"} · Compat. : {typeCompatCount} types ·{" "}
-                          {modelCompatCount} modèles
+                          {p.is_kit ? "Kit" : isVantail ? "Vantail" : "Pièce"} · Compat. :{" "}
+                          {typeCompatCount} types · {modelCompatCount} modèles
                         </span>
                         {[
                           p.length_meters && `${Number(p.length_meters)} m L`,
@@ -1244,7 +1256,9 @@ function PartsPage() {
                           <>
                             <span className="mx-2 text-muted-foreground">·</span>
                             <span className="text-muted-foreground">
-                              Composé : {componentCount} pièces
+                              {isVantail && vantailComponentCount > 0
+                                ? `Profils/plinthes : ${vantailComponentCount}`
+                                : `Composé : ${componentCount} pièces`}
                             </span>
                           </>
                         )}
@@ -1261,17 +1275,33 @@ function PartsPage() {
                         setSelectedComponentPartIds([]);
                         setComponentDraft({
                           quantity: 1,
-                          relation_kind: p.is_kit ? "kit_component" : "accessory",
+                          relation_kind: isVantailPart(p)
+                            ? "vantail_profile_front"
+                            : p.is_kit
+                              ? "kit_component"
+                              : "accessory",
                           negotiated_price: 0,
                           notes: "",
                         });
                       }}
-                      title="Gérer la composition de cette pièce ou de ce kit"
-                      aria-label="Gérer la composition"
+                      title={
+                        isVantail
+                          ? "Lier les profils et plinthes de ce vantail"
+                          : "Gérer la composition de cette pièce ou de ce kit"
+                      }
+                      aria-label={
+                        isVantail
+                          ? "Lier les profils et plinthes du vantail"
+                          : "Gérer la composition"
+                      }
                     >
                       <Boxes className="h-4 w-4" />
                       <span className="hidden sm:inline">
-                        {p.is_kit ? "Composition / options" : "Accessoires"}
+                        {isVantail
+                          ? "Profils / plinthes"
+                          : p.is_kit
+                            ? "Composition / options"
+                            : "Accessoires"}
                       </span>
                     </Button>
                     <Button
@@ -1503,13 +1533,18 @@ function PartsPage() {
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {componentsOpen?.is_kit ? "Composition et options du kit" : "Accessoires de la pièce"}{" "}
+              {componentsOpen && isVantailPart(componentsOpen)
+                ? "Profils et plinthes du vantail"
+                : componentsOpen?.is_kit
+                  ? "Composition et options du kit"
+                  : "Accessoires de la pièce"}{" "}
               : {componentsOpen?.name}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Séparez les pièces qui composent réellement un kit, les options qui bénéficient du prix
-            négocié du kit et les accessoires facturables à l’unité.
+            {componentsOpen && isVantailPart(componentsOpen)
+              ? "Sélectionnez les profils et plinthes à associer au vantail, puis choisissez leur rôle : profil avant, profil arrière, plinthe haute ou plinthe basse."
+              : "Séparez les pièces qui composent réellement un kit, les options qui bénéficient du prix négocié du kit et les accessoires facturables à l’unité."}
           </p>
           <div className="space-y-2">
             {partComponents
