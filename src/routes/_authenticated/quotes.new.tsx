@@ -356,6 +356,9 @@ function NewQuote() {
       (x: any) => x.installation_id === sourceInstallationId && x.part_id === partId,
     );
     const length = Number(installedPart?.length_meters ?? 0);
+    const unitPriceOverride = Number(installedPart?.configuration?.unitPriceOverride);
+    const useConfiguratorLinearPrice =
+      Number.isFinite(unitPriceOverride) && unitPriceOverride > 0 && length > 0;
     const details = [
       p.pricing_unit === "linear_meter" && length > 0 ? `${length} ml` : null,
       installedPart?.dimensions,
@@ -392,14 +395,16 @@ function NewQuote() {
       category: installedPart?.component_type || p.category || "",
       quantity: 1,
       length_meters:
-        p.pricing_unit === "linear_meter" && length > 0
+        (p.pricing_unit === "linear_meter" || useConfiguratorLinearPrice) && length > 0
           ? length
           : Number(p.length_meters ?? 0) || undefined,
-      unit_price: negotiatedKitPrice
-        ? Number(negotiatedKitPrice.negotiated_price)
-        : Number(p.sale_price) * (1 - discount),
+      unit_price: useConfiguratorLinearPrice
+        ? unitPriceOverride
+        : negotiatedKitPrice
+          ? Number(negotiatedKitPrice.negotiated_price)
+          : Number(p.sale_price) * (1 - discount),
       unit_cost: componentCost ?? cheapestCost(p.id),
-      pricing_unit: p.pricing_unit ?? "unit",
+      pricing_unit: useConfiguratorLinearPrice ? "linear_meter" : (p.pricing_unit ?? "unit"),
       is_oversized: Boolean(p.is_oversized),
       ...patch,
     };

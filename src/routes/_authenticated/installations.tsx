@@ -151,6 +151,10 @@ function InstallationsList() {
     configuratorSetting?.value?.finalBladePartIds ?? [];
   const configuratorAxes: any[] = configuratorSetting?.value?.axes ?? [];
   const configuratorOptionalParts: any[] = configuratorSetting?.value?.optionalParts ?? [];
+  const configuratorBladeOptionsByPartId = (partId: string) =>
+    configuratorBladeOptions.find((option) => option.partId === partId);
+  const getBladeLacquerPricePerMeter = (partId: string) =>
+    Number(configuratorBladeOptionsByPartId(partId)?.lacquerPricePerMeter) || 0;
 
   // Requirements state
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
@@ -228,8 +232,7 @@ function InstallationsList() {
     });
   };
 
-  const getBladeWidthOption = (partId: string) =>
-    configuratorBladeOptions.find((option) => option.partId === partId);
+  const getBladeWidthOption = configuratorBladeOptionsByPartId;
 
   const isBladeAllowedForWidth = (partId: string, curtainWidth: number) => {
     const option = getBladeWidthOption(partId);
@@ -352,11 +355,15 @@ function InstallationsList() {
     const { data: userData } = await supabase.auth.getUser();
     const owner_id = userData.user!.id;
     const suggestedAxis = getSuggestedAxis();
+    const lacquerPart = parts.find((part: any) => normalizeName(part.reference) === "lacrid");
+    const lacquerLengthMeters = bladeCount * width;
+    const lacquerPricePerMeter = getBladeLacquerPricePerMeter(configForm.blade_part_id);
     const selectedExtraPartIds = [
       ...configuratorRequiredPartIds,
       suggestedAxis?.partId,
       getSuggestedCoulisse()?.id,
       configForm.final_blade_part_id || null,
+      lacquerPart?.id,
       ...configForm.optional_part_ids,
     ].filter(Boolean) as string[];
     const requiredRows = Array.from(new Set(selectedExtraPartIds))
@@ -368,15 +375,28 @@ function InstallationsList() {
           installation_id: configOpen.id,
           part_id: partId,
           component_type: part?.category ?? null,
+          length_meters: partId === lacquerPart?.id ? lacquerLengthMeters || null : null,
+          configuration:
+            partId === lacquerPart?.id
+              ? {
+                  source: "metal_curtain_configurator",
+                  bladePartId: configForm.blade_part_id,
+                  bladeCount,
+                  bladeWidthMeters: width,
+                  unitPriceOverride: lacquerPricePerMeter,
+                }
+              : undefined,
           notes: configuratorOptionalParts.some((item) => item.partId === partId)
             ? `Option configurateur rideau métallique${configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice ? ` · tarif promotionnel ${Number(configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice).toFixed(2)} €` : ""}.`
-            : partId === suggestedAxis?.partId
-              ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
-              : partId === getSuggestedCoulisse()?.id
-                ? `Coulisses suggérées par le configurateur (${configForm.height_meters || "?"} m de hauteur, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
-                : partId === configForm.final_blade_part_id
-                  ? "Lame finale ajoutée par le configurateur rideau métallique."
-                  : "Ajouté automatiquement par le configurateur rideau métallique.",
+            : partId === lacquerPart?.id
+              ? `Laquage rideau calculé par le configurateur : ${bladeCount} lame(s) × ${width || "?"} ml = ${lacquerLengthMeters || "?"} ml${lacquerPricePerMeter ? ` · ${lacquerPricePerMeter.toFixed(2)} €/ml` : ""}.`
+              : partId === suggestedAxis?.partId
+                ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
+                : partId === getSuggestedCoulisse()?.id
+                  ? `Coulisses suggérées par le configurateur (${configForm.height_meters || "?"} m de hauteur, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
+                  : partId === configForm.final_blade_part_id
+                    ? "Lame finale ajoutée par le configurateur rideau métallique."
+                    : "Ajouté automatiquement par le configurateur rideau métallique.",
         };
       });
     const { error } = await (supabase.from("installation_parts" as any) as any).upsert(
