@@ -98,6 +98,7 @@ function InstallationsList() {
   const configuratorSetting = settings.find(
     (setting: any) => setting.key === "metal_curtain_configurator",
   );
+  const configuratorBladeOptions: any[] = configuratorSetting?.value?.bladeOptions ?? [];
   const configuratorBladePartIds: string[] = configuratorSetting?.value?.bladePartIds ?? [];
   const configuratorRequiredPartIds: string[] = configuratorSetting?.value?.requiredPartIds ?? [];
   const configuratorFinalBladePartIds: string[] =
@@ -184,16 +185,43 @@ function InstallationsList() {
     });
   };
 
+  const getBladeWidthOption = (partId: string) =>
+    configuratorBladeOptions.find((option) => option.partId === partId);
+
+  const isBladeAllowedForWidth = (partId: string, curtainWidth: number) => {
+    const option = getBladeWidthOption(partId);
+    if (!option || curtainWidth <= 0) return true;
+    const minWidth = Number(option.minWidthMeters) || 0;
+    const maxWidth = Number(option.maxWidthMeters) || Infinity;
+    return curtainWidth >= minWidth && curtainWidth <= maxWidth;
+  };
+
   const getConfiguratorBladeParts = (installation: any) => {
     const compatibleParts = getCompatibleParts(installation);
-    if (configuratorBladePartIds.length > 0) {
-      return parts.filter((part: any) => configuratorBladePartIds.includes(part.id));
-    }
-    return compatibleParts.filter((part: any) =>
-      String(part.category ?? part.name)
-        .toLowerCase()
-        .includes("lame"),
-    );
+    const curtainWidth = Number(configForm.width_meters) || 0;
+    const bladeParts =
+      configuratorBladePartIds.length > 0
+        ? parts.filter((part: any) => configuratorBladePartIds.includes(part.id))
+        : compatibleParts.filter((part: any) =>
+            String(part.category ?? part.name)
+              .toLowerCase()
+              .includes("lame"),
+          );
+    return bladeParts.filter((part: any) => isBladeAllowedForWidth(part.id, curtainWidth));
+  };
+
+  const getBladeCount = (blade: any) => {
+    const height = Number(configForm.height_meters) || 0;
+    const bladeHeight = Number(blade?.width_meters || 0);
+    return bladeHeight > 0 && height > 0 ? Math.ceil(height / bladeHeight) : 1;
+  };
+
+  const getCalculatedCurtainWeight = () => {
+    const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
+    const width = Number(configForm.width_meters) || 0;
+    const bladeWeight = Number(blade?.weight_kg) || 0;
+    if (!blade || width <= 0 || bladeWeight <= 0) return 0;
+    return getBladeCount(blade) * width * bladeWeight;
   };
 
   const getConfiguratorFinalBladeParts = () =>
@@ -201,7 +229,7 @@ function InstallationsList() {
 
   const getSuggestedAxis = () => {
     const width = Number(configForm.width_meters) || 0;
-    const weight = Number(configForm.curtain_weight_kg) || 0;
+    const weight = getCalculatedCurtainWeight();
     return configuratorAxes.find((axis) => {
       const min = Number(axis.minLengthMeters) || 0;
       const max = Number(axis.maxLengthMeters) || Infinity;
@@ -215,8 +243,8 @@ function InstallationsList() {
     const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
     const width = Number(configForm.width_meters) || 0;
     const height = Number(configForm.height_meters) || 0;
-    const bladeHeight = Number(blade?.width_meters || 0);
-    const bladeCount = bladeHeight > 0 && height > 0 ? Math.ceil(height / bladeHeight) : 1;
+    const bladeCount = getBladeCount(blade);
+    const curtainWeight = getCalculatedCurtainWeight();
     const { data: userData } = await supabase.auth.getUser();
     const owner_id = userData.user!.id;
     const suggestedAxis = getSuggestedAxis();
@@ -238,7 +266,7 @@ function InstallationsList() {
           notes: configuratorOptionalParts.some((item) => item.partId === partId)
             ? `Option configurateur rideau métallique${configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice ? ` · tarif promotionnel ${Number(configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice).toFixed(2)} €` : ""}.`
             : partId === suggestedAxis?.partId
-              ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${configForm.curtain_weight_kg || "?"} kg).`
+              ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${curtainWeight ? curtainWeight.toFixed(1) : "?"} kg).`
               : partId === configForm.final_blade_part_id
                 ? "Lame finale ajoutée par le configurateur rideau métallique."
                 : "Ajouté automatiquement par le configurateur rideau métallique.",
@@ -253,9 +281,7 @@ function InstallationsList() {
           component_type: blade?.category ?? "Lame",
           length_meters: width || null,
           width_meters: height || null,
-          weight_kg:
-            Number(configForm.curtain_weight_kg) ||
-            (blade?.weight_kg && bladeCount ? Number(blade.weight_kg) * bladeCount : null),
+          weight_kg: curtainWeight || null,
           notes: `Configurateur: ${bladeCount} lame(s) de ${width || "?"} ml · enroulement ${configForm.winding_direction}. À ajouter au devis en quantité ${bladeCount} × ${width || "?"} ml.`,
         },
         ...requiredRows,
@@ -1028,16 +1054,20 @@ function InstallationsList() {
                 />
               </div>
               <div>
-                <Label>Poids rideau (kg)</Label>
+                <Label>Poids rideau calculé (kg)</Label>
                 <Input
                   type="number"
                   step="0.1"
                   min="0"
-                  value={configForm.curtain_weight_kg}
-                  onChange={(e) =>
-                    setConfigForm({ ...configForm, curtain_weight_kg: e.target.value })
+                  value={
+                    getCalculatedCurtainWeight() ? getCalculatedCurtainWeight().toFixed(1) : ""
                   }
+                  readOnly
+                  placeholder="Auto"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Calculé avec le poids unitaire de la lame et la quantité × largeur.
+                </p>
               </div>
             </div>
             <div>
@@ -1057,6 +1087,12 @@ function InstallationsList() {
                 {getConfiguratorBladeParts(configOpen).map((part: any) => (
                   <option key={part.id} value={part.id}>
                     {part.name} · {Number(part.sale_price).toFixed(2)}€/ml
+                    {(() => {
+                      const option = getBladeWidthOption(part.id);
+                      return option
+                        ? ` · largeur ${option.minWidthMeters || 0}-${option.maxWidthMeters || "∞"} m`
+                        : "";
+                    })()}
                   </option>
                 ))}
               </select>
@@ -1085,7 +1121,7 @@ function InstallationsList() {
                   const axis = getSuggestedAxis();
                   const part = parts.find((item: any) => item.id === axis?.partId);
                   return part
-                    ? `${part.name} (${axis.minLengthMeters || 0}-${axis.maxLengthMeters || "∞"} m · ${axis.maxWeightKg || "∞"} kg max)`
+                    ? `${part.name} (${axis.minLengthMeters || 0}-${axis.maxLengthMeters || "∞"} m · ${axis.maxWeightKg || "∞"} kg max · poids calculé ${getCalculatedCurtainWeight() ? getCalculatedCurtainWeight().toFixed(1) : "0"} kg)`
                     : "Aucun axe ne correspond à la longueur et au poids renseignés.";
                 })()}
               </div>
@@ -1154,8 +1190,9 @@ function InstallationsList() {
                 const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
                 const h = Number(configForm.height_meters) || 0;
                 const bh = Number(blade?.width_meters || 0);
+                const weight = getCalculatedCurtainWeight();
                 return bh > 0 && h > 0
-                  ? `${Math.ceil(h / bh)} lame(s) × ${Number(configForm.width_meters) || 0} ml`
+                  ? `${Math.ceil(h / bh)} lame(s) × ${Number(configForm.width_meters) || 0} ml${weight ? ` · ${weight.toFixed(1)} kg` : ""}`
                   : "renseignez la hauteur de la lame dans la fiche pièce (largeur)";
               })()}
             </div>
