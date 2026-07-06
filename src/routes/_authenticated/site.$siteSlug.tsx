@@ -5,7 +5,18 @@ import { useList, useOneByRouteParam } from "@/lib/db-hooks";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, FileText, FolderPlus, History, MapPin, Package, Wrench } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  FolderPlus,
+  History,
+  MapPin,
+  Package,
+  Trash2,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { currentUserId } from "@/lib/ticket-workflow";
@@ -24,6 +35,7 @@ function SiteDetail() {
   const { siteSlug } = Route.useParams();
   const qc = useQueryClient();
   const [selectedTickets, setSelectedTickets] = useState<string[]>([]);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const { data: site } = useOneByRouteParam<any>("sites", siteSlug, "site_number");
   const siteId = site?.id;
   const { data: clients = [] } = useList<any>("clients");
@@ -56,6 +68,7 @@ function SiteDetail() {
   const { data: groupTickets = [] } = useList<any>("ticket_group_tickets");
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
   const { data: reports = [] } = useList<any>("intervention_reports");
+  const { data: interventions = [] } = useList<any>("interventions");
   const openTickets = tickets.filter(
     (ticket: any) => !["cloture", "termine"].includes(ticket.status),
   );
@@ -71,6 +84,10 @@ function SiteDetail() {
       "quotes",
       "quote_installations",
       "tickets",
+      "intervention_reports",
+      "interventions",
+      "purchase_orders",
+      "part_orders",
       "history_events",
     ].forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
 
@@ -115,6 +132,60 @@ function SiteDetail() {
     setSelectedTickets([]);
     refreshGroups();
     toast.success("Tickets ajoutés au dossier");
+  };
+
+  const deleteSiteFolder = async (group: any) => {
+    if (!window.confirm(`Supprimer le dossier « ${group.title ?? "Dossier site"} » ?`)) return;
+    const { error: quoteError } = await (supabase.from("quotes" as any) as any)
+      .update({ ticket_group_id: null })
+      .eq("ticket_group_id", group.id);
+    if (quoteError) return toast.error(quoteError.message);
+    const { error: linkError } = await (supabase.from("ticket_group_tickets" as any) as any)
+      .delete()
+      .eq("group_id", group.id);
+    if (linkError) return toast.error(linkError.message);
+    const { error } = await (supabase.from("ticket_groups" as any) as any)
+      .delete()
+      .eq("id", group.id);
+    if (error) return toast.error(error.message);
+    if (expandedGroupId === group.id) setExpandedGroupId(null);
+    refreshGroups();
+    toast.success("Dossier supprimé");
+  };
+
+  const deleteSiteTicket = async (ticket: any) => {
+    if (!window.confirm(`Supprimer le ticket ${ticket.ticket_number} ?`)) return;
+    const ticketInterventionIds = interventions
+      .filter((intervention: any) => intervention.ticket_id === ticket.id)
+      .map((intervention: any) => intervention.id);
+
+    const deletions = [
+      (supabase.from("quote_tickets" as any) as any).delete().eq("ticket_id", ticket.id),
+      (supabase.from("ticket_group_tickets" as any) as any).delete().eq("ticket_id", ticket.id),
+      (supabase.from("history_events" as any) as any).delete().eq("ticket_id", ticket.id),
+      (supabase.from("intervention_reports" as any) as any).delete().eq("ticket_id", ticket.id),
+      (supabase.from("purchase_orders" as any) as any).delete().eq("ticket_id", ticket.id),
+      (supabase.from("part_orders" as any) as any).delete().eq("ticket_id", ticket.id),
+    ];
+    if (ticketInterventionIds.length > 0) {
+      deletions.push(
+        (supabase.from("intervention_reports" as any) as any)
+          .delete()
+          .in("intervention_id", ticketInterventionIds),
+        (supabase.from("interventions" as any) as any).delete().eq("ticket_id", ticket.id),
+      );
+    }
+
+    for (const deletion of deletions) {
+      const { error } = await deletion;
+      if (error) return toast.error(error.message);
+    }
+
+    const { error } = await (supabase.from("tickets" as any) as any).delete().eq("id", ticket.id);
+    if (error) return toast.error(error.message);
+    setSelectedTickets((current) => current.filter((id) => id !== ticket.id));
+    refreshGroups();
+    toast.success("Ticket supprimé");
   };
 
   const createGlobalQuote = async (group: any) => {
@@ -245,11 +316,11 @@ function SiteDetail() {
                 );
                 const checked = selectedTickets.includes(ticket.id);
                 return (
-                  <label
+                  <div
                     key={ticket.id}
                     className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm"
                   >
-                    <span className="flex items-center gap-2">
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -261,13 +332,24 @@ function SiteDetail() {
                           )
                         }
                       />
-                      <span>
+                      <span className="min-w-0">
                         <b>{ticket.ticket_number}</b> · {ticket.title} ·{" "}
                         {installation?.name ?? "Installation"}
                       </span>
-                    </span>
-                    <Badge>{ticket.status}</Badge>
-                  </label>
+                    </label>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge>{ticket.status}</Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        aria-label={`Supprimer le ticket ${ticket.ticket_number}`}
+                        onClick={() => deleteSiteTicket(ticket)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -302,24 +384,99 @@ function SiteDetail() {
           <CardContent className="grid gap-3">
             {ticketGroups.map((group: any) => {
               const links = groupTickets.filter((row: any) => row.group_id === group.id);
-              const groupQuoteIds = new Set(
-                quoteTickets
+              const folderTickets = links
+                .map((row: any) => tickets.find((ticket: any) => ticket.id === row.ticket_id))
+                .filter(Boolean);
+              const groupQuoteIds = new Set([
+                ...quotes
+                  .filter((quote: any) => quote.ticket_group_id === group.id)
+                  .map((quote: any) => quote.id),
+                ...quoteTickets
                   .filter((row: any) => links.some((link: any) => link.ticket_id === row.ticket_id))
                   .map((row: any) => row.quote_id),
-              );
+              ]);
+              const groupQuotes = quotes.filter((quote: any) => groupQuoteIds.has(quote.id));
+              const isExpanded = expandedGroupId === group.id;
               return (
                 <div key={group.id} className="rounded-md border p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <b>{group.title ?? "Dossier site"}</b> · {links.length} ticket(s) ·{" "}
-                      {groupQuoteIds.size} devis global(aux)
+                  <button
+                    type="button"
+                    className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+                    onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span>
+                        <b>{group.title ?? "Dossier site"}</b> · {links.length} ticket(s) ·{" "}
+                        {groupQuotes.length} devis
+                      </span>
                     </div>
                     <Badge>{group.status}</Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  </button>
+                  {isExpanded && (
+                    <div className="mt-3 grid gap-3 border-t pt-3">
+                      <div>
+                        <div className="mb-2 font-medium">Tickets liés</div>
+                        {folderTickets.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Aucun ticket lié.</p>
+                        ) : (
+                          <div className="grid gap-2">
+                            {folderTickets.map((ticket: any) => (
+                              <Link
+                                key={ticket.id}
+                                to="/ticket/$ticketSlug"
+                                params={{
+                                  ticketSlug: ticket.ticket_number?.replace("/", "-") ?? ticket.id,
+                                }}
+                                className="rounded-md bg-muted/50 p-2 hover:bg-muted"
+                              >
+                                <b>{ticket.ticket_number}</b> · {ticket.title} · {ticket.status}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="mb-2 font-medium">Devis liés</div>
+                        {groupQuotes.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Aucun devis lié.</p>
+                        ) : (
+                          <div className="grid gap-2">
+                            {groupQuotes.map((quote: any) => (
+                              <Link
+                                key={quote.id}
+                                to="/quotes/$quoteId"
+                                params={{ quoteId: quote.id }}
+                                className="rounded-md bg-muted/50 p-2 hover:bg-muted"
+                              >
+                                <b>
+                                  {quote.quote_number ?? quote.number ?? quote.title ?? "Devis"}
+                                </b>{" "}
+                                · {formatDate(quote.issued_at ?? quote.created_at)}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => createGlobalQuote(group)}>
                       <FileText className="mr-2 h-4 w-4" />
                       Créer un devis global
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => deleteSiteFolder(group)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Supprimer le dossier
                     </Button>
                   </div>
                 </div>
