@@ -369,8 +369,15 @@ function QuoteDetail() {
     );
     if (!componentItem) return null;
     const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    const parentLength = Number(parentItem.length_meters ?? 0);
     return {
       ...componentItem,
+      length_meters:
+        componentItem.pricing_unit === "linear_meter" &&
+        !componentItem.length_meters &&
+        parentLength > 0
+          ? parentLength
+          : componentItem.length_meters,
       description: parentName
         ? `${parentName} > ${componentItem.description}${label ? ` (${label})` : ""}`
         : `${componentItem.description}${label ? ` (${label})` : ""}`,

@@ -423,8 +423,15 @@ function NewQuote() {
     );
     if (!componentItem) return null;
     const parentName = parts.find((part: any) => part.id === parentItem.part_id)?.name;
+    const parentLength = Number(parentItem.length_meters ?? 0);
     return {
       ...componentItem,
+      length_meters:
+        componentItem.pricing_unit === "linear_meter" &&
+        !componentItem.length_meters &&
+        parentLength > 0
+          ? parentLength
+          : componentItem.length_meters,
       description: parentName
         ? `${parentName} > ${componentItem.description}${label ? ` (${label})` : ""}`
         : `${componentItem.description}${label ? ` (${label})` : ""}`,
@@ -447,17 +454,7 @@ function NewQuote() {
   };
 
   const addComponentToQuote = (parentItem: Item, component: any) => {
-    const componentPart = parts.find((part: any) => part.id === component.component_part_id);
-    const componentPatch: Partial<Item> = {
-      parent_part_id: parentItem.part_id,
-      quantity: Number(component.quantity) || 1,
-    };
-    if (component.relation_kind === "negotiated_option") {
-      componentPatch.unit_price = Number(
-        component.negotiated_price ?? componentPart?.sale_price ?? 0,
-      );
-    }
-    const componentItem = buildPartItem(component.component_part_id, componentPatch);
+    const componentItem = buildComponentItem(parentItem, component, "option");
     if (!componentItem) return;
     setItems((prev) => [...prev, componentItem]);
   };
@@ -476,26 +473,7 @@ function NewQuote() {
                 item.part_id === component.component_part_id,
             ),
         )
-        .map((component: any) => {
-          const componentPart = parts.find((part: any) => part.id === component.component_part_id);
-          const componentPatch: Partial<Item> = {
-            parent_part_id: parentItem.part_id,
-            quantity: Number(component.quantity) || 1,
-          };
-          if (component.relation_kind === "negotiated_option") {
-            componentPatch.unit_price = Number(
-              component.negotiated_price ?? componentPart?.sale_price ?? 0,
-            );
-          }
-          const componentItem = buildPartItem(component.component_part_id, componentPatch);
-          if (!componentItem) return null;
-          return {
-            ...componentItem,
-            description: parentName
-              ? `${parentName} > ${componentItem.description}`
-              : componentItem.description,
-          };
-        })
+        .map((component: any) => buildComponentItem(parentItem, component))
         .filter(Boolean) as Item[];
       return [...prev, ...additions];
     });
