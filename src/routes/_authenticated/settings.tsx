@@ -140,6 +140,9 @@ function SettingsPage() {
   const [newFieldType, setNewFieldType] = useState<CustomField["type"]>("text");
   const quoteSetting = settings.data?.find((setting: any) => setting.key === "quote_document");
   const partPricingSetting = settings.data?.find((setting: any) => setting.key === "part_pricing");
+  const configuratorSetting = settings.data?.find(
+    (setting: any) => setting.key === "metal_curtain_configurator",
+  );
   const [quoteDescription, setQuoteDescription] = useState("");
   const [quoteTerms, setQuoteTerms] = useState("");
   const [partPricingDraft, setPartPricingDraft] = useState<any | null>(null);
@@ -170,6 +173,34 @@ function SettingsPage() {
   const effectivePartPricing = partPricingDraft ??
     partPricingSetting?.value ?? { markupTiers: DEFAULT_PART_MARKUP_TIERS, annualIncreasePct: 0 };
   const partMarkupTiers = effectivePartPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
+  const configuratorPreset = configuratorSetting?.value ?? {
+    bladePartIds: [],
+    requiredPartIds: [],
+  };
+  const configuratorBladePartIds: string[] = configuratorPreset.bladePartIds ?? [];
+  const configuratorRequiredPartIds: string[] = configuratorPreset.requiredPartIds ?? [];
+
+  const updateConfiguratorPartIds = (key: "bladePartIds" | "requiredPartIds", partId: string) => {
+    if (!partId) return;
+    const currentIds =
+      key === "bladePartIds" ? configuratorBladePartIds : configuratorRequiredPartIds;
+    if (currentIds.includes(partId)) return;
+    upSetting.mutate({
+      id: configuratorSetting?.id,
+      key: "metal_curtain_configurator",
+      value: { ...configuratorPreset, [key]: [...currentIds, partId] },
+    });
+  };
+
+  const removeConfiguratorPartId = (key: "bladePartIds" | "requiredPartIds", partId: string) => {
+    const currentIds =
+      key === "bladePartIds" ? configuratorBladePartIds : configuratorRequiredPartIds;
+    upSetting.mutate({
+      id: configuratorSetting?.id,
+      key: "metal_curtain_configurator",
+      value: { ...configuratorPreset, [key]: currentIds.filter((id) => id !== partId) },
+    });
+  };
 
   const saveRuleDraft = () => {
     try {
@@ -652,6 +683,96 @@ function SettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Configurateur rideau métallique</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <div>
+                <Label>Types de lames disponibles</Label>
+                <p className="text-sm text-muted-foreground">
+                  Choisissez les pièces existantes qui pourront être sélectionnées comme lames dans
+                  le configurateur.
+                </p>
+              </div>
+              {configuratorBladePartIds.map((partId) => {
+                const part = parts.data?.find((item: any) => item.id === partId);
+                return (
+                  <div
+                    key={partId}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
+                  >
+                    <span>{part?.name ?? "Pièce supprimée"}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeConfiguratorPartId("bladePartIds", partId)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value=""
+                onChange={(e) => updateConfiguratorPartIds("bladePartIds", e.target.value)}
+              >
+                <option value="">+ Ajouter un type de lame</option>
+                {(parts.data ?? [])
+                  .filter((part: any) => !configuratorBladePartIds.includes(part.id))
+                  .map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {part.name} {part.reference ? `· ${part.reference}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <Label>Pièces nécessaires ajoutées par le configurateur</Label>
+                <p className="text-sm text-muted-foreground">
+                  Sélectionnez les pièces existantes à ajouter automatiquement avec la lame calculée
+                  (moteur, axe, coulisses, attaches, boîtier...).
+                </p>
+              </div>
+              {configuratorRequiredPartIds.map((partId) => {
+                const part = parts.data?.find((item: any) => item.id === partId);
+                return (
+                  <div
+                    key={partId}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
+                  >
+                    <span>{part?.name ?? "Pièce supprimée"}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeConfiguratorPartId("requiredPartIds", partId)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value=""
+                onChange={(e) => updateConfiguratorPartIds("requiredPartIds", e.target.value)}
+              >
+                <option value="">+ Ajouter une pièce nécessaire</option>
+                {(parts.data ?? [])
+                  .filter((part: any) => !configuratorRequiredPartIds.includes(part.id))
+                  .map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {part.name} {part.reference ? `· ${part.reference}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="lg:col-span-3">
           <CardHeader>
