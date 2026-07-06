@@ -180,6 +180,7 @@ function SettingsPage() {
     axes: [],
     optionalParts: [],
   };
+  const configuratorBladeOptions: any[] = configuratorPreset.bladeOptions ?? [];
   const configuratorBladePartIds: string[] = configuratorPreset.bladePartIds ?? [];
   const configuratorRequiredPartIds: string[] = configuratorPreset.requiredPartIds ?? [];
   const configuratorFinalBladePartIds: string[] = configuratorPreset.finalBladePartIds ?? [];
@@ -206,7 +207,17 @@ function SettingsPage() {
           ? configuratorFinalBladePartIds
           : configuratorRequiredPartIds;
     if (currentIds.includes(partId)) return;
-    saveConfiguratorPreset({ [key]: [...currentIds, partId] });
+    saveConfiguratorPreset({
+      [key]: [...currentIds, partId],
+      ...(key === "bladePartIds"
+        ? {
+            bladeOptions: [
+              ...configuratorBladeOptions,
+              { partId, minWidthMeters: "", maxWidthMeters: "" },
+            ],
+          }
+        : {}),
+    });
   };
 
   const removeConfiguratorPartId = (
@@ -219,7 +230,24 @@ function SettingsPage() {
         : key === "finalBladePartIds"
           ? configuratorFinalBladePartIds
           : configuratorRequiredPartIds;
-    saveConfiguratorPreset({ [key]: currentIds.filter((id) => id !== partId) });
+    saveConfiguratorPreset({
+      [key]: currentIds.filter((id) => id !== partId),
+      ...(key === "bladePartIds"
+        ? { bladeOptions: configuratorBladeOptions.filter((option) => option.partId !== partId) }
+        : {}),
+    });
+  };
+
+  const updateConfiguratorBladeOption = (partId: string, patch: any) => {
+    const currentOptions = configuratorBladePartIds.map((id) => {
+      const existing = configuratorBladeOptions.find((option) => option.partId === id);
+      return existing ?? { partId: id, minWidthMeters: "", maxWidthMeters: "" };
+    });
+    saveConfiguratorPreset({
+      bladeOptions: currentOptions.map((option) =>
+        option.partId === partId ? { ...option, ...patch } : option,
+      ),
+    });
   };
 
   const updateConfiguratorAxis = (index: number, patch: any) => {
@@ -752,12 +780,33 @@ function SettingsPage() {
               </div>
               {configuratorBladePartIds.map((partId) => {
                 const part = parts.data?.find((item: any) => item.id === partId);
+                const option = configuratorBladeOptions.find((item) => item.partId === partId);
                 return (
                   <div
                     key={partId}
-                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
+                    className="grid gap-2 rounded-md border border-border/60 p-3 text-sm md:grid-cols-[1fr_130px_130px_auto]"
                   >
-                    <span>{part?.name ?? "Pièce supprimée"}</span>
+                    <span className="font-medium">{part?.name ?? "Pièce supprimée"}</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Largeur min m"
+                      value={option?.minWidthMeters ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorBladeOption(partId, { minWidthMeters: e.target.value })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Largeur max m"
+                      value={option?.maxWidthMeters ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorBladeOption(partId, { maxWidthMeters: e.target.value })
+                      }
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
