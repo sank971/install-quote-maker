@@ -377,7 +377,15 @@ function TicketDetail() {
                   installation_id: linkedInstallationId,
                   description: part.name,
                   quantity: 1,
-                  unit_price: Number(part.sale_price || 0),
+                  unit_price:
+                    Number(ip.configuration?.unitPriceOverride) > 0
+                      ? Number(ip.configuration.unitPriceOverride)
+                      : Number(part.sale_price || 0),
+                  length_meters:
+                    part.pricing_unit === "linear_meter" ||
+                    Number(ip.configuration?.unitPriceOverride) > 0
+                      ? (ip.length_meters ?? null)
+                      : null,
                   unit_cost: 0,
                   position: installationPosition * 100 + partPosition,
                 };

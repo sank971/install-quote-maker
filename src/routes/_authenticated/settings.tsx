@@ -300,7 +300,7 @@ function SettingsPage() {
         ? {
             bladeOptions: [
               ...configuratorBladeOptions,
-              { partId, minWidthMeters: "", maxWidthMeters: "" },
+              { partId, minWidthMeters: "", maxWidthMeters: "", lacquerPricePerMeter: "" },
             ],
           }
         : {}),
@@ -328,7 +328,9 @@ function SettingsPage() {
   const updateConfiguratorBladeOption = (partId: string, patch: any) => {
     const currentOptions = configuratorBladePartIds.map((id) => {
       const existing = configuratorBladeOptions.find((option) => option.partId === id);
-      return existing ?? { partId: id, minWidthMeters: "", maxWidthMeters: "" };
+      return (
+        existing ?? { partId: id, minWidthMeters: "", maxWidthMeters: "", lacquerPricePerMeter: "" }
+      );
     });
     saveConfiguratorPreset({
       bladeOptions: currentOptions.map((option) =>
@@ -934,7 +936,8 @@ function SettingsPage() {
                 <Label>Types de lames disponibles</Label>
                 <p className="text-sm text-muted-foreground">
                   Choisissez les pièces existantes qui pourront être sélectionnées comme lames dans
-                  le configurateur.
+                  le configurateur. Le tarif laquage est appliqué à la pièce de référence LACRID au
+                  mètre linéaire calculé : nombre de lames × largeur de lame.
                 </p>
               </div>
               {configuratorBladePartIds.map((partId) => {
@@ -943,7 +946,7 @@ function SettingsPage() {
                 return (
                   <div
                     key={partId}
-                    className="grid gap-2 rounded-md border border-border/60 p-3 text-sm md:grid-cols-[1fr_130px_130px_auto]"
+                    className="grid gap-2 rounded-md border border-border/60 p-3 text-sm md:grid-cols-[1fr_130px_130px_150px_auto]"
                   >
                     <span className="font-medium">{part?.name ?? "Pièce supprimée"}</span>
                     <Input
@@ -964,6 +967,18 @@ function SettingsPage() {
                       value={option?.maxWidthMeters ?? ""}
                       onChange={(e) =>
                         updateConfiguratorBladeOption(partId, { maxWidthMeters: e.target.value })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Laquage €/ml"
+                      value={option?.lacquerPricePerMeter ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorBladeOption(partId, {
+                          lacquerPricePerMeter: e.target.value,
+                        })
                       }
                     />
                     <Button

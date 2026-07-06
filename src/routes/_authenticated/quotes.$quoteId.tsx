@@ -278,9 +278,7 @@ function QuoteDetail() {
   const cheapestCost = (partId: string) => {
     const offers = supplierParts.filter((row: any) => row.part_id === partId);
     if (offers.length === 0) return 0;
-    return Math.min(
-      ...offers.map((offer: any) => Number(offer.purchase_price)),
-    );
+    return Math.min(...offers.map((offer: any) => Number(offer.purchase_price)));
   };
   const buildEditPartItem = (
     partId: string,
@@ -293,6 +291,9 @@ function QuoteDetail() {
       (row: any) => row.installation_id === sourceInstallationId && row.part_id === partId,
     );
     const length = Number(installedPart?.length_meters ?? 0);
+    const unitPriceOverride = Number(installedPart?.configuration?.unitPriceOverride);
+    const useConfiguratorLinearPrice =
+      Number.isFinite(unitPriceOverride) && unitPriceOverride > 0 && length > 0;
     const details = [
       part.pricing_unit === "linear_meter" && length > 0 ? `${length} ml` : null,
       installedPart?.dimensions,
@@ -330,12 +331,17 @@ function QuoteDetail() {
       reference: installedPart?.reference_override || part.reference || "",
       category: installedPart?.component_type || part.category || "",
       quantity: 1,
-      length_meters: part.pricing_unit === "linear_meter" && length > 0 ? length : Number(part.length_meters ?? 0) || undefined,
-      unit_price: negotiatedKitPrice
-        ? Number(negotiatedKitPrice.negotiated_price)
-        : Number(part.sale_price) * (1 - discount),
+      length_meters:
+        (part.pricing_unit === "linear_meter" || useConfiguratorLinearPrice) && length > 0
+          ? length
+          : Number(part.length_meters ?? 0) || undefined,
+      unit_price: useConfiguratorLinearPrice
+        ? unitPriceOverride
+        : negotiatedKitPrice
+          ? Number(negotiatedKitPrice.negotiated_price)
+          : Number(part.sale_price) * (1 - discount),
       unit_cost: componentCost ?? cheapestCost(part.id),
-      pricing_unit: part.pricing_unit ?? "unit",
+      pricing_unit: useConfiguratorLinearPrice ? "linear_meter" : (part.pricing_unit ?? "unit"),
       is_oversized: Boolean(part.is_oversized),
       position: editItems.length,
       ...patch,
@@ -414,7 +420,6 @@ function QuoteDetail() {
     toast.success("Statut du devis mis à jour");
   };
 
-
   const applyEditContractPricing = (
     contractRow: any,
     reason = editQuote.intervention_reason,
@@ -423,7 +428,9 @@ function QuoteDetail() {
     if (!contractRow) return;
     const usesOutOfContractRates = reason === "damage_vandalism" || reason === "new_installation";
     let laborRate = Number(
-      (usesOutOfContractRates ? contractRow.out_of_contract_hourly_rate : contractRow.hourly_rate) ??
+      (usesOutOfContractRates
+        ? contractRow.out_of_contract_hourly_rate
+        : contractRow.hourly_rate) ??
         contractRow.hourly_rate ??
         0,
     );
@@ -464,8 +471,6 @@ function QuoteDetail() {
     if (item.is_oversized) return true;
     return Boolean(parts.find((part: any) => part.id === item.part_id)?.is_oversized);
   });
-
-
 
   const removeEditItem = (key: string) =>
     setEditItems((current) => {
@@ -564,7 +569,7 @@ function QuoteDetail() {
           installation_id: item.installation_id ?? editInstallationId ?? null,
           description: item.description,
           quantity: item.quantity,
-          length_meters: item.pricing_unit === "linear_meter" ? item.length_meters ?? null : null,
+          length_meters: item.pricing_unit === "linear_meter" ? (item.length_meters ?? null) : null,
           unit_price: item.unit_price,
           unit_cost: item.unit_cost,
           position,
@@ -621,7 +626,11 @@ function QuoteDetail() {
 
   const partsHT = items.reduce((s: number, i: any) => {
     const part = parts.find((row: any) => row.id === i.part_id);
-    const billableQuantity = Number(i.quantity) * (part?.pricing_unit === "linear_meter" ? Number(i.length_meters || 0) || 1 : 1);
+    const billableQuantity =
+      Number(i.quantity) *
+      (part?.pricing_unit === "linear_meter" || Number(i.length_meters) > 0
+        ? Number(i.length_meters || 0) || 1
+        : 1);
     return s + Number(i.unit_price) * billableQuantity;
   }, 0);
   const travelCount = Number(quote.travel_count ?? 1);
@@ -821,7 +830,11 @@ function QuoteDetail() {
                       ...current,
                       contract_id: event.target.value,
                     }));
-                    applyEditContractPricing(nextContract, editQuote.intervention_reason, editQuote.is_on_call);
+                    applyEditContractPricing(
+                      nextContract,
+                      editQuote.intervention_reason,
+                      editQuote.is_on_call,
+                    );
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 >
@@ -1236,7 +1249,10 @@ function QuoteDetail() {
                       <td className="py-2">{i.description}</td>
                       <td className="py-2 text-right">
                         {Number(i.quantity)}
-                        {parts.find((part: any) => part.id === i.part_id)?.pricing_unit === "linear_meter" && i.length_meters
+                        {(parts.find((part: any) => part.id === i.part_id)?.pricing_unit ===
+                          "linear_meter" ||
+                          Number(i.length_meters) > 0) &&
+                        i.length_meters
                           ? ` × ${Number(i.length_meters)} ml`
                           : ""}
                       </td>
@@ -1248,7 +1264,8 @@ function QuoteDetail() {
                         {fmt(
                           Number(i.unit_price) *
                             Number(i.quantity) *
-                            (parts.find((part: any) => part.id === i.part_id)?.pricing_unit === "linear_meter"
+                            (parts.find((part: any) => part.id === i.part_id)?.pricing_unit ===
+                              "linear_meter" || Number(i.length_meters) > 0
                               ? Number(i.length_meters || 0) || 1
                               : 1),
                         )}
