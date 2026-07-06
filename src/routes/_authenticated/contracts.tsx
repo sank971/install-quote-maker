@@ -301,7 +301,7 @@ function ContractsPage() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-4xl">
           <DialogHeader>
             <DialogTitle>{edit?.id ? "Modifier" : "Nouveau"} contrat</DialogTitle>
           </DialogHeader>
