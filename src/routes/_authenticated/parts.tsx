@@ -26,6 +26,7 @@ import {
   Upload,
   Calculator,
   TrendingUp,
+  Ruler,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,26 @@ import { toast } from "sonner";
 import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
+
+const toMm = (meters?: number | string | null) => (Number(meters) || 0) * 1000;
+
+const scoreDimension = (actualMm: number, targetMm: number) => {
+  if (!actualMm || !targetMm) return 0;
+  return Math.abs(actualMm - targetMm);
+};
+
+const isVantailPart = (part: any) => {
+  const label = normalizeName([part.name, part.reference, part.category].filter(Boolean).join(" "));
+  return label.includes("vantail") || label.includes("ovr");
+};
+
+const componentRole = (part: any) => {
+  const label = normalizeName([part.name, part.reference, part.category].filter(Boolean).join(" "));
+  if (label.includes("plinthe") || label.includes("soubassement")) return "bottom";
+  if (label.includes("cimaise") || label.includes("traverse haute")) return "top";
+  if (label.includes("profil") || label.includes("montant")) return "side";
+  return "unknown";
+};
 
 const parseCsvBoolean = (value: string) =>
   ["1", "true", "oui", "yes", "y", "kit"].includes(normalizeName(value));
@@ -174,6 +195,7 @@ function PartsPage() {
   const [edit, setEdit] = useState<any>(null);
   const [compatOpen, setCompatOpen] = useState<any>(null);
   const [componentsOpen, setComponentsOpen] = useState<any>(null);
+  const [vantailConfiguratorOpen, setVantailConfiguratorOpen] = useState(false);
   const [componentDraft, setComponentDraft] = useState({
     quantity: 1,
     relation_kind: "accessory",
@@ -189,6 +211,17 @@ function PartsPage() {
   const partPricing = partPricingSetting?.value ?? {};
   const markupTiers = partPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
   const annualIncreasePct = Number(partPricing.annualIncreasePct) || 0;
+  const [vantailDraft, setVantailDraft] = useState({
+    widthMm: 900,
+    heightMm: 2150,
+    sideProfileMm: 150,
+    bottomProfileMm: 70,
+    topProfileMm: 50,
+    rebateLeftMm: 10,
+    rebateRightMm: 10,
+    rebateTopMm: 5,
+    rebateBottomMm: 5,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -209,6 +242,53 @@ function PartsPage() {
       ),
     [edit?.id, supplierParts],
   );
+
+  const vantailCalculation = useMemo(() => {
+    const glassWidthMm =
+      Number(vantailDraft.widthMm) -
+      Number(vantailDraft.sideProfileMm) * 2 +
+      Number(vantailDraft.rebateLeftMm) +
+      Number(vantailDraft.rebateRightMm);
+    const glassHeightMm =
+      Number(vantailDraft.heightMm) -
+      Number(vantailDraft.bottomProfileMm) -
+      Number(vantailDraft.topProfileMm) +
+      Number(vantailDraft.rebateTopMm) +
+      Number(vantailDraft.rebateBottomMm);
+
+    const suggestions = parts
+      .filter(isVantailPart)
+      .map((part: any) => {
+        const components = partComponents
+          .filter((component: any) => component.parent_part_id === part.id)
+          .map((component: any) => ({
+            ...component,
+            part: parts.find((candidate: any) => candidate.id === component.component_part_id),
+          }))
+          .filter((component: any) => component.part);
+        const side = components.find((component: any) => componentRole(component.part) === "side");
+        const bottom = components.find(
+          (component: any) => componentRole(component.part) === "bottom",
+        );
+        const top = components.find((component: any) => componentRole(component.part) === "top");
+        const sideMm = toMm(side?.part?.width_meters || side?.part?.length_meters);
+        const bottomMm = toMm(bottom?.part?.width_meters || bottom?.part?.length_meters);
+        const topMm = toMm(top?.part?.width_meters || top?.part?.length_meters);
+        const score =
+          scoreDimension(sideMm, Number(vantailDraft.sideProfileMm)) * 2 +
+          scoreDimension(bottomMm, Number(vantailDraft.bottomProfileMm)) +
+          scoreDimension(topMm, Number(vantailDraft.topProfileMm));
+        return { part, components, sideMm, bottomMm, topMm, score };
+      })
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 5);
+
+    return { glassWidthMm, glassHeightMm, suggestions };
+  }, [partComponents, parts, vantailDraft]);
+
+  const updateVantailDraft = (key: keyof typeof vantailDraft, value: string) => {
+    setVantailDraft((draft) => ({ ...draft, [key]: Number(value) || 0 }));
+  };
 
   const exportPartsSuppliers = () => {
     const rows = parts.flatMap((part: any) => {
@@ -417,9 +497,15 @@ function PartsPage() {
           description: pick(row, "description") || null,
           sale_price: parseCsvNumber(pick(row, "prix_vente", "sale_price")),
           pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
-          length_meters: pick(row, "longueur_m", "length_meters") ? parseCsvNumber(pick(row, "longueur_m", "length_meters")) : null,
-          width_meters: pick(row, "largeur_m", "width_meters") ? parseCsvNumber(pick(row, "largeur_m", "width_meters")) : null,
-          weight_kg: pick(row, "poids_kg", "weight_kg") ? parseCsvNumber(pick(row, "poids_kg", "weight_kg")) : null,
+          length_meters: pick(row, "longueur_m", "length_meters")
+            ? parseCsvNumber(pick(row, "longueur_m", "length_meters"))
+            : null,
+          width_meters: pick(row, "largeur_m", "width_meters")
+            ? parseCsvNumber(pick(row, "largeur_m", "width_meters"))
+            : null,
+          weight_kg: pick(row, "poids_kg", "weight_kg")
+            ? parseCsvNumber(pick(row, "poids_kg", "weight_kg"))
+            : null,
         };
         if (part) {
           const { data, error } = await (supabase.from("parts") as any)
@@ -906,6 +992,10 @@ function PartsPage() {
               <TrendingUp className="mr-2 h-4 w-4" />
               Augmentation annuelle
             </Button>
+            <Button variant="outline" onClick={() => setVantailConfiguratorOpen(true)}>
+              <Ruler className="mr-2 h-4 w-4" />
+              Configurateur vantail
+            </Button>
             <Button onClick={() => openNew(false)}>
               <Plus className="mr-2 h-4 w-4" />
               Nouvelle pièce
@@ -982,11 +1072,21 @@ function PartsPage() {
                           {p.is_kit ? "Kit" : "Pièce"} · Compat. : {typeCompatCount} types ·{" "}
                           {modelCompatCount} modèles
                         </span>
-                        {[p.length_meters && `${Number(p.length_meters)} m L`, p.width_meters && `${Number(p.width_meters)} m l`, p.weight_kg && `${Number(p.weight_kg)} kg`].filter(Boolean).length > 0 && (
+                        {[
+                          p.length_meters && `${Number(p.length_meters)} m L`,
+                          p.width_meters && `${Number(p.width_meters)} m l`,
+                          p.weight_kg && `${Number(p.weight_kg)} kg`,
+                        ].filter(Boolean).length > 0 && (
                           <>
                             <span className="mx-2 text-muted-foreground">·</span>
                             <span className="text-muted-foreground">
-                              {[p.length_meters && `L ${Number(p.length_meters)} m`, p.width_meters && `l ${Number(p.width_meters)} m`, p.weight_kg && `${Number(p.weight_kg)} kg`].filter(Boolean).join(" · ")}
+                              {[
+                                p.length_meters && `L ${Number(p.length_meters)} m`,
+                                p.width_meters && `l ${Number(p.width_meters)} m`,
+                                p.weight_kg && `${Number(p.weight_kg)} kg`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </span>
                           </>
                         )}
@@ -1177,15 +1277,33 @@ function PartsPage() {
               )}
               <div>
                 <Label>Longueur (m)</Label>
-                <Input name="length_meters" type="number" step="0.01" min="0" defaultValue={edit?.length_meters ?? ""} />
+                <Input
+                  name="length_meters"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={edit?.length_meters ?? ""}
+                />
               </div>
               <div>
                 <Label>Largeur (m)</Label>
-                <Input name="width_meters" type="number" step="0.01" min="0" defaultValue={edit?.width_meters ?? ""} />
+                <Input
+                  name="width_meters"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={edit?.width_meters ?? ""}
+                />
               </div>
               <div>
                 <Label>Poids (kg)</Label>
-                <Input name="weight_kg" type="number" step="0.01" min="0" defaultValue={edit?.weight_kg ?? ""} />
+                <Input
+                  name="weight_kg"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={edit?.weight_kg ?? ""}
+                />
               </div>
               <div>
                 <Label>Chiffrage</Label>
@@ -1421,6 +1539,103 @@ function PartsPage() {
               <Button type="button" onClick={() => addComponents(componentsOpen.id)}>
                 Ajouter {selectedComponentPartIds.length > 1 ? selectedComponentPartIds.length : ""}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={vantailConfiguratorOpen} onOpenChange={setVantailConfiguratorOpen}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configurateur vantail et vitrage</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Renseignez les cotes du vantail et les sections de profils disponibles. Le calcul retire
+            les profils du clair vitrage puis ajoute l’empattement de vitrage, et les suggestions
+            rapprochent ces cotes des pièces composantes enregistrées sur les vantaux.
+          </p>
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <div className="space-y-4 rounded-md border border-border/60 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ["widthMm", "Largeur vantail (mm)"],
+                  ["heightMm", "Hauteur vantail (mm)"],
+                  ["sideProfileMm", "Profils latéraux / montants (mm)"],
+                  ["bottomProfileMm", "Plinthe basse (mm)"],
+                  ["topProfileMm", "Cimaise / traverse haute (mm)"],
+                  ["rebateLeftMm", "Empattement gauche (mm)"],
+                  ["rebateRightMm", "Empattement droit (mm)"],
+                  ["rebateTopMm", "Empattement haut (mm)"],
+                  ["rebateBottomMm", "Empattement bas (mm)"],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <Label>{label}</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={vantailDraft[key as keyof typeof vantailDraft]}
+                      onChange={(e) =>
+                        updateVantailDraft(key as keyof typeof vantailDraft, e.target.value)
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-md bg-primary/10 p-4 text-sm">
+                <div className="font-medium">Vitrage à commander</div>
+                <div className="mt-1 text-2xl font-semibold">
+                  {Math.max(0, vantailCalculation.glassWidthMm).toFixed(0)} ×{" "}
+                  {Math.max(0, vantailCalculation.glassHeightMm).toFixed(0)} mm
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Largeur = largeur vantail - 2 × profils + empattements gauche/droit. Hauteur =
+                  hauteur vantail - plinthe - cimaise + empattements haut/bas.
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="text-sm font-medium">Vantaux suggérés</div>
+              {vantailCalculation.suggestions.length === 0 ? (
+                <p className="rounded-md border border-border/60 p-4 text-sm text-muted-foreground">
+                  Aucun vantail trouvé. Créez une pièce dont le nom ou le type contient “vantail”,
+                  puis liez ses profils, plinthe et cimaise dans sa composition.
+                </p>
+              ) : (
+                vantailCalculation.suggestions.map((suggestion) => (
+                  <Card key={suggestion.part.id} className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{suggestion.part.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[suggestion.part.reference, suggestion.part.category]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </div>
+                      </div>
+                      <div className="text-right text-xs text-muted-foreground">
+                        Écart total : {suggestion.score.toFixed(0)} mm
+                      </div>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                      <span>
+                        Montant :{" "}
+                        {suggestion.sideMm ? `${suggestion.sideMm.toFixed(0)} mm` : "non renseigné"}
+                      </span>
+                      <span>
+                        Plinthe :{" "}
+                        {suggestion.bottomMm
+                          ? `${suggestion.bottomMm.toFixed(0)} mm`
+                          : "non renseignée"}
+                      </span>
+                      <span>
+                        Cimaise :{" "}
+                        {suggestion.topMm ? `${suggestion.topMm.toFixed(0)} mm` : "non renseignée"}
+                      </span>
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         </DialogContent>
