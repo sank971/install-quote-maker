@@ -176,29 +176,82 @@ function SettingsPage() {
   const configuratorPreset = configuratorSetting?.value ?? {
     bladePartIds: [],
     requiredPartIds: [],
+    finalBladePartIds: [],
+    axes: [],
+    optionalParts: [],
   };
   const configuratorBladePartIds: string[] = configuratorPreset.bladePartIds ?? [];
   const configuratorRequiredPartIds: string[] = configuratorPreset.requiredPartIds ?? [];
+  const configuratorFinalBladePartIds: string[] = configuratorPreset.finalBladePartIds ?? [];
+  const configuratorAxes: any[] = configuratorPreset.axes ?? [];
+  const configuratorOptionalParts: any[] = configuratorPreset.optionalParts ?? [];
 
-  const updateConfiguratorPartIds = (key: "bladePartIds" | "requiredPartIds", partId: string) => {
-    if (!partId) return;
-    const currentIds =
-      key === "bladePartIds" ? configuratorBladePartIds : configuratorRequiredPartIds;
-    if (currentIds.includes(partId)) return;
+  const saveConfiguratorPreset = (patch: any) => {
     upSetting.mutate({
       id: configuratorSetting?.id,
       key: "metal_curtain_configurator",
-      value: { ...configuratorPreset, [key]: [...currentIds, partId] },
+      value: { ...configuratorPreset, ...patch },
     });
   };
 
-  const removeConfiguratorPartId = (key: "bladePartIds" | "requiredPartIds", partId: string) => {
+  const updateConfiguratorPartIds = (
+    key: "bladePartIds" | "requiredPartIds" | "finalBladePartIds",
+    partId: string,
+  ) => {
+    if (!partId) return;
     const currentIds =
-      key === "bladePartIds" ? configuratorBladePartIds : configuratorRequiredPartIds;
-    upSetting.mutate({
-      id: configuratorSetting?.id,
-      key: "metal_curtain_configurator",
-      value: { ...configuratorPreset, [key]: currentIds.filter((id) => id !== partId) },
+      key === "bladePartIds"
+        ? configuratorBladePartIds
+        : key === "finalBladePartIds"
+          ? configuratorFinalBladePartIds
+          : configuratorRequiredPartIds;
+    if (currentIds.includes(partId)) return;
+    saveConfiguratorPreset({ [key]: [...currentIds, partId] });
+  };
+
+  const removeConfiguratorPartId = (
+    key: "bladePartIds" | "requiredPartIds" | "finalBladePartIds",
+    partId: string,
+  ) => {
+    const currentIds =
+      key === "bladePartIds"
+        ? configuratorBladePartIds
+        : key === "finalBladePartIds"
+          ? configuratorFinalBladePartIds
+          : configuratorRequiredPartIds;
+    saveConfiguratorPreset({ [key]: currentIds.filter((id) => id !== partId) });
+  };
+
+  const updateConfiguratorAxis = (index: number, patch: any) => {
+    const axes = [...configuratorAxes];
+    axes[index] = { ...axes[index], ...patch };
+    saveConfiguratorPreset({ axes });
+  };
+
+  const addConfiguratorAxis = (partId: string) => {
+    if (!partId) return;
+    saveConfiguratorPreset({
+      axes: [
+        ...configuratorAxes,
+        { partId, minLengthMeters: 0, maxLengthMeters: 0, maxWeightKg: 0 },
+      ],
+    });
+  };
+
+  const updateConfiguratorOptionalPart = (index: number, patch: any) => {
+    const optionalParts = [...configuratorOptionalParts];
+    optionalParts[index] = { ...optionalParts[index], ...patch };
+    saveConfiguratorPreset({ optionalParts });
+  };
+
+  const addConfiguratorOptionalPart = (partId: string) => {
+    if (!partId || configuratorOptionalParts.some((item) => item.partId === partId)) return;
+    const part = parts.data?.find((item: any) => item.id === partId);
+    saveConfiguratorPreset({
+      optionalParts: [
+        ...configuratorOptionalParts,
+        { partId, promotionalPrice: part?.sale_price ?? null },
+      ],
     });
   };
 
@@ -732,6 +785,47 @@ function SettingsPage() {
             </div>
             <div className="space-y-2">
               <div>
+                <Label>Lames finales disponibles</Label>
+                <p className="text-sm text-muted-foreground">
+                  Choisissez les lames finales proposées en option dans le configurateur.
+                </p>
+              </div>
+              {configuratorFinalBladePartIds.map((partId) => {
+                const part = parts.data?.find((item: any) => item.id === partId);
+                return (
+                  <div
+                    key={partId}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
+                  >
+                    <span>{part?.name ?? "Pièce supprimée"}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeConfiguratorPartId("finalBladePartIds", partId)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value=""
+                onChange={(e) => updateConfiguratorPartIds("finalBladePartIds", e.target.value)}
+              >
+                <option value="">+ Ajouter une lame finale</option>
+                {(parts.data ?? [])
+                  .filter((part: any) => !configuratorFinalBladePartIds.includes(part.id))
+                  .map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {part.name} {part.reference ? `· ${part.reference}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <div>
                 <Label>Pièces nécessaires ajoutées par le configurateur</Label>
                 <p className="text-sm text-muted-foreground">
                   Sélectionnez les pièces existantes à ajouter automatiquement avec la lame calculée
@@ -764,6 +858,129 @@ function SettingsPage() {
                 <option value="">+ Ajouter une pièce nécessaire</option>
                 {(parts.data ?? [])
                   .filter((part: any) => !configuratorRequiredPartIds.includes(part.id))
+                  .map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {part.name} {part.reference ? `· ${part.reference}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-2 lg:col-span-2">
+              <Label>Axes proposés automatiquement</Label>
+              <p className="text-sm text-muted-foreground">
+                Définissez les axes avec longueur minimale, longueur maximale et poids maximum
+                supporté.
+              </p>
+              {configuratorAxes.map((axis, index) => {
+                const part = parts.data?.find((item: any) => item.id === axis.partId);
+                return (
+                  <div
+                    key={`${axis.partId}-${index}`}
+                    className="grid gap-2 rounded-md border border-border/60 p-3 md:grid-cols-[1fr_120px_120px_120px_auto]"
+                  >
+                    <div className="text-sm font-medium">{part?.name ?? "Pièce supprimée"}</div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Long. min m"
+                      value={axis.minLengthMeters ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorAxis(index, { minLengthMeters: e.target.value })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Long. max m"
+                      value={axis.maxLengthMeters ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorAxis(index, { maxLengthMeters: e.target.value })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="Poids max kg"
+                      value={axis.maxWeightKg ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorAxis(index, { maxWeightKg: e.target.value })
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        saveConfiguratorPreset({
+                          axes: configuratorAxes.filter((_, i) => i !== index),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value=""
+                onChange={(e) => addConfiguratorAxis(e.target.value)}
+              >
+                <option value="">+ Ajouter un axe</option>
+                {(parts.data ?? []).map((part: any) => (
+                  <option key={part.id} value={part.id}>
+                    {part.name} {part.reference ? `· ${part.reference}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2 lg:col-span-2">
+              <Label>Pièces optionnelles avec tarif promotionnel</Label>
+              {configuratorOptionalParts.map((item, index) => {
+                const part = parts.data?.find((p: any) => p.id === item.partId);
+                return (
+                  <div
+                    key={item.partId}
+                    className="grid gap-2 rounded-md border border-border/60 p-3 md:grid-cols-[1fr_160px_auto]"
+                  >
+                    <div className="text-sm font-medium">{part?.name ?? "Pièce supprimée"}</div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Prix promo €"
+                      value={item.promotionalPrice ?? ""}
+                      onChange={(e) =>
+                        updateConfiguratorOptionalPart(index, { promotionalPrice: e.target.value })
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        saveConfiguratorPreset({
+                          optionalParts: configuratorOptionalParts.filter((_, i) => i !== index),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value=""
+                onChange={(e) => addConfiguratorOptionalPart(e.target.value)}
+              >
+                <option value="">+ Ajouter une pièce optionnelle</option>
+                {(parts.data ?? [])
+                  .filter(
+                    (part: any) =>
+                      !configuratorOptionalParts.some((item) => item.partId === part.id),
+                  )
                   .map((part: any) => (
                     <option key={part.id} value={part.id}>
                       {part.name} {part.reference ? `· ${part.reference}` : ""}

@@ -90,6 +90,9 @@ function InstallationsList() {
     width_meters: "",
     height_meters: "",
     blade_part_id: "",
+    final_blade_part_id: "",
+    curtain_weight_kg: "",
+    optional_part_ids: [] as string[],
     winding_direction: "interieur",
   });
   const configuratorSetting = settings.find(
@@ -97,6 +100,10 @@ function InstallationsList() {
   );
   const configuratorBladePartIds: string[] = configuratorSetting?.value?.bladePartIds ?? [];
   const configuratorRequiredPartIds: string[] = configuratorSetting?.value?.requiredPartIds ?? [];
+  const configuratorFinalBladePartIds: string[] =
+    configuratorSetting?.value?.finalBladePartIds ?? [];
+  const configuratorAxes: any[] = configuratorSetting?.value?.axes ?? [];
+  const configuratorOptionalParts: any[] = configuratorSetting?.value?.optionalParts ?? [];
 
   // Requirements state
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
@@ -169,6 +176,10 @@ function InstallationsList() {
       height_meters:
         installation.characteristics?.hauteur ?? installation.characteristics?.height ?? "",
       blade_part_id: "",
+      final_blade_part_id: "",
+      curtain_weight_kg:
+        installation.characteristics?.poids ?? installation.characteristics?.weight ?? "",
+      optional_part_ids: [],
       winding_direction: installation.characteristics?.sens_enroulement ?? "interieur",
     });
   };
@@ -185,6 +196,20 @@ function InstallationsList() {
     );
   };
 
+  const getConfiguratorFinalBladeParts = () =>
+    parts.filter((part: any) => configuratorFinalBladePartIds.includes(part.id));
+
+  const getSuggestedAxis = () => {
+    const width = Number(configForm.width_meters) || 0;
+    const weight = Number(configForm.curtain_weight_kg) || 0;
+    return configuratorAxes.find((axis) => {
+      const min = Number(axis.minLengthMeters) || 0;
+      const max = Number(axis.maxLengthMeters) || Infinity;
+      const maxWeight = Number(axis.maxWeightKg) || Infinity;
+      return width >= min && width <= max && weight <= maxWeight;
+    });
+  };
+
   const saveConfiguratorParts = async () => {
     if (!configOpen || !configForm.blade_part_id) return toast.error("Sélectionnez une lame");
     const blade = parts.find((part: any) => part.id === configForm.blade_part_id);
@@ -194,7 +219,14 @@ function InstallationsList() {
     const bladeCount = bladeHeight > 0 && height > 0 ? Math.ceil(height / bladeHeight) : 1;
     const { data: userData } = await supabase.auth.getUser();
     const owner_id = userData.user!.id;
-    const requiredRows = configuratorRequiredPartIds
+    const suggestedAxis = getSuggestedAxis();
+    const selectedExtraPartIds = [
+      ...configuratorRequiredPartIds,
+      suggestedAxis?.partId,
+      configForm.final_blade_part_id || null,
+      ...configForm.optional_part_ids,
+    ].filter(Boolean) as string[];
+    const requiredRows = Array.from(new Set(selectedExtraPartIds))
       .filter((partId) => partId !== configForm.blade_part_id)
       .map((partId) => {
         const part = parts.find((item: any) => item.id === partId);
@@ -203,7 +235,13 @@ function InstallationsList() {
           installation_id: configOpen.id,
           part_id: partId,
           component_type: part?.category ?? null,
-          notes: "Ajouté automatiquement par le configurateur rideau métallique.",
+          notes: configuratorOptionalParts.some((item) => item.partId === partId)
+            ? `Option configurateur rideau métallique${configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice ? ` · tarif promotionnel ${Number(configuratorOptionalParts.find((item) => item.partId === partId)?.promotionalPrice).toFixed(2)} €` : ""}.`
+            : partId === suggestedAxis?.partId
+              ? `Axe suggéré par le configurateur (${configForm.width_meters || "?"} m, ${configForm.curtain_weight_kg || "?"} kg).`
+              : partId === configForm.final_blade_part_id
+                ? "Lame finale ajoutée par le configurateur rideau métallique."
+                : "Ajouté automatiquement par le configurateur rideau métallique.",
         };
       });
     const { error } = await (supabase.from("installation_parts" as any) as any).upsert(
@@ -215,7 +253,9 @@ function InstallationsList() {
           component_type: blade?.category ?? "Lame",
           length_meters: width || null,
           width_meters: height || null,
-          weight_kg: blade?.weight_kg && bladeCount ? Number(blade.weight_kg) * bladeCount : null,
+          weight_kg:
+            Number(configForm.curtain_weight_kg) ||
+            (blade?.weight_kg && bladeCount ? Number(blade.weight_kg) * bladeCount : null),
           notes: `Configurateur: ${bladeCount} lame(s) de ${width || "?"} ml · enroulement ${configForm.winding_direction}. À ajouter au devis en quantité ${bladeCount} × ${width || "?"} ml.`,
         },
         ...requiredRows,
@@ -987,6 +1027,18 @@ function InstallationsList() {
                   onChange={(e) => setConfigForm({ ...configForm, height_meters: e.target.value })}
                 />
               </div>
+              <div>
+                <Label>Poids rideau (kg)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={configForm.curtain_weight_kg}
+                  onChange={(e) =>
+                    setConfigForm({ ...configForm, curtain_weight_kg: e.target.value })
+                  }
+                />
+              </div>
             </div>
             <div>
               <Label>Type de lame</Label>
@@ -1009,6 +1061,69 @@ function InstallationsList() {
                 ))}
               </select>
             </div>
+            <div>
+              <Label>Lame finale</Label>
+              <select
+                value={configForm.final_blade_part_id}
+                onChange={(e) =>
+                  setConfigForm({ ...configForm, final_blade_part_id: e.target.value })
+                }
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="">Sans lame finale</option>
+                {getConfiguratorFinalBladeParts().map((part: any) => (
+                  <option key={part.id} value={part.id}>
+                    {part.name} · {Number(part.sale_price).toFixed(2)}€
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded-md border border-border/60 p-3 text-sm">
+              <div className="font-medium">Axe suggéré</div>
+              <div className="mt-1 text-muted-foreground">
+                {(() => {
+                  const axis = getSuggestedAxis();
+                  const part = parts.find((item: any) => item.id === axis?.partId);
+                  return part
+                    ? `${part.name} (${axis.minLengthMeters || 0}-${axis.maxLengthMeters || "∞"} m · ${axis.maxWeightKg || "∞"} kg max)`
+                    : "Aucun axe ne correspond à la longueur et au poids renseignés.";
+                })()}
+              </div>
+            </div>
+            {configuratorOptionalParts.length ? (
+              <div className="rounded-md border border-border/60 p-3 text-sm">
+                <div className="font-medium">Pièces optionnelles</div>
+                <div className="mt-2 space-y-2">
+                  {configuratorOptionalParts.map((item) => {
+                    const part = parts.find((p: any) => p.id === item.partId);
+                    return (
+                      <label key={item.partId} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={configForm.optional_part_ids.includes(item.partId)}
+                          onChange={(e) =>
+                            setConfigForm({
+                              ...configForm,
+                              optional_part_ids: e.target.checked
+                                ? [...configForm.optional_part_ids, item.partId]
+                                : configForm.optional_part_ids.filter(
+                                    (partId) => partId !== item.partId,
+                                  ),
+                            })
+                          }
+                        />
+                        <span>
+                          {part?.name ?? "Pièce supprimée"}
+                          {item.promotionalPrice
+                            ? ` · promo ${Number(item.promotionalPrice).toFixed(2)} €`
+                            : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <div>
               <Label>Sens d'enroulement</Label>
               <select
