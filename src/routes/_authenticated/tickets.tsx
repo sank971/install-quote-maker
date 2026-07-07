@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Plus, Search, ChevronRight } from "lucide-react";
+import { ClipboardList, Plus, Search, ChevronRight, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ function TicketsPage() {
   const [selectedInstallationIds, setSelectedInstallationIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createMode, setCreateMode] = useState<"ticket" | "maintenance">("ticket");
 
   const siteChoices = useMemo(() => {
     const query = siteSearch.trim().toLowerCase();
@@ -107,22 +108,32 @@ function TicketsPage() {
       const owner_id = await currentUserId();
       const site = sites.find((s: any) => s.id === selectedSiteId);
       if (!site) throw new Error("Sélectionnez d'abord un client ou un site");
-      if (selectedInstallationIds.length === 0) {
-        throw new Error("Sélectionnez au moins une installation du site");
+      const isMaintenance = fd.get("mode") === "maintenance";
+      const installationIdsToCreate = isMaintenance
+        ? siteInstallations.map((installation: any) => installation.id)
+        : selectedInstallationIds;
+      if (installationIdsToCreate.length === 0) {
+        throw new Error(
+          isMaintenance
+            ? "Ce site ne contient aucune installation"
+            : "Sélectionnez au moins une installation du site",
+        );
       }
 
-      const title = String(fd.get("title") || "").trim();
+      const title =
+        String(fd.get("title") || "").trim() ||
+        (isMaintenance ? `Maintenance ${site.name}` : "Ticket");
       const description = String(fd.get("description") || "").trim();
       let group: any = null;
 
-      if (selectedInstallationIds.length > 1) {
+      if (installationIdsToCreate.length > 1) {
         const { data, error } = await (supabase.from("ticket_groups" as any) as any)
           .insert({
             owner_id,
             client_id: site.client_id,
             site_id: site.id,
-            title,
-            status: "ouvert",
+            title: isMaintenance ? `Dossier maintenance · ${title}` : title,
+            status: isMaintenance ? "maintenance" : "ouvert",
           })
           .select()
           .single();
@@ -130,7 +141,7 @@ function TicketsPage() {
         group = data;
       }
 
-      for (const installationId of selectedInstallationIds) {
+      for (const installationId of installationIdsToCreate) {
         const installation = installations.find((i: any) => i.id === installationId);
         if (!installation || installation.site_id !== site.id) continue;
         const { data: ticket, error } = await (supabase.rpc as any)(
@@ -140,15 +151,19 @@ function TicketsPage() {
             p_site_id: site.id,
             p_installation_id: installation.id,
             p_ticket_number: null,
-            p_title: title,
-            p_description: description || null,
+            p_title: isMaintenance ? `Maintenance · ${installation.name}` : title,
+            p_description: isMaintenance
+              ? ["Ticket créé depuis un dossier de maintenance site", description]
+                  .filter(Boolean)
+                  .join("\n")
+              : description || null,
             p_ticket_group_id: group?.id ?? null,
           },
         );
         if (error) throw error;
         if (!ticket) throw new Error("Le ticket n'a pas pu être créé");
       }
-      const ticketCount = selectedInstallationIds.length;
+      const ticketCount = installationIdsToCreate.length;
       form.reset();
       setSelectedInstallationIds([]);
       setShowCreateForm(false);
@@ -156,7 +171,7 @@ function TicketsPage() {
     },
     onSuccess: (ticketCount) => {
       invalidate();
-      toast.success(ticketCount > 1 ? "Tickets créés et liés" : "Ticket créé");
+      toast.success(ticketCount > 1 ? "Dossier créé avec tickets liés" : "Ticket créé");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -192,7 +207,7 @@ function TicketsPage() {
       <div className="mb-6 flex justify-end">
         <Button onClick={() => setShowCreateForm(!showCreateForm)} size="sm">
           <Plus className="mr-2 h-4 w-4" />
-          {showCreateForm ? "Fermer" : "Créer un ticket"}
+          {showCreateForm ? "Fermer" : "Créer un ticket / dossier"}
         </Button>
       </div>
 
@@ -200,7 +215,9 @@ function TicketsPage() {
       {showCreateForm && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-base">Créer un ticket</CardTitle>
+            <CardTitle className="text-base">
+              Créer un ticket ou un dossier de maintenance
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form
@@ -210,6 +227,33 @@ function TicketsPage() {
               }}
               className="grid gap-4"
             >
+              <input type="hidden" name="mode" value={createMode} />
+              <div className="grid gap-2 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("ticket")}
+                  className={`rounded-md border p-3 text-left text-sm ${createMode === "ticket" ? "border-primary bg-muted" : ""}`}
+                >
+                  <ClipboardList className="mb-2 h-4 w-4" />
+                  <b>Ticket classique</b>
+                  <p className="text-muted-foreground">
+                    Créer un ou plusieurs tickets sur les installations sélectionnées.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("maintenance")}
+                  className={`rounded-md border p-3 text-left text-sm ${createMode === "maintenance" ? "border-primary bg-muted" : ""}`}
+                >
+                  <Wrench className="mb-2 h-4 w-4" />
+                  <b>Dossier de maintenance site</b>
+                  <p className="text-muted-foreground">
+                    Créer automatiquement un ticket de contrôle sur toutes les installations du
+                    site.
+                  </p>
+                </button>
+              </div>
+
               <div className="grid gap-2">
                 <Label>1. Rechercher puis choisir le client ou le site</Label>
                 <Input
@@ -250,7 +294,11 @@ function TicketsPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label>2. Sélectionner les installations du site concerné</Label>
+                <Label>
+                  {createMode === "maintenance"
+                    ? "2. Installations incluses dans le dossier"
+                    : "2. Sélectionner les installations du site concerné"}
+                </Label>
                 {selectedSite ? (
                   <div className="rounded-md border p-3">
                     <p className="mb-2 text-sm text-muted-foreground">
@@ -261,7 +309,11 @@ function TicketsPage() {
                         <label key={installation.id} className="flex items-center gap-2 text-sm">
                           <input
                             type="checkbox"
-                            checked={selectedInstallationIds.includes(installation.id)}
+                            checked={
+                              createMode === "maintenance" ||
+                              selectedInstallationIds.includes(installation.id)
+                            }
+                            disabled={createMode === "maintenance"}
                             onChange={() => toggleSelectedInstallation(installation.id)}
                           />
                           {installation.name}
@@ -284,18 +336,31 @@ function TicketsPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div>
                   <Label>Titre</Label>
-                  <Input name="title" required />
+                  <Input
+                    name="title"
+                    placeholder={
+                      createMode === "maintenance" ? "Maintenance périodique" : "Titre du ticket"
+                    }
+                    required={createMode !== "maintenance"}
+                  />
                 </div>
                 <div className="md:col-span-2">
                   <Label>Description</Label>
                   <Input name="description" />
                 </div>
               </div>
-              <Button disabled={!selectedSiteId || selectedInstallationIds.length === 0}>
+              <Button
+                disabled={
+                  !selectedSiteId ||
+                  (createMode === "ticket" && selectedInstallationIds.length === 0)
+                }
+              >
                 <Plus className="mr-2 h-4 w-4" />
-                {selectedInstallationIds.length > 1
-                  ? `Créer ${selectedInstallationIds.length} tickets liés + diagnostics`
-                  : "Créer + diagnostic"}
+                {createMode === "maintenance"
+                  ? `Créer le dossier maintenance (${siteInstallations.length} installations)`
+                  : selectedInstallationIds.length > 1
+                    ? `Créer ${selectedInstallationIds.length} tickets liés + diagnostics`
+                    : "Créer + diagnostic"}
               </Button>
             </form>
           </CardContent>
