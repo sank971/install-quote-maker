@@ -63,12 +63,13 @@ function OrdersPage() {
   const { data: installations = [] } = useList<any>("installations");
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: interventions = [] } = useList<any>("interventions");
+  const { data: quoteTickets = [] } = useList<any>("quote_tickets");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
 
   const invalidate = () =>
-    ["part_orders", "interventions", "tickets", "history_events"].forEach((table) =>
-      qc.invalidateQueries({ queryKey: [table] }),
+    ["part_orders", "interventions", "tickets", "history_events", "quote_tickets"].forEach(
+      (table) => qc.invalidateQueries({ queryKey: [table] }),
     );
 
   const enrichedOrders = useMemo(() => {
@@ -109,7 +110,17 @@ function OrdersPage() {
           .toLowerCase();
         return matchesStatus && (!query || haystack.includes(query));
       });
-  }, [installations, interventions, orderItems, orders, searchQuery, sites, statusFilter, suppliers, tickets]);
+  }, [
+    installations,
+    interventions,
+    orderItems,
+    orders,
+    searchQuery,
+    sites,
+    statusFilter,
+    suppliers,
+    tickets,
+  ]);
 
   const updateOrderStatus = async (orderData: any, status: string) => {
     const updates: Record<string, any> = { status };
@@ -120,15 +131,44 @@ function OrdersPage() {
     if (error) return toast.error(error.message);
 
     if (orderData.ticket) {
-      if (status === "recue") {
-        await setTicketStatus(orderData.ticket, "pieces_recues", "parts_received", "Pièces reçues");
-      } else if (["commandee", "en_attente_reception", "partiellement_recue"].includes(status)) {
-        await setTicketStatus(
-          orderData.ticket,
-          "en_attente_pieces",
-          "part_order_status_changed",
-          `Commande de pièces : ${orderStatusLabels[status] ?? status}`,
-        );
+      const relatedQuoteOrders = orderData.order.quote_id
+        ? orders.filter((order: any) => order.quote_id === orderData.order.quote_id)
+        : orders.filter((order: any) => order.ticket_id === orderData.ticket.id);
+      const updatedQuoteOrders = relatedQuoteOrders.map((order: any) =>
+        order.id === orderData.order.id ? { ...order, status } : order,
+      );
+      const allReceived =
+        updatedQuoteOrders.length > 0 &&
+        updatedQuoteOrders.every((order: any) => ["recue", "annulee"].includes(order.status));
+      const targetTickets = orderData.order.quote_id
+        ? quoteTickets
+            .filter((row: any) => row.quote_id === orderData.order.quote_id)
+            .map((row: any) => tickets.find((ticket: any) => ticket.id === row.ticket_id))
+            .filter(Boolean)
+        : [orderData.ticket];
+
+      if (status === "recue" && allReceived) {
+        for (const targetTicket of targetTickets) {
+          await setTicketStatus(
+            targetTicket,
+            "pieces_recues",
+            "parts_received",
+            "Toutes les pièces du devis sont reçues",
+          );
+        }
+      } else if (
+        ["commandee", "en_attente_reception", "partiellement_recue", "recue"].includes(status)
+      ) {
+        for (const targetTicket of targetTickets) {
+          await setTicketStatus(
+            targetTicket,
+            "en_attente_pieces",
+            "part_order_status_changed",
+            allReceived
+              ? `Commande de pièces : ${orderStatusLabels[status] ?? status}`
+              : `Commande de pièces : ${orderStatusLabels[status] ?? status} (réception globale incomplète)`,
+          );
+        }
       } else {
         await addHistoryEvent(
           orderData.ticket.owner_id,
@@ -221,7 +261,8 @@ function OrdersPage() {
                       Commande #{orderData.order.id.slice(0, 8)}
                     </CardTitle>
                     <div className="mt-1 text-sm text-muted-foreground">
-                      Créée le {formatDate(orderData.order.created_at)} · Fournisseur : {orderData.supplier?.name ?? "—"}
+                      Créée le {formatDate(orderData.order.created_at)} · Fournisseur :{" "}
+                      {orderData.supplier?.name ?? "—"}
                     </div>
                   </div>
                   <Badge className={orderStatusColors[orderData.order.status] ?? ""}>
@@ -267,7 +308,9 @@ function OrdersPage() {
                       ))}
                     </ul>
                   ) : (
-                    <div className="text-muted-foreground">Aucune ligne de commande renseignée.</div>
+                    <div className="text-muted-foreground">
+                      Aucune ligne de commande renseignée.
+                    </div>
                   )}
                 </div>
 

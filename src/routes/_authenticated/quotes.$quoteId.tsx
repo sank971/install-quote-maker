@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { addHistoryEvent, currentUserId } from "@/lib/ticket-workflow";
 
 export const Route = createFileRoute("/_authenticated/quotes/$quoteId")({
   component: QuoteDetail,
@@ -109,6 +110,7 @@ function QuoteDetail() {
   const { data: tickets = [] } = useList<any>("tickets");
   const { data: reports = [] } = useList<any>("intervention_reports");
   const { data: history = [] } = useList<any>("history_events");
+  const { data: partOrders = [] } = useList<any>("part_orders");
   const remove = useRemove("quotes");
   const [isEditing, setIsEditing] = useState(false);
   const [editQuote, setEditQuote] = useState<any>({});
@@ -612,24 +614,106 @@ function QuoteDetail() {
     }
   };
 
-  const updateGlobalStatus = async (quoteStatus: string, ticketStatus: string) => {
-    const { error } = await (supabase.from("quotes" as any) as any)
-      .update({ status: quoteStatus })
-      .eq("id", quoteId);
-    if (error) return toast.error(error.message);
-    if (linkedTickets.length > 0) {
-      const { error: ticketError } = await (supabase.from("tickets" as any) as any)
-        .update({ status: ticketStatus })
-        .in(
-          "id",
-          linkedTickets.map((ticket: any) => ticket.id),
-        );
-      if (ticketError) return toast.error(ticketError.message);
+  const bestSupplierId = (partId?: string | null) => {
+    if (!partId) return null;
+    const offers = supplierParts
+      .filter((row: any) => row.part_id === partId)
+      .sort((a: any, b: any) => Number(a.purchase_price ?? 0) - Number(b.purchase_price ?? 0));
+    return offers[0]?.supplier_id ?? null;
+  };
+
+  const createQuotePartOrders = async () => {
+    if (linkedTickets.length === 0) return;
+    const owner_id = await currentUserId();
+    const existingKeys = new Set(
+      partOrders
+        .filter((order: any) => order.quote_id === quoteId && order.status !== "annulee")
+        .map((order: any) => `${order.ticket_id}:${order.supplier_id ?? "__none"}`),
+    );
+
+    for (const ticket of linkedTickets) {
+      const ticketItems = items.filter(
+        (item: any) => !item.installation_id || item.installation_id === ticket.installation_id,
+      );
+      const grouped = new Map<string, any[]>();
+      ticketItems.forEach((item: any) => {
+        const supplierId = bestSupplierId(item.part_id);
+        const key = supplierId ?? "__none";
+        grouped.set(key, [...(grouped.get(key) ?? []), item]);
+      });
+
+      for (const [supplierKey, groupedItems] of grouped.entries()) {
+        const supplier_id = supplierKey === "__none" ? null : supplierKey;
+        const orderKey = `${ticket.id}:${supplier_id ?? "__none"}`;
+        if (existingKeys.has(orderKey) || groupedItems.length === 0) continue;
+
+        const { data: order, error } = await (supabase.from("part_orders" as any) as any)
+          .insert({
+            owner_id,
+            ticket_id: ticket.id,
+            quote_id: quoteId,
+            installation_id: ticket.installation_id,
+            supplier_id,
+            status: "commandee",
+            ordered_at: new Date().toISOString().slice(0, 10),
+          })
+          .select()
+          .single();
+        if (error) throw error;
+
+        const orderLines = groupedItems.map((item: any) => ({
+          owner_id,
+          part_order_id: order.id,
+          part_id: item.part_id ?? null,
+          designation: item.description || "Pièce",
+          reference: parts.find((part: any) => part.id === item.part_id)?.reference ?? null,
+          quantity: Number(item.quantity || 1),
+        }));
+        const { error: linesError } = await (
+          supabase.from("part_order_items" as any) as any
+        ).insert(orderLines);
+        if (linesError) throw linesError;
+        existingKeys.add(orderKey);
+      }
+
+      await addHistoryEvent(
+        ticket.owner_id,
+        { ticket_id: ticket.id, site_id: ticket.site_id, installation_id: ticket.installation_id },
+        "quote_part_orders_created",
+        "Commandes de pièces créées depuis le devis",
+        `Devis ${quote.quote_number ?? quoteId}`,
+        { quote_id: quoteId },
+      );
     }
-    qc.invalidateQueries({ queryKey: ["quotes"] });
-    qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
-    qc.invalidateQueries({ queryKey: ["tickets"] });
-    toast.success("Statuts mis à jour");
+  };
+
+  const updateGlobalStatus = async (quoteStatus: string, ticketStatus: string) => {
+    try {
+      if (quoteStatus === "pieces_commandees") await createQuotePartOrders();
+      const { error } = await (supabase.from("quotes" as any) as any)
+        .update({ status: quoteStatus })
+        .eq("id", quoteId);
+      if (error) throw error;
+      if (linkedTickets.length > 0) {
+        const { error: ticketError } = await (supabase.from("tickets" as any) as any)
+          .update({ status: ticketStatus })
+          .in(
+            "id",
+            linkedTickets.map((ticket: any) => ticket.id),
+          );
+        if (ticketError) throw ticketError;
+      }
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quotes", quoteId] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["part_orders"] });
+      qc.invalidateQueries({ queryKey: ["part_order_items"] });
+      toast.success(
+        quoteStatus === "pieces_commandees" ? "Commandes de pièces créées" : "Statuts mis à jour",
+      );
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   };
 
   const getEditableBillableQuantity = (item: EditableItem) =>
