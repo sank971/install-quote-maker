@@ -35,6 +35,8 @@ import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 const parseCsvNumber = (value: string) => Number(value.replace(/\s/g, "").replace(",", ".") || 0);
 
+const PART_PHOTOS_BUCKET = "part-photos";
+
 const toMm = (meters?: number | string | null) => (Number(meters) || 0) * 1000;
 
 const scoreDimension = (actualMm: number, targetMm: number) => {
@@ -310,6 +312,8 @@ function PartsPage() {
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [purchasePrice, setPurchasePrice] = useState(0);
   const [salePrice, setSalePrice] = useState(0);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const partPricingSetting = settings.find((setting: any) => setting.key === "part_pricing");
   const partPricing = partPricingSetting?.value ?? {};
   const markupTiers = partPricing.markupTiers ?? DEFAULT_PART_MARKUP_TIERS;
@@ -334,6 +338,7 @@ function PartsPage() {
     setSelectedSupplierId(currentSupplierPart?.supplier_id ?? "");
     setPurchasePrice(Number(currentSupplierPart?.purchase_price) || 0);
     setSalePrice(Number(edit?.sale_price) || 0);
+    setPhotoPreviewUrl(edit?.photo_url ?? null);
   }, [edit, open, supplierParts]);
 
   const supplierPartBySupplier = useMemo(
@@ -530,6 +535,7 @@ function PartsPage() {
           })
           .join(" | "),
         description: part.description,
+        photo_url: part.photo_url,
         longueur_m: part.length_meters,
         largeur_m: part.width_meters,
         poids_kg: part.weight_kg,
@@ -565,6 +571,7 @@ function PartsPage() {
       "marques_portes_compatibles",
       "modeles_portes_compatibles",
       "description",
+      "photo_url",
       "longueur_m",
       "largeur_m",
       "poids_kg",
@@ -686,6 +693,7 @@ function PartsPage() {
           category: pick(row, "piece_categorie", "category") || null,
           brand_id: partBrand?.id ?? null,
           description: pick(row, "description") || null,
+          photo_url: pick(row, "photo_url", "photo", "image") || null,
           sale_price: parseCsvNumber(pick(row, "prix_vente", "sale_price")),
           pricing_unit: pick(row, "unite_chiffrage", "pricing_unit") || "unit",
           length_meters: pick(row, "longueur_m", "length_meters")
@@ -982,11 +990,40 @@ function PartsPage() {
     setOpen(true);
   };
 
+  const uploadPartPhoto = async (file: File) => {
+    const { data: userData } = await supabase.auth.getUser();
+    const ownerId = userData.user?.id;
+    if (!ownerId) throw new Error("Non authentifié");
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const path = `${ownerId}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from(PART_PHOTOS_BUCKET).upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "image/jpeg",
+    });
+    if (error) throw error;
+    const { data } = supabase.storage.from(PART_PHOTOS_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const isKit = fd.get("is_kit") === "on";
     const shouldOpenCompositionAfterSave = !edit.id && isKit;
+    const photoFile = fd.get("photo_file");
+    let photoUrl = (fd.get("photo_url") as string | null) || null;
+    if (photoFile instanceof File && photoFile.size > 0) {
+      setIsUploadingPhoto(true);
+      try {
+        photoUrl = await uploadPartPhoto(photoFile);
+      } catch (error: any) {
+        toast.error(error?.message ?? "Impossible d’envoyer la photo");
+        setIsUploadingPhoto(false);
+        return;
+      }
+      setIsUploadingPhoto(false);
+    }
     const savedPart = await upsert.mutateAsync({
       id: edit.id,
       name: fd.get("name"),
@@ -994,6 +1031,7 @@ function PartsPage() {
       category: fd.get("category") || null,
       brand_id: fd.get("brand_id") || null,
       description: fd.get("description") || null,
+      photo_url: photoUrl,
       sale_price: Number(fd.get("sale_price") ?? salePrice ?? 0),
       pricing_unit: fd.get("pricing_unit") || "unit",
       length_meters: fd.get("length_meters") ? Number(fd.get("length_meters")) : null,
@@ -1255,9 +1293,17 @@ function PartsPage() {
               <Card key={p.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="rounded-md bg-primary/10 p-2 text-primary">
-                      <Package className="h-4 w-4" />
-                    </div>
+                    {p.photo_url ? (
+                      <img
+                        src={p.photo_url}
+                        alt={`Photo de ${p.name}`}
+                        className="h-12 w-12 rounded-md border border-border/60 object-cover"
+                      />
+                    ) : (
+                      <div className="rounded-md bg-primary/10 p-2 text-primary">
+                        <Package className="h-4 w-4" />
+                      </div>
+                    )}
                     <div>
                       <div className="font-medium">{p.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -1510,6 +1556,48 @@ function PartsPage() {
               <Label>Nom *</Label>
               <Input name="name" required defaultValue={edit?.name} />
             </div>
+            <div className="grid gap-3 sm:grid-cols-[96px_1fr]">
+              <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-muted text-muted-foreground">
+                {photoPreviewUrl ? (
+                  <img
+                    src={photoPreviewUrl}
+                    alt="Aperçu de la pièce"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Package className="h-8 w-8" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <Label>Photo</Label>
+                  <Input
+                    name="photo_file"
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const nextPreviewUrl = URL.createObjectURL(file);
+                      setPhotoPreviewUrl((current) => {
+                        if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+                        return nextPreviewUrl;
+                      });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>URL de photo</Label>
+                  <Input
+                    name="photo_url"
+                    type="url"
+                    value={photoPreviewUrl?.startsWith("blob:") ? "" : (photoPreviewUrl ?? "")}
+                    onChange={(event) => setPhotoPreviewUrl(event.target.value || null)}
+                    placeholder="https://…"
+                  />
+                </div>
+              </div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Référence</Label>
@@ -1703,7 +1791,9 @@ function PartsPage() {
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 Annuler
               </Button>
-              <Button type="submit">Enregistrer</Button>
+              <Button type="submit" disabled={isUploadingPhoto}>
+                {isUploadingPhoto ? "Envoi de la photo…" : "Enregistrer"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
