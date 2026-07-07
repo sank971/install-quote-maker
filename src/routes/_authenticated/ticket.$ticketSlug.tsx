@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -150,9 +151,16 @@ function TicketDetail() {
   const ticketPOs = purchaseOrders.filter((p: any) => p.ticket_id === ticketId);
   const ticketPartOrders = partOrders.filter((p: any) => p.ticket_id === ticketId);
   const ticketPartOrderIds = new Set(ticketPartOrders.map((order: any) => order.id));
-  const ticketPartOrderItems = partOrderItems.filter((item: any) => ticketPartOrderIds.has(item.part_order_id));
-  const ticketStockMovements = stockMovements.filter((movement: any) => ticketPartOrderIds.has(movement.command_ticket_id));
-  const stockReference = { latitude: ticket.latitude ?? site?.latitude, longitude: ticket.longitude ?? site?.longitude };
+  const ticketPartOrderItems = partOrderItems.filter((item: any) =>
+    ticketPartOrderIds.has(item.part_order_id),
+  );
+  const ticketStockMovements = stockMovements.filter((movement: any) =>
+    ticketPartOrderIds.has(movement.command_ticket_id),
+  );
+  const stockReference = {
+    latitude: ticket.latitude ?? site?.latitude,
+    longitude: ticket.longitude ?? site?.longitude,
+  };
   const ticketHistory = history.filter((h: any) => h.ticket_id === ticketId);
 
   // Get quotes linked to this ticket via quote_tickets
@@ -183,6 +191,15 @@ function TicketDetail() {
       .map((item) => String(item))
       .filter(Boolean)
       .join(", ");
+  };
+
+  const maintenanceRowsForReport = (report: any) => {
+    const hsTypes = new Set(
+      (Array.isArray(report?.pieces_defectueuses) ? report.pieces_defectueuses : [])
+        .map((piece: any) => String(piece?.type ?? ""))
+        .filter(Boolean),
+    );
+    return availablePartTypes.map((type) => ({ type, status: hsTypes.has(type) ? "HS" : "OK" }));
   };
 
   const assign = async (intervention: any) => {
@@ -225,6 +242,7 @@ function TicketDetail() {
     const ok = fd.get("reparation_reussie") === "true";
     const partId = fd.get("part_id");
     const problemPartTypes = fd.getAll("problem_part_types").map((value) => String(value));
+    const maintenanceComment = String(fd.get("maintenance_comment") || "").trim();
     const successParts = partId
       ? [{ part_id: partId, quantity: Number(fd.get("quantity") || 1) }]
       : [];
@@ -237,11 +255,20 @@ function TicketDetail() {
       technician_id: intervention.technician_id,
       constat: fd.get("constat"),
       actions_realisees: fd.get("actions"),
-      conclusion: fd.get("conclusion"),
+      conclusion: [
+        fd.get("conclusion"),
+        maintenanceComment ? `Commentaire maintenance / pièces HS : ${maintenanceComment}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
       reparation_reussie: fd.get("reparation_reussie") ? ok : null,
       besoin_devis: fd.get("besoin_devis") === "on",
       besoin_commande_pieces: fd.get("besoin_commande_pieces") === "on",
-      pieces_defectueuses: problemPartTypes.map((type) => ({ type })),
+      pieces_defectueuses: problemPartTypes.map((type) => ({
+        type,
+        status: "HS",
+        comment: maintenanceComment || null,
+      })),
       pieces_remplacees: problemPartTypes.map((type) => ({ type, quantity: 1 })),
       pieces_remplacees_succes: successParts,
       problem_part_type: problemPartTypes[0] ?? null,
@@ -281,7 +308,15 @@ function TicketDetail() {
     try {
       const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-      const quoteTicketsToLink = relatedTickets.length > 0 ? relatedTickets : [ticket];
+      const ticketsWithQuoteRequest = relatedTickets.filter((item: any) =>
+        relatedReports.some((report: any) => report.ticket_id === item.id && report.besoin_devis),
+      );
+      const quoteTicketsToLink =
+        ticketsWithQuoteRequest.length > 0
+          ? ticketsWithQuoteRequest
+          : relatedTickets.length > 0
+            ? relatedTickets
+            : [ticket];
       const quoteInstallationIds = [
         ...new Set(quoteTicketsToLink.map((item: any) => item.installation_id).filter(Boolean)),
       ];
@@ -462,7 +497,12 @@ function TicketDetail() {
     const part = parts.find((p: any) => p.id === fd.get("part_id"));
     const requested = Number(fd.get("quantity") || 1);
     const draftItem = { part_id: part?.id, quantity_requested: requested, quantity: requested };
-    const suggestion = suggestStorageLocation(draftItem, storageStocks, storageLocations, stockReference);
+    const suggestion = suggestStorageLocation(
+      draftItem,
+      storageStocks,
+      storageLocations,
+      stockReference,
+    );
     await (supabase.from("part_order_items" as any) as any).insert({
       owner_id,
       part_order_id: po.id,
@@ -475,8 +515,19 @@ function TicketDetail() {
       quantity_to_order: suggestion ? suggestion.missing : requested,
       storage_location_id: suggestion?.location?.id ?? null,
       source_type: suggestion?.hasEnough ? "stock" : "fournisseur",
-      status: suggestion?.hasEnough ? "disponible_en_stock" : suggestion ? "partiellement_disponible" : "a_commander",
-      suggestion: suggestion ? { storage_location_id: suggestion.location.id, available: suggestion.available, missing: suggestion.missing, distance_km: suggestion.distance } : {},
+      status: suggestion?.hasEnough
+        ? "disponible_en_stock"
+        : suggestion
+          ? "partiellement_disponible"
+          : "a_commander",
+      suggestion: suggestion
+        ? {
+            storage_location_id: suggestion.location.id,
+            available: suggestion.available,
+            missing: suggestion.missing,
+            distance_km: suggestion.distance,
+          }
+        : {},
     });
     await (supabase.rpc as any)("refresh_part_order_status", { p_part_order_id: po.id });
     await setTicketStatus(
@@ -500,7 +551,6 @@ function TicketDetail() {
     toast.success("Pièces marquées comme reçues");
   };
 
-
   const validateStockRecovery = async (item: any) => {
     const locationId = item.storage_location_id || item.suggestion?.storage_location_id;
     if (!locationId) return toast.error("Aucun lieu de stockage suggéré");
@@ -516,8 +566,13 @@ function TicketDetail() {
   };
 
   const markItemRecovered = async (item: any) => {
-    const qty = Number(item.quantity_from_stock || item.quantity_requested || item.quantity || 1) - Number(item.quantity_recovered || 0);
-    const { error } = await (supabase.rpc as any)("recover_stock_for_part_order_item", { p_item_id: item.id, p_quantity: qty });
+    const qty =
+      Number(item.quantity_from_stock || item.quantity_requested || item.quantity || 1) -
+      Number(item.quantity_recovered || 0);
+    const { error } = await (supabase.rpc as any)("recover_stock_for_part_order_item", {
+      p_item_id: item.id,
+      p_quantity: qty,
+    });
     if (error) return toast.error(error.message);
     const order = ticketPartOrders.find((o: any) => o.id === item.part_order_id);
     if (order) await refreshCommandTicketReadiness(order, ticket);
@@ -527,10 +582,18 @@ function TicketDetail() {
 
   const orderItemFromSupplier = async (item: any) => {
     const { error } = await (supabase.from("part_order_items" as any) as any)
-      .update({ source_type: "fournisseur", status: "commandee_fournisseur", quantity_to_order: Number(item.quantity_to_order || item.quantity_requested || item.quantity || 1) })
+      .update({
+        source_type: "fournisseur",
+        status: "commandee_fournisseur",
+        quantity_to_order: Number(
+          item.quantity_to_order || item.quantity_requested || item.quantity || 1,
+        ),
+      })
       .eq("id", item.id);
     if (error) return toast.error(error.message);
-    await (supabase.rpc as any)("refresh_part_order_status", { p_part_order_id: item.part_order_id });
+    await (supabase.rpc as any)("refresh_part_order_status", {
+      p_part_order_id: item.part_order_id,
+    });
     invalidate();
     toast.success("Commande fournisseur enregistrée");
   };
@@ -552,9 +615,20 @@ function TicketDetail() {
     if (!reason) return;
     const owner_id = await currentUserId();
     await (supabase.from("stock_movements" as any) as any).insert({
-      owner_id, command_ticket_id: ticketPartOrders[0]?.id ?? null, movement_type: "forcage_intervention", quantity: 0, reason, created_by: owner_id,
+      owner_id,
+      command_ticket_id: ticketPartOrders[0]?.id ?? null,
+      movement_type: "forcage_intervention",
+      quantity: 0,
+      reason,
+      created_by: owner_id,
     });
-    await setTicketStatus(ticket, "reparation_a_planifier", "force_ready_for_intervention", "Forçage passage à intervention", reason);
+    await setTicketStatus(
+      ticket,
+      "reparation_a_planifier",
+      "force_ready_for_intervention",
+      "Forçage passage à intervention",
+      reason,
+    );
     invalidate();
   };
 
@@ -857,6 +931,21 @@ function TicketDetail() {
                           </div>
                         )}
 
+                        <div className="rounded-md border bg-muted/30 p-3">
+                          <Label className="text-xs font-semibold">
+                            Rapport de maintenance complet
+                          </Label>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Les organes non cochés sont enregistrés comme OK ; les organes cochés
+                            sont enregistrés comme HS/à risque.
+                          </p>
+                          <Textarea
+                            name="maintenance_comment"
+                            className="mt-2"
+                            placeholder="Commentaire / pièces cochées HS / risque constaté..."
+                          />
+                        </div>
+
                         <div className="grid gap-2 md:grid-cols-3">
                           <Select name="reparation_reussie">
                             <SelectTrigger>
@@ -922,6 +1011,23 @@ function TicketDetail() {
                                   : report.problem_part_type,
                               )}
                             </p>
+                          )}
+                          {maintenanceRowsForReport(report).length > 0 && (
+                            <div className="mt-2 rounded border border-green-200 bg-white/70 p-2">
+                              <b>Contrôle maintenance :</b>
+                              <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                {maintenanceRowsForReport(report).map((row: any) => (
+                                  <span
+                                    key={row.type}
+                                    className={
+                                      row.status === "HS" ? "text-red-700" : "text-green-700"
+                                    }
+                                  >
+                                    {row.type} : {row.status === "HS" ? "HS / risque" : "OK"}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1023,14 +1129,72 @@ function TicketDetail() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm md:grid-cols-3">
-                <div>Pièces totales demandées : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Number(item.quantity_requested || item.quantity || 0), 0)}</b></div>
-                <div>Disponibles en stock : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Number(item.quantity_from_stock || 0), 0)}</b></div>
-                <div>À commander : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Number(item.quantity_to_order || 0), 0)}</b></div>
-                <div>Déjà récupérées : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Number(item.quantity_recovered || 0), 0)}</b></div>
-                <div>Déjà reçues fournisseur : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Number(item.quantity_received || 0), 0)}</b></div>
-                <div>Encore manquantes : <b>{ticketPartOrderItems.reduce((sum: number, item: any) => sum + Math.max(Number(item.quantity_requested || item.quantity || 0) - Number(item.quantity_recovered || 0) - Number(item.quantity_received || 0), 0), 0)}</b></div>
+                <div>
+                  Pièces totales demandées :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) =>
+                        sum + Number(item.quantity_requested || item.quantity || 0),
+                      0,
+                    )}
+                  </b>
+                </div>
+                <div>
+                  Disponibles en stock :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) => sum + Number(item.quantity_from_stock || 0),
+                      0,
+                    )}
+                  </b>
+                </div>
+                <div>
+                  À commander :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) => sum + Number(item.quantity_to_order || 0),
+                      0,
+                    )}
+                  </b>
+                </div>
+                <div>
+                  Déjà récupérées :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) => sum + Number(item.quantity_recovered || 0),
+                      0,
+                    )}
+                  </b>
+                </div>
+                <div>
+                  Déjà reçues fournisseur :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) => sum + Number(item.quantity_received || 0),
+                      0,
+                    )}
+                  </b>
+                </div>
+                <div>
+                  Encore manquantes :{" "}
+                  <b>
+                    {ticketPartOrderItems.reduce(
+                      (sum: number, item: any) =>
+                        sum +
+                        Math.max(
+                          Number(item.quantity_requested || item.quantity || 0) -
+                            Number(item.quantity_recovered || 0) -
+                            Number(item.quantity_received || 0),
+                          0,
+                        ),
+                      0,
+                    )}
+                  </b>
+                </div>
               </div>
-              <Button variant="destructive" size="sm" onClick={forceReadyForIntervention}>Forcer passage à intervention</Button>
+              <Button variant="destructive" size="sm" onClick={forceReadyForIntervention}>
+                Forcer passage à intervention
+              </Button>
               {ticketPartOrders.map((order: any) => (
                 <div key={order.id} className="rounded-md border p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -1048,11 +1212,18 @@ function TicketDetail() {
                       .map((item: any) => {
                         const part = parts.find((p: any) => p.id === item.part_id);
                         const location = storageLocations.find(
-                          (loc: any) => loc.id === (item.storage_location_id || item.suggestion?.storage_location_id),
+                          (loc: any) =>
+                            loc.id ===
+                            (item.storage_location_id || item.suggestion?.storage_location_id),
                         );
                         const suggestion = item.suggestion?.storage_location_id
                           ? item.suggestion
-                          : suggestStorageLocation(item, storageStocks, storageLocations, stockReference);
+                          : suggestStorageLocation(
+                              item,
+                              storageStocks,
+                              storageLocations,
+                              stockReference,
+                            );
                         const available = Number(suggestion?.available ?? 0);
                         const requested = Number(item.quantity_requested || item.quantity || 1);
                         const missing = Math.max(requested - available, 0);
@@ -1062,27 +1233,48 @@ function TicketDetail() {
                               <div>
                                 <b>{item.designation || part?.name || "Pièce"}</b>
                                 <div className="text-xs text-muted-foreground">
-                                  Demandé : {requested} · Stock disponible : {available} · Lieu suggéré : {location?.name ?? "—"}
-                                  {suggestion?.distance_km != null ? ` · Distance : ${Number(suggestion.distance_km).toFixed(1)} km` : ""}
+                                  Demandé : {requested} · Stock disponible : {available} · Lieu
+                                  suggéré : {location?.name ?? "—"}
+                                  {suggestion?.distance_km != null
+                                    ? ` · Distance : ${Number(suggestion.distance_km).toFixed(1)} km`
+                                    : ""}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  À récupérer : {item.quantity_from_stock || Math.min(available, requested)} · À commander : {item.quantity_to_order || missing}
+                                  À récupérer :{" "}
+                                  {item.quantity_from_stock || Math.min(available, requested)} · À
+                                  commander : {item.quantity_to_order || missing}
                                   {missing > 0 ? ` · Manque : ${missing}` : ""}
                                 </div>
                               </div>
                               <Badge variant="secondary">{item.status}</Badge>
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => validateStockRecovery(item)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => validateStockRecovery(item)}
+                              >
                                 Valider récupération depuis ce lieu
                               </Button>
-                              <Button size="sm" variant="outline" onClick={() => orderItemFromSupplier(item)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => orderItemFromSupplier(item)}
+                              >
                                 Commander chez fournisseur
                               </Button>
-                              <Button size="sm" variant="outline" onClick={() => markItemRecovered(item)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => markItemRecovered(item)}
+                              >
                                 Marquer comme récupérée
                               </Button>
-                              <Button size="sm" variant="outline" onClick={() => markItemSupplierReceived(item)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => markItemSupplierReceived(item)}
+                              >
                                 Marquer comme reçue fournisseur
                               </Button>
                             </div>
@@ -1091,7 +1283,12 @@ function TicketDetail() {
                       })}
                   </div>
                   {order.status !== "recue" && (
-                    <Button size="sm" variant="outline" onClick={() => markReceived(order)} className="mt-2 w-full">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => markReceived(order)}
+                      className="mt-2 w-full"
+                    >
                       Marquer commande complète reçue
                     </Button>
                   )}
@@ -1147,8 +1344,12 @@ function TicketDetail() {
             ) : (
               ticketPartOrderItems.map((item: any) => {
                 const order = ticketPartOrders.find((o: any) => o.id === item.part_order_id);
-                const location = storageLocations.find((loc: any) => loc.id === item.storage_location_id);
-                const supplier = suppliers.find((s: any) => s.id === (item.supplier_id || order?.supplier_id));
+                const location = storageLocations.find(
+                  (loc: any) => loc.id === item.storage_location_id,
+                );
+                const supplier = suppliers.find(
+                  (s: any) => s.id === (item.supplier_id || order?.supplier_id),
+                );
                 return (
                   <div key={item.id} className="rounded-md border p-2">
                     <b>{item.designation}</b> : {item.status}
@@ -1160,8 +1361,14 @@ function TicketDetail() {
                 );
               })
             )}
-            {ticketPartOrders.some((order: any) => order.status === "pieces_pretes") && <Badge>Pièces disponibles</Badge>}
-            {ticketStockMovements.length > 0 && <div className="pt-2 text-xs text-muted-foreground">{ticketStockMovements.length} mouvement(s) de stock enregistrés</div>}
+            {ticketPartOrders.some((order: any) => order.status === "pieces_pretes") && (
+              <Badge>Pièces disponibles</Badge>
+            )}
+            {ticketStockMovements.length > 0 && (
+              <div className="pt-2 text-xs text-muted-foreground">
+                {ticketStockMovements.length} mouvement(s) de stock enregistrés
+              </div>
+            )}
           </CardContent>
         </Card>
 
