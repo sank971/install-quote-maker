@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export type TableName =
+  | "grand_accounts"
   | "clients"
   | "sites"
   | "site_contacts"

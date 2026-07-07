@@ -19,6 +19,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedPartsRouteImport } from './routes/_authenticated/parts'
 import { Route as AuthenticatedOrdersRouteImport } from './routes/_authenticated/orders'
 import { Route as AuthenticatedInstallationsRouteImport } from './routes/_authenticated/installations'
+import { Route as AuthenticatedGrandAccountsRouteImport } from './routes/_authenticated/grand-accounts'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
@@ -79,6 +80,12 @@ const AuthenticatedInstallationsRoute =
   AuthenticatedInstallationsRouteImport.update({
     id: '/installations',
     path: '/installations',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedGrandAccountsRoute =
+  AuthenticatedGrandAccountsRouteImport.update({
+    id: '/grand-accounts',
+    path: '/grand-accounts',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -150,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/installations': typeof AuthenticatedInstallationsRoute
   '/orders': typeof AuthenticatedOrdersRoute
   '/parts': typeof AuthenticatedPartsRoute
@@ -172,6 +180,7 @@ export interface FileRoutesByTo {
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/installations': typeof AuthenticatedInstallationsRoute
   '/orders': typeof AuthenticatedOrdersRoute
   '/parts': typeof AuthenticatedPartsRoute
@@ -196,6 +205,7 @@ export interface FileRoutesById {
   '/_authenticated/clients': typeof AuthenticatedClientsRouteWithChildren
   '/_authenticated/contracts': typeof AuthenticatedContractsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/_authenticated/installations': typeof AuthenticatedInstallationsRoute
   '/_authenticated/orders': typeof AuthenticatedOrdersRoute
   '/_authenticated/parts': typeof AuthenticatedPartsRoute
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/contracts'
     | '/dashboard'
+    | '/grand-accounts'
     | '/installations'
     | '/orders'
     | '/parts'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/contracts'
     | '/dashboard'
+    | '/grand-accounts'
     | '/installations'
     | '/orders'
     | '/parts'
@@ -265,6 +277,7 @@ export interface FileRouteTypes {
     | '/_authenticated/clients'
     | '/_authenticated/contracts'
     | '/_authenticated/dashboard'
+    | '/_authenticated/grand-accounts'
     | '/_authenticated/installations'
     | '/_authenticated/orders'
     | '/_authenticated/parts'
@@ -358,6 +371,13 @@ declare module '@tanstack/react-router' {
       path: '/installations'
       fullPath: '/installations'
       preLoaderRoute: typeof AuthenticatedInstallationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/grand-accounts': {
+      id: '/_authenticated/grand-accounts'
+      path: '/grand-accounts'
+      fullPath: '/grand-accounts'
+      preLoaderRoute: typeof AuthenticatedGrandAccountsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
@@ -470,6 +490,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedClientsRoute: typeof AuthenticatedClientsRouteWithChildren
   AuthenticatedContractsRoute: typeof AuthenticatedContractsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedGrandAccountsRoute: typeof AuthenticatedGrandAccountsRoute
   AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRoute
   AuthenticatedOrdersRoute: typeof AuthenticatedOrdersRoute
   AuthenticatedPartsRoute: typeof AuthenticatedPartsRoute
@@ -489,6 +510,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedClientsRoute: AuthenticatedClientsRouteWithChildren,
   AuthenticatedContractsRoute: AuthenticatedContractsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedGrandAccountsRoute: AuthenticatedGrandAccountsRoute,
   AuthenticatedInstallationsRoute: AuthenticatedInstallationsRoute,
   AuthenticatedOrdersRoute: AuthenticatedOrdersRoute,
   AuthenticatedPartsRoute: AuthenticatedPartsRoute,

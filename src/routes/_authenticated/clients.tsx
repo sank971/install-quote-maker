@@ -34,6 +34,10 @@ function ClientsPage() {
 
 function ClientsList() {
   const { data = [] } = useList<any>("clients");
+  const { data: grandAccounts = [] } = useList<any>("grand_accounts", {
+    orderBy: "name",
+    ascending: true,
+  });
   const qc = useQueryClient();
   const upsert = useUpsert("clients");
   const upsertSite = useUpsert("sites", [["sites"]]);
@@ -55,9 +59,21 @@ function ClientsList() {
         contact: c.contact_name,
         siret: c.siret,
         adresse: c.address,
+        grand_compte:
+          grandAccounts.find((account: any) => account.id === c.grand_account_id)?.name ?? "",
         notes: c.notes,
       })),
-      ["numero_client", "nom", "email", "telephone", "contact", "siret", "adresse", "notes"],
+      [
+        "numero_client",
+        "nom",
+        "grand_compte",
+        "email",
+        "telephone",
+        "contact",
+        "siret",
+        "adresse",
+        "notes",
+      ],
     );
 
   const importClients = () =>
@@ -77,6 +93,12 @@ function ClientsList() {
           contact_name: pick(row, "contact", "contact_name") || null,
           siret: pick(row, "siret") || null,
           notes: pick(row, "notes") || null,
+          grand_account_id:
+            grandAccounts.find(
+              (account: any) =>
+                account.name.toLowerCase() ===
+                pick(row, "grand_compte", "grand_account").toLowerCase(),
+            )?.id ?? null,
         };
         const number = pick(row, "numero_client", "client_number");
         const existing = data.find(
@@ -119,6 +141,7 @@ function ClientsList() {
       contact_name: fd.get("contact_name") || null,
       siret: fd.get("siret") || null,
       notes: fd.get("notes") || null,
+      grand_account_id: fd.get("grand_account_id") || null,
     });
     setOpen(false);
   };
@@ -182,7 +205,16 @@ function ClientsList() {
                         {c.name}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {[c.siret ? `SIRET ${c.siret}` : null, c.contact_name, c.email, c.phone]
+                        {[
+                          grandAccounts.find((account: any) => account.id === c.grand_account_id)
+                            ?.name
+                            ? `Grand compte ${grandAccounts.find((account: any) => account.id === c.grand_account_id)?.name}`
+                            : null,
+                          c.siret ? `SIRET ${c.siret}` : null,
+                          c.contact_name,
+                          c.email,
+                          c.phone,
+                        ]
                           .filter(Boolean)
                           .join(" · ") || "—"}
                       </div>
@@ -240,6 +272,21 @@ function ClientsList() {
                 <Label>Téléphone</Label>
                 <Input name="phone" defaultValue={edit?.phone} />
               </div>
+            </div>
+            <div>
+              <Label>Grand compte</Label>
+              <select
+                name="grand_account_id"
+                defaultValue={edit?.grand_account_id ?? ""}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Aucun grand compte</option>
+                {grandAccounts.map((account: any) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
