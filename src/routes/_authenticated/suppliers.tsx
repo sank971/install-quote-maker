@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/_authenticated/suppliers")({
 });
 
 function SuppliersPage() {
+  const navigate = useNavigate();
   const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const { data: sp = [] } = useList<any>("supplier_parts");
@@ -196,7 +198,13 @@ function SuppliersPage() {
           {suppliers.map((s: any) => {
             const partsCount = sp.filter((x: any) => x.supplier_id === s.id).length;
             return (
-              <Card key={s.id} className="p-4">
+              <Card
+                key={s.id}
+                className="cursor-pointer p-4 transition-colors hover:bg-muted/40"
+                onClick={() =>
+                  navigate({ to: "/suppliers/$supplierId", params: { supplierId: s.id } })
+                }
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <div className="rounded-md bg-primary/10 p-2 text-primary">
@@ -218,16 +226,31 @@ function SuppliersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => setPricingFor(s)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPricingFor(s);
+                      }}
+                    >
                       <DollarSign className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openEdit(s);
+                      }}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.stopPropagation();
                         if (confirm("Supprimer ?")) removeS.mutate(s.id);
                       }}
                     >
