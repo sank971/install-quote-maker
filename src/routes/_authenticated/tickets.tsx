@@ -2,7 +2,15 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Plus, Search, ChevronRight, Wrench } from "lucide-react";
+import {
+  ClipboardList,
+  Plus,
+  Search,
+  ChevronRight,
+  Wrench,
+  Warehouse,
+  ClipboardCheck,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -33,7 +41,9 @@ function TicketsPage() {
   const [selectedInstallationIds, setSelectedInstallationIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createMode, setCreateMode] = useState<"ticket" | "maintenance">("ticket");
+  const [createMode, setCreateMode] = useState<
+    "ticket" | "maintenance" | "site_stock_order" | "reserve_lift"
+  >("ticket");
 
   const siteChoices = useMemo(() => {
     const query = siteSearch.trim().toLowerCase();
@@ -108,10 +118,14 @@ function TicketsPage() {
       const owner_id = await currentUserId();
       const site = sites.find((s: any) => s.id === selectedSiteId);
       if (!site) throw new Error("Sélectionnez d'abord un client ou un site");
-      const isMaintenance = fd.get("mode") === "maintenance";
-      const installationIdsToCreate = isMaintenance
-        ? siteInstallations.map((installation: any) => installation.id)
-        : selectedInstallationIds;
+      const mode = String(fd.get("mode") || "ticket");
+      const isMaintenance = mode === "maintenance";
+      const isSiteStockOrder = mode === "site_stock_order";
+      const isReserveLift = mode === "reserve_lift";
+      const installationIdsToCreate =
+        isMaintenance || isSiteStockOrder || isReserveLift
+          ? siteInstallations.map((installation: any) => installation.id)
+          : selectedInstallationIds;
       if (installationIdsToCreate.length === 0) {
         throw new Error(
           isMaintenance
@@ -122,7 +136,13 @@ function TicketsPage() {
 
       const title =
         String(fd.get("title") || "").trim() ||
-        (isMaintenance ? `Maintenance ${site.name}` : "Ticket");
+        (isMaintenance
+          ? `Maintenance ${site.name}`
+          : isSiteStockOrder
+            ? `Commande stock site · ${site.name}`
+            : isReserveLift
+              ? `Levée de réserve · ${site.name}`
+              : "Ticket");
       const description = String(fd.get("description") || "").trim();
       let group: any = null;
 
@@ -133,7 +153,13 @@ function TicketsPage() {
             client_id: site.client_id,
             site_id: site.id,
             title: isMaintenance ? `Dossier maintenance · ${title}` : title,
-            status: isMaintenance ? "maintenance" : "ouvert",
+            status: isMaintenance
+              ? "maintenance"
+              : isSiteStockOrder
+                ? "stock_site"
+                : isReserveLift
+                  ? "levee_reserve"
+                  : "ouvert",
           })
           .select()
           .single();
@@ -151,17 +177,56 @@ function TicketsPage() {
             p_site_id: site.id,
             p_installation_id: installation.id,
             p_ticket_number: null,
-            p_title: isMaintenance ? `Maintenance · ${installation.name}` : title,
+            p_title: isMaintenance
+              ? `Maintenance · ${installation.name}`
+              : isSiteStockOrder
+                ? `Commande stock site · ${installation.name}`
+                : isReserveLift
+                  ? `Levée de réserve · ${installation.name}`
+                  : title,
             p_description: isMaintenance
               ? ["Ticket créé depuis un dossier de maintenance site", description]
                   .filter(Boolean)
                   .join("\n")
-              : description || null,
+              : isSiteStockOrder
+                ? ["Ticket pour devis/commande de pièces destinées au stock sur site", description]
+                    .filter(Boolean)
+                    .join("\n")
+                : isReserveLift
+                  ? [
+                      "Ticket de levée de réserve / contrôle du stock sur site (prix négociable au contrat)",
+                      description,
+                    ]
+                      .filter(Boolean)
+                      .join("\n")
+                  : description || null,
             p_ticket_group_id: group?.id ?? null,
           },
         );
         if (error) throw error;
         if (!ticket) throw new Error("Le ticket n'a pas pu être créé");
+        if (isMaintenance || isSiteStockOrder || isReserveLift) {
+          const storageLocationId =
+            isSiteStockOrder || isReserveLift
+              ? (
+                  await (supabase.rpc as any)("ensure_site_storage_location", {
+                    p_site_id: site.id,
+                    p_owner_id: owner_id,
+                  })
+                ).data
+              : null;
+          const { error: updateTicketError } = await (supabase.from("tickets" as any) as any)
+            .update({
+              ticket_type: isMaintenance
+                ? "maintenance"
+                : isSiteStockOrder
+                  ? "site_stock_order"
+                  : "reserve_lift",
+              storage_location_id: storageLocationId,
+            })
+            .eq("id", ticket.id);
+          if (updateTicketError) throw updateTicketError;
+        }
       }
       const ticketCount = installationIdsToCreate.length;
       form.reset();
@@ -228,7 +293,7 @@ function TicketsPage() {
               className="grid gap-4"
             >
               <input type="hidden" name="mode" value={createMode} />
-              <div className="grid gap-2 md:grid-cols-2">
+              <div className="grid gap-2 md:grid-cols-4">
                 <button
                   type="button"
                   onClick={() => setCreateMode("ticket")}
@@ -250,6 +315,28 @@ function TicketsPage() {
                   <p className="text-muted-foreground">
                     Créer automatiquement un ticket de contrôle sur toutes les installations du
                     site.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("site_stock_order")}
+                  className={`rounded-md border p-3 text-left text-sm ${createMode === "site_stock_order" ? "border-primary bg-muted" : ""}`}
+                >
+                  <Warehouse className="mb-2 h-4 w-4" />
+                  <b>Commande stock site</b>
+                  <p className="text-muted-foreground">
+                    Créer les tickets/devis de pièces à stocker sur site.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("reserve_lift")}
+                  className={`rounded-md border p-3 text-left text-sm ${createMode === "reserve_lift" ? "border-primary bg-muted" : ""}`}
+                >
+                  <ClipboardCheck className="mb-2 h-4 w-4" />
+                  <b>Levée de réserve</b>
+                  <p className="text-muted-foreground">
+                    Contrôler les réserves et le stock sur site, prix au contrat.
                   </p>
                 </button>
               </div>
@@ -295,8 +382,8 @@ function TicketsPage() {
 
               <div className="grid gap-2">
                 <Label>
-                  {createMode === "maintenance"
-                    ? "2. Installations incluses dans le dossier"
+                  {createMode !== "ticket"
+                    ? "2. Installations incluses dans le dossier site"
                     : "2. Sélectionner les installations du site concerné"}
                 </Label>
                 {selectedSite ? (
@@ -310,10 +397,10 @@ function TicketsPage() {
                           <input
                             type="checkbox"
                             checked={
-                              createMode === "maintenance" ||
+                              createMode !== "ticket" ||
                               selectedInstallationIds.includes(installation.id)
                             }
-                            disabled={createMode === "maintenance"}
+                            disabled={createMode !== "ticket"}
                             onChange={() => toggleSelectedInstallation(installation.id)}
                           />
                           {installation.name}
@@ -339,9 +426,15 @@ function TicketsPage() {
                   <Input
                     name="title"
                     placeholder={
-                      createMode === "maintenance" ? "Maintenance périodique" : "Titre du ticket"
+                      createMode === "maintenance"
+                        ? "Maintenance périodique"
+                        : createMode === "site_stock_order"
+                          ? "Commande stock site"
+                          : createMode === "reserve_lift"
+                            ? "Levée de réserve"
+                            : "Titre du ticket"
                     }
-                    required={createMode !== "maintenance"}
+                    required={createMode === "ticket"}
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -358,9 +451,13 @@ function TicketsPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 {createMode === "maintenance"
                   ? `Créer le dossier maintenance (${siteInstallations.length} installations)`
-                  : selectedInstallationIds.length > 1
-                    ? `Créer ${selectedInstallationIds.length} tickets liés + diagnostics`
-                    : "Créer + diagnostic"}
+                  : createMode === "site_stock_order"
+                    ? `Créer les tickets stock site (${siteInstallations.length} installations)`
+                    : createMode === "reserve_lift"
+                      ? `Créer la levée de réserve (${siteInstallations.length} installations)`
+                      : selectedInstallationIds.length > 1
+                        ? `Créer ${selectedInstallationIds.length} tickets liés + diagnostics`
+                        : "Créer + diagnostic"}
               </Button>
             </form>
           </CardContent>

@@ -55,6 +55,8 @@ type EditableItem = {
   parent_part_id?: string;
   pricing_unit?: string;
   relation_kind?: string;
+  stock_usage?: string;
+  storage_location_id?: string;
   is_oversized?: boolean;
 };
 
@@ -111,6 +113,10 @@ function QuoteDetail() {
   const { data: reports = [] } = useList<any>("intervention_reports");
   const { data: history = [] } = useList<any>("history_events");
   const { data: partOrders = [] } = useList<any>("part_orders");
+  const { data: storageLocations = [] } = useList<any>("storage_locations", {
+    orderBy: "name",
+    ascending: true,
+  });
   const remove = useRemove("quotes");
   const [isEditing, setIsEditing] = useState(false);
   const [editQuote, setEditQuote] = useState<any>({});
@@ -160,6 +166,8 @@ function QuoteDetail() {
         position: Number(item.position ?? index),
         parent_part_id: item.parent_part_id ?? undefined,
         relation_kind: item.relation_kind ?? undefined,
+        stock_usage: item.stock_usage ?? "billable_repair",
+        storage_location_id: item.storage_location_id ?? undefined,
         is_oversized: Boolean(parts.find((part: any) => part.id === item.part_id)?.is_oversized),
       })),
     );
@@ -347,6 +355,7 @@ function QuoteDetail() {
       pricing_unit: useConfiguratorLinearPrice ? "linear_meter" : (part.pricing_unit ?? "unit"),
       is_oversized: Boolean(part.is_oversized),
       position: editItems.length,
+      stock_usage: "billable_repair",
       ...patch,
     };
   };
@@ -585,6 +594,8 @@ function QuoteDetail() {
           position,
           parent_part_id: item.parent_part_id ?? null,
           relation_kind: item.relation_kind ?? null,
+          stock_usage: item.stock_usage ?? "billable_repair",
+          storage_location_id: item.storage_location_id ?? null,
         };
         if (item.id) {
           const { error: itemError } = await (supabase.from("quote_items" as any) as any)
@@ -633,7 +644,10 @@ function QuoteDetail() {
 
     for (const ticket of linkedTickets) {
       const ticketItems = items.filter(
-        (item: any) => !item.installation_id || item.installation_id === ticket.installation_id,
+        (item: any) =>
+          (!item.installation_id || item.installation_id === ticket.installation_id) &&
+          item.stock_usage !== "use_site_stock" &&
+          item.stock_usage !== "audit_service",
       );
       const grouped = new Map<string, any[]>();
       ticketItems.forEach((item: any) => {
@@ -668,6 +682,7 @@ function QuoteDetail() {
           designation: item.description || "Pièce",
           reference: parts.find((part: any) => part.id === item.part_id)?.reference ?? null,
           quantity: Number(item.quantity || 1),
+          source_type: item.stock_usage === "replenish_site_stock" ? "fournisseur" : undefined,
         }));
         const { error: linesError } = await (
           supabase.from("part_order_items" as any) as any
@@ -791,6 +806,14 @@ function QuoteDetail() {
     quoteSettings?.value?.terms ?? "Devis valable 30 jours. Bon pour accord : date et signature.",
   );
   const fmt = (n: number) => n.toFixed(2) + " €";
+  const stockUsageLabel = (usage?: string | null) =>
+    usage === "use_site_stock"
+      ? "Utilisée depuis stock site · non facturée"
+      : usage === "replenish_site_stock"
+        ? "Approvisionnement stock site"
+        : usage === "audit_service"
+          ? "Levée de réserve / contrôle stock"
+          : null;
 
   const del = async () => {
     if (!confirm("Supprimer ce devis ?")) return;
@@ -1226,6 +1249,47 @@ function QuoteDetail() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
+                    {item.part_id && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-[220px_1fr]">
+                        <select
+                          value={item.stock_usage ?? "billable_repair"}
+                          onChange={(event) =>
+                            updateEditItem(item.key, {
+                              stock_usage: event.target.value,
+                              unit_price:
+                                event.target.value === "use_site_stock" ? 0 : item.unit_price,
+                            })
+                          }
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                        >
+                          <option value="billable_repair">Pièce réparation facturée</option>
+                          <option value="use_site_stock">Utiliser stock site (non facturé)</option>
+                          <option value="replenish_site_stock">Commander pour stock site</option>
+                          <option value="audit_service">Levée de réserve / contrôle</option>
+                        </select>
+                        <select
+                          value={item.storage_location_id ?? ""}
+                          onChange={(event) =>
+                            updateEditItem(item.key, {
+                              storage_location_id: event.target.value || undefined,
+                            })
+                          }
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                        >
+                          <option value="">Stock site automatique</option>
+                          {storageLocations
+                            .filter(
+                              (loc: any) =>
+                                loc.type === "site" || loc.site_id === editQuote.site_id,
+                            )
+                            .map((loc: any) => (
+                              <option key={loc.id} value={loc.id}>
+                                {loc.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
                     {partComponents.some(
                       (component: any) => component.parent_part_id === item.part_id,
                     ) && (
@@ -1411,7 +1475,14 @@ function QuoteDetail() {
                   )
                   .map((i: any) => (
                     <tr key={i.id}>
-                      <td className="py-2">{i.description}</td>
+                      <td className="py-2">
+                        {i.description}
+                        {stockUsageLabel(i.stock_usage) ? (
+                          <div className="text-xs text-muted-foreground">
+                            {stockUsageLabel(i.stock_usage)}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="py-2 text-right">
                         {Number(i.quantity)}
                         {(parts.find((part: any) => part.id === i.part_id)?.pricing_unit ===
