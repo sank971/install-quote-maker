@@ -2,6 +2,7 @@ import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Users,
+  Building2,
   MapPin,
   Wrench,
   Package,
@@ -34,6 +35,7 @@ const nav = [
   { title: "Devis", to: "/quotes", icon: FileText },
   { title: "Tickets", to: "/tickets", icon: ClipboardList },
   { title: "Clients", to: "/clients", icon: Users },
+  { title: "Grands comptes", to: "/grand-accounts", icon: Building2 },
   { title: "Sites", to: "/sites", icon: MapPin },
   { title: "Installations", to: "/installations", icon: Wrench },
   { title: "Pièces", to: "/parts", icon: Package },
