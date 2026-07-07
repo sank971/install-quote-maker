@@ -1048,9 +1048,66 @@ function TicketDetail() {
                         ),
                       )}
                     </div>
+                    {!report && intervention.status === "rapport_a_rediger" && (
+                      <form onSubmit={(e) => createReport(e, intervention)} className="space-y-3">
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <Input name="constat" placeholder="Constat après réparation" required />
+                          <Input name="actions" placeholder="Actions réalisées" />
+                        </div>
+                        <Input name="conclusion" placeholder="Conclusion" />
+
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <Select name="reparation_reussie" required>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Réparation réussie ?" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Oui</SelectItem>
+                              <SelectItem value="false">Non</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select name="part_id">
+                            <SelectTrigger>
+                              <SelectValue placeholder="Pièce remplacée" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {parts.map((p: any) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input name="quantity" type="number" step="1" placeholder="Qté" />
+                        </div>
+                        <div className="flex gap-2">
+                          <label className="text-sm">
+                            <input name="besoin_devis" type="checkbox" /> Besoin devis
+                          </label>
+                          <label className="text-sm">
+                            <input name="besoin_commande_pieces" type="checkbox" /> Besoin pièces
+                          </label>
+                        </div>
+                        <Button size="sm">
+                          <FileText className="mr-2 h-4 w-4" />
+                          Créer rapport de réparation
+                        </Button>
+                      </form>
+                    )}
                     {report && (
                       <div className="rounded-md border border-green-200 bg-green-50 p-3">
                         <p className="text-sm font-medium text-green-900">✓ Rapport créé</p>
+                        <div className="mt-2 space-y-1 text-xs text-green-800">
+                          <p>
+                            <b>Constat :</b> {report.constat}
+                          </p>
+                          <p>
+                            <b>Actions :</b> {report.actions_realisees}
+                          </p>
+                          <p>
+                            <b>Conclusion :</b> {report.conclusion}
+                          </p>
+                        </div>
                       </div>
                     )}
                   </CardContent>
