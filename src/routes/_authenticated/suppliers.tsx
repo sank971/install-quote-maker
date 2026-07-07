@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
@@ -26,6 +26,13 @@ export const Route = createFileRoute("/_authenticated/suppliers")({
 });
 
 function SuppliersPage() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isDetailRoute = pathname.startsWith("/suppliers/");
+
+  return isDetailRoute ? <Outlet /> : <SuppliersList />;
+}
+
+function SuppliersList() {
   const navigate = useNavigate();
   const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
