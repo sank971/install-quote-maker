@@ -53,6 +53,7 @@ function NewQuote() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: partEquivalences = [] } = useList<any>("part_equivalences" as any);
   const { data: sp = [] } = useList<any>("supplier_parts");
   const { data: contracts = [] } = useList<any>("contracts");
   const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
@@ -337,6 +338,51 @@ function NewQuote() {
           : `${accessoryItem.description} (option)`,
       },
     ]);
+  };
+
+  const getItemMargin = (
+    item: Pick<Item, "unit_price" | "unit_cost" | "pricing_unit" | "length_meters" | "quantity">,
+  ) =>
+    (Number(item.unit_price) - Number(item.unit_cost)) *
+    (Number(item.quantity) || 0) *
+    (item.pricing_unit === "linear_meter" ? Number(item.length_meters || 0) || 1 : 1);
+
+  const getEquivalenceSuggestion = (item: Item) => {
+    if (!item.part_id) return null;
+    const currentMargin = getItemMargin(item);
+    return (
+      partEquivalences
+        .filter((row: any) => row.source_part_id === item.part_id)
+        .map((row: any) => {
+          const part = parts.find((candidate: any) => candidate.id === row.equivalent_part_id);
+          if (!part) return null;
+          const candidate = buildPartItem(
+            part.id,
+            { quantity: item.quantity },
+            item.installation_id ?? installationId,
+          );
+          if (!candidate) return null;
+          const candidateMargin = getItemMargin(candidate);
+          return { row, part, item: candidate, marginGain: candidateMargin - currentMargin };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => b.marginGain - a.marginGain)[0] ?? null
+    );
+  };
+
+  const applyEquivalenceSuggestion = (key: string, suggestion: any) => {
+    update(key, {
+      part_id: suggestion.item.part_id,
+      description: suggestion.item.description,
+      reference: suggestion.item.reference,
+      category: suggestion.item.category,
+      unit_price: suggestion.item.unit_price,
+      unit_cost: suggestion.item.unit_cost,
+      length_meters: suggestion.item.length_meters,
+      pricing_unit: suggestion.item.pricing_unit,
+      is_oversized: suggestion.item.is_oversized,
+    });
+    toast.success(`Remplacement suggéré appliqué : ${suggestion.part.name}`);
   };
 
   const cheapestCost = (partId: string) => {
@@ -1034,152 +1080,181 @@ function NewQuote() {
                   remplacer pour afficher les références compatibles, ou créez une ligne libre.
                 </div>
               )}
-              {items.map((i) => (
-                <div key={i.key} className="rounded-md border border-border/60 p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_80px_90px_100px_100px_40px] sm:items-center">
-                    <Input
-                      value={i.description}
-                      onChange={(e) => update(i.key, { description: e.target.value })}
-                      placeholder="Description"
-                    />
-                    <Input
-                      value={i.reference ?? ""}
-                      onChange={(e) => update(i.key, { reference: e.target.value })}
-                      placeholder="Référence"
-                      disabled={Boolean(i.part_id)}
-                    />
-                    <select
-                      value={i.category ?? ""}
-                      onChange={(e) => update(i.key, { category: e.target.value })}
-                      disabled={Boolean(i.part_id)}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                    >
-                      <option value="">Type</option>
-                      {partCategories.map((category: any) => (
-                        <option key={category.id} value={category.name}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={i.quantity}
-                      onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
-                      placeholder={i.pricing_unit === "linear_meter" ? "ml" : "Qté"}
-                      title={i.pricing_unit === "linear_meter" ? "Mètres linéaires" : "Quantité"}
-                    />
-                    {i.pricing_unit === "linear_meter" && (
+              {items.map((i) => {
+                const equivalenceSuggestion = getEquivalenceSuggestion(i);
+                const hasBetterEquivalence = Number(equivalenceSuggestion?.marginGain ?? 0) > 0.01;
+                return (
+                  <div
+                    key={i.key}
+                    className={`rounded-md border p-3 ${
+                      hasBetterEquivalence
+                        ? "border-green-500/60 bg-green-50/70"
+                        : "border-border/60"
+                    }`}
+                  >
+                    <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_80px_90px_100px_100px_40px] sm:items-center">
+                      <Input
+                        value={i.description}
+                        onChange={(e) => update(i.key, { description: e.target.value })}
+                        placeholder="Description"
+                      />
+                      <Input
+                        value={i.reference ?? ""}
+                        onChange={(e) => update(i.key, { reference: e.target.value })}
+                        placeholder="Référence"
+                        disabled={Boolean(i.part_id)}
+                      />
+                      <select
+                        value={i.category ?? ""}
+                        onChange={(e) => update(i.key, { category: e.target.value })}
+                        disabled={Boolean(i.part_id)}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                      >
+                        <option value="">Type</option>
+                        {partCategories.map((category: any) => (
+                          <option key={category.id} value={category.name}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
                       <Input
                         type="number"
                         step="0.01"
-                        min="0"
-                        value={i.length_meters ?? ""}
-                        onChange={(e) => update(i.key, { length_meters: Number(e.target.value) })}
-                        placeholder="Long. ml"
-                        title="Longueur unitaire en mètres linéaires"
+                        value={i.quantity}
+                        onChange={(e) => update(i.key, { quantity: Number(e.target.value) })}
+                        placeholder={i.pricing_unit === "linear_meter" ? "ml" : "Qté"}
+                        title={i.pricing_unit === "linear_meter" ? "Mètres linéaires" : "Quantité"}
                       />
-                    )}
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={i.unit_price}
-                      onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })}
-                      placeholder="PU HT"
-                    />
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={i.unit_cost}
-                      onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })}
-                      placeholder="Coût"
-                      title="Coût réel"
-                    />
-                    <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {partComponents.some(
-                    (component: any) => component.parent_part_id === i.part_id,
-                  ) && (
-                    <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          <Boxes className="h-3.5 w-3.5" />
-                          Composition comprise et options
+                      {i.pricing_unit === "linear_meter" && (
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={i.length_meters ?? ""}
+                          onChange={(e) => update(i.key, { length_meters: Number(e.target.value) })}
+                          placeholder="Long. ml"
+                          title="Longueur unitaire en mètres linéaires"
+                        />
+                      )}
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={i.unit_price}
+                        onChange={(e) => update(i.key, { unit_price: Number(e.target.value) })}
+                        placeholder="PU HT"
+                      />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={i.unit_cost}
+                        onChange={(e) => update(i.key, { unit_cost: Number(e.target.value) })}
+                        placeholder="Coût"
+                        title="Coût réel"
+                      />
+                      <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {partComponents.some(
+                      (component: any) => component.parent_part_id === i.part_id,
+                    ) && (
+                      <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            <Boxes className="h-3.5 w-3.5" />
+                            Composition comprise et options
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addAllComponentsToQuote(i)}
+                          >
+                            Ajouter toutes
+                          </Button>
                         </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {partComponents
+                            .filter((component: any) => component.parent_part_id === i.part_id)
+                            .map((component: any) => {
+                              const componentPart = parts.find(
+                                (part: any) => part.id === component.component_part_id,
+                              );
+                              const alreadyAdded = items.some(
+                                (item) =>
+                                  item.parent_part_id === i.part_id &&
+                                  item.part_id === component.component_part_id,
+                              );
+                              return (
+                                <Button
+                                  key={component.component_part_id}
+                                  type="button"
+                                  variant={alreadyAdded ? "secondary" : "outline"}
+                                  size="sm"
+                                  disabled={alreadyAdded}
+                                  className="justify-start"
+                                  onClick={() => addComponentToQuote(i, component)}
+                                >
+                                  {alreadyAdded ? "✓ " : "+ "}
+                                  {componentPart?.name ?? "Pièce inconnue"} · Qté{" "}
+                                  {component.quantity}
+                                </Button>
+                              );
+                            })}
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Les pièces de composition du kit sont ajoutées à 0 €. Les options restent
+                          proposées au tarif optionnel.
+                        </p>
+                      </div>
+                    )}
+                    {hasBetterEquivalence && (
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-500/30 bg-green-100/70 p-2 text-xs text-green-800">
+                        <span>
+                          Équivalence plus rentable suggérée : {equivalenceSuggestion.part.name} (+
+                          {equivalenceSuggestion.marginGain.toFixed(2)} € de marge)
+                        </span>
                         <Button
+                          type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => addAllComponentsToQuote(i)}
+                          className="h-7 border-green-600 text-green-800 hover:bg-green-200"
+                          onClick={() => applyEquivalenceSuggestion(i.key, equivalenceSuggestion)}
                         >
-                          Ajouter toutes
+                          Remplacer
                         </Button>
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {partComponents
-                          .filter((component: any) => component.parent_part_id === i.part_id)
-                          .map((component: any) => {
-                            const componentPart = parts.find(
-                              (part: any) => part.id === component.component_part_id,
-                            );
-                            const alreadyAdded = items.some(
-                              (item) =>
-                                item.parent_part_id === i.part_id &&
-                                item.part_id === component.component_part_id,
-                            );
-                            return (
-                              <Button
-                                key={component.component_part_id}
-                                type="button"
-                                variant={alreadyAdded ? "secondary" : "outline"}
-                                size="sm"
-                                disabled={alreadyAdded}
-                                className="justify-start"
-                                onClick={() => addComponentToQuote(i, component)}
-                              >
-                                {alreadyAdded ? "✓ " : "+ "}
-                                {componentPart?.name ?? "Pièce inconnue"} · Qté {component.quantity}
-                              </Button>
-                            );
-                          })}
+                    )}
+                    {!i.part_id && installation?.model_id && (
+                      <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(i.save_as_part)}
+                          onChange={(e) => update(i.key, { save_as_part: e.target.checked })}
+                        />
+                        Enregistrer cette nouvelle pièce et la rendre compatible avec ce modèle de
+                        porte
+                      </label>
+                    )}
+                    {!i.part_id && (
+                      <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(i.is_oversized)}
+                          onChange={(e) => update(i.key, { is_oversized: e.target.checked })}
+                        />
+                        Pièce hors gabarit
+                      </label>
+                    )}
+                    {contractDiscountPct > 0 && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {i.part_id && parts.find((part: any) => part.id === i.part_id)?.is_kit
+                          ? "Tarif kit appliqué"
+                          : `Réduction contrat appliquée : ${contractDiscountPct.toFixed(2)}%`}
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Les pièces de composition du kit sont ajoutées à 0 €. Les options restent
-                        proposées au tarif optionnel.
-                      </p>
-                    </div>
-                  )}
-                  {!i.part_id && installation?.model_id && (
-                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(i.save_as_part)}
-                        onChange={(e) => update(i.key, { save_as_part: e.target.checked })}
-                      />
-                      Enregistrer cette nouvelle pièce et la rendre compatible avec ce modèle de
-                      porte
-                    </label>
-                  )}
-                  {!i.part_id && (
-                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(i.is_oversized)}
-                        onChange={(e) => update(i.key, { is_oversized: e.target.checked })}
-                      />
-                      Pièce hors gabarit
-                    </label>
-                  )}
-                  {contractDiscountPct > 0 && (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {i.part_id && parts.find((part: any) => part.id === i.part_id)?.is_kit
-                        ? "Tarif kit appliqué"
-                        : `Réduction contrat appliquée : ${contractDiscountPct.toFixed(2)}%`}
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
 

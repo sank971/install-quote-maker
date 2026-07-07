@@ -273,6 +273,7 @@ function PartsPage() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: partEquivalences = [] } = useList<any>("part_equivalences" as any);
   const { data: contracts = [] } = useList<any>("contracts", { orderBy: "name", ascending: true });
   const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
   const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
@@ -295,6 +296,8 @@ function PartsPage() {
   const [edit, setEdit] = useState<any>(null);
   const [compatOpen, setCompatOpen] = useState<any>(null);
   const [componentsOpen, setComponentsOpen] = useState<any>(null);
+  const [equivalencesOpen, setEquivalencesOpen] = useState<any>(null);
+  const [selectedEquivalentPartIds, setSelectedEquivalentPartIds] = useState<string[]>([]);
   const [vantailConfiguratorOpen, setVantailConfiguratorOpen] = useState(false);
   const [componentDraft, setComponentDraft] = useState({
     quantity: 1,
@@ -443,6 +446,39 @@ function PartsPage() {
       rebateTopMm: suggestion.rebates?.top ?? draft.rebateTopMm,
       rebateBottomMm: suggestion.rebates?.bottom ?? draft.rebateBottomMm,
     }));
+  };
+
+  const openEquivalences = (part: any) => {
+    setEquivalencesOpen(part);
+    setSelectedEquivalentPartIds([]);
+  };
+
+  const addEquivalences = async () => {
+    if (!equivalencesOpen || selectedEquivalentPartIds.length === 0) return;
+    const { data: userData } = await supabase.auth.getUser();
+    const owner_id = userData.user?.id;
+    if (!owner_id) return toast.error("Non authentifié");
+    const rows = selectedEquivalentPartIds.map((partId) => ({
+      owner_id,
+      source_part_id: equivalencesOpen.id,
+      equivalent_part_id: partId,
+    }));
+    const { error } = await (supabase.from("part_equivalences" as any) as any).upsert(rows, {
+      onConflict: "owner_id,source_part_id,equivalent_part_id",
+    });
+    if (error) return toast.error(error.message);
+    setSelectedEquivalentPartIds([]);
+    qc.invalidateQueries({ queryKey: ["part_equivalences"] });
+    toast.success("Équivalence ajoutée");
+  };
+
+  const removeEquivalence = async (id: string) => {
+    const { error } = await (supabase.from("part_equivalences" as any) as any)
+      .delete()
+      .eq("id", id);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["part_equivalences"] });
+    toast.success("Équivalence supprimée");
   };
 
   const exportPartsSuppliers = () => {
@@ -1197,6 +1233,9 @@ function PartsPage() {
             const componentCount = partComponents.filter(
               (c: any) => c.parent_part_id === p.id,
             ).length;
+            const equivalenceCount = partEquivalences.filter(
+              (c: any) => c.source_part_id === p.id,
+            ).length;
             const vantailComponentCount = partComponents.filter(
               (c: any) => c.parent_part_id === p.id && isVantailRelationKind(c.relation_kind),
             ).length;
@@ -1230,6 +1269,7 @@ function PartsPage() {
                         <span className="text-muted-foreground">
                           {p.is_kit ? "Kit" : isVantail ? "Vantail" : "Pièce"} · Compat. :{" "}
                           {typeCompatCount} types · {modelCompatCount} modèles
+                          {equivalenceCount > 0 ? ` · ${equivalenceCount} équivalence(s)` : ""}
                         </span>
                         {[
                           p.length_meters && `${Number(p.length_meters)} m L`,
@@ -1312,6 +1352,14 @@ function PartsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => openEquivalences(p)}
+                      title="Gérer les équivalences"
+                    >
+                      <LinkIcon className="h-4 w-4 text-green-600" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => openCompat(p)}
                       title="Gérer les compatibilités"
                     >
@@ -1336,6 +1384,94 @@ function PartsPage() {
           })}
         </div>
       )}
+
+      <Dialog
+        open={!!equivalencesOpen}
+        onOpenChange={(isOpen) => !isOpen && setEquivalencesOpen(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Équivalences : {equivalencesOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Déclarez les pièces pouvant remplacer cette référence. Dans un devis, la ligne sera
+              mise en vert si une équivalence apporte plus de marge.
+            </p>
+            <div className="rounded-md border border-border/60 p-3 space-y-2">
+              {partEquivalences.filter((row: any) => row.source_part_id === equivalencesOpen?.id)
+                .length === 0 ? (
+                <div className="text-sm text-muted-foreground">Aucune équivalence déclarée.</div>
+              ) : (
+                partEquivalences
+                  .filter((row: any) => row.source_part_id === equivalencesOpen?.id)
+                  .map((row: any) => {
+                    const equivalent = parts.find(
+                      (part: any) => part.id === row.equivalent_part_id,
+                    );
+                    return (
+                      <div key={row.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span>
+                          {equivalent?.name ?? "Pièce inconnue"}{" "}
+                          {equivalent?.reference ? `· ${equivalent.reference}` : ""}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeEquivalence(row.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+            <div>
+              <Label>Ajouter des équivalences</Label>
+              <select
+                multiple
+                value={selectedEquivalentPartIds}
+                onChange={(event) =>
+                  setSelectedEquivalentPartIds(
+                    Array.from(event.target.selectedOptions).map((option) => option.value),
+                  )
+                }
+                className="min-h-32 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                {parts
+                  .filter((part: any) => part.id !== equivalencesOpen?.id)
+                  .map((part: any) => (
+                    <option key={part.id} value={part.id}>
+                      {part.name} {part.reference ? `— ${part.reference}` : ""} · marge{" "}
+                      {(
+                        Number(part.sale_price) -
+                        Number(
+                          supplierParts.find((sp: any) => sp.part_id === part.id)?.purchase_price ??
+                            0,
+                        )
+                      ).toFixed(2)}{" "}
+                      €
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEquivalencesOpen(null)}>
+              Fermer
+            </Button>
+            <Button
+              type="button"
+              onClick={addEquivalences}
+              disabled={selectedEquivalentPartIds.length === 0}
+            >
+              Ajouter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
