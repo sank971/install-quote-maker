@@ -15,6 +15,7 @@ export type TableName =
   | "part_model_compat"
   | "part_type_compat"
   | "part_components"
+  | "part_equivalences"
   | "contract_kit_prices"
   | "contract_pricing_tiers"
   | "contract_client_pricing"

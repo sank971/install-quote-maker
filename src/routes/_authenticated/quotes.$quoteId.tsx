@@ -95,6 +95,7 @@ function QuoteDetail() {
     orderBy: "position",
     ascending: true,
   });
+  const { data: partEquivalences = [] } = useList<any>("part_equivalences" as any);
   const { data: supplierParts = [] } = useList<any>("supplier_parts");
   const { data: contractKitPrices = [] } = useList<any>("contract_kit_prices");
   const { data: partCategories = [] } = useList<any>("part_categories", {
@@ -631,6 +632,48 @@ function QuoteDetail() {
     toast.success("Statuts mis à jour");
   };
 
+  const getEditableBillableQuantity = (item: EditableItem) =>
+    Number(item.quantity || 0) *
+    (item.pricing_unit === "linear_meter" ? Number(item.length_meters || 0) || 1 : 1);
+
+  const getEditableMargin = (item: EditableItem) =>
+    (Number(item.unit_price) - Number(item.unit_cost)) * getEditableBillableQuantity(item);
+
+  const getEditEquivalenceSuggestion = (item: EditableItem) => {
+    if (!item.part_id) return null;
+    const currentMargin = getEditableMargin(item);
+    return (
+      partEquivalences
+        .filter((row: any) => row.source_part_id === item.part_id)
+        .map((row: any) => {
+          const part = parts.find((candidate: any) => candidate.id === row.equivalent_part_id);
+          if (!part) return null;
+          const candidate = buildEditPartItem(part.id, item.installation_id ?? editInstallationId);
+          if (!candidate) return null;
+          const equivalentItem = { ...candidate, quantity: item.quantity };
+          const candidateMargin = getEditableMargin(equivalentItem);
+          return { row, part, item: equivalentItem, marginGain: candidateMargin - currentMargin };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => b.marginGain - a.marginGain)[0] ?? null
+    );
+  };
+
+  const applyEditEquivalenceSuggestion = (key: string, suggestion: any) => {
+    updateEditItem(key, {
+      part_id: suggestion.item.part_id,
+      description: suggestion.item.description,
+      reference: suggestion.item.reference,
+      category: suggestion.item.category,
+      unit_price: suggestion.item.unit_price,
+      unit_cost: suggestion.item.unit_cost,
+      length_meters: suggestion.item.length_meters,
+      pricing_unit: suggestion.item.pricing_unit,
+      is_oversized: suggestion.item.is_oversized,
+    });
+    toast.success(`Remplacement suggéré appliqué : ${suggestion.part.name}`);
+  };
+
   const partsHT = items.reduce((s: number, i: any) => {
     const part = parts.find((row: any) => row.id === i.part_id);
     const billableQuantity =
@@ -1007,137 +1050,168 @@ function QuoteDetail() {
                   Ajouter présentes
                 </Button>
               </div>
-              {editItems.map((item) => (
-                <div key={item.key} className="rounded-md border border-border/60 p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_90px_90px_110px_110px_40px]">
-                    <Input
-                      value={item.description}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { description: event.target.value })
-                      }
-                      placeholder="Description"
-                    />
-                    <Input
-                      value={item.reference ?? ""}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { reference: event.target.value })
-                      }
-                      placeholder="Référence"
-                      disabled={Boolean(item.part_id)}
-                    />
-                    <select
-                      value={item.category ?? ""}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { category: event.target.value })
-                      }
-                      disabled={Boolean(item.part_id)}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                    >
-                      <option value="">Type</option>
-                      {partCategories.map((category: any) => (
-                        <option key={category.id} value={category.name}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { quantity: Number(event.target.value) })
-                      }
-                      placeholder="Qté"
-                    />
-                    {item.pricing_unit === "linear_meter" && (
+              {editItems.map((item) => {
+                const equivalenceSuggestion = getEditEquivalenceSuggestion(item);
+                const hasBetterEquivalence = Number(equivalenceSuggestion?.marginGain ?? 0) > 0.01;
+                return (
+                  <div
+                    key={item.key}
+                    className={`rounded-md border p-3 ${
+                      hasBetterEquivalence
+                        ? "border-green-500/60 bg-green-50/70"
+                        : "border-border/60"
+                    }`}
+                  >
+                    <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_90px_90px_110px_110px_40px]">
+                      <Input
+                        value={item.description}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { description: event.target.value })
+                        }
+                        placeholder="Description"
+                      />
+                      <Input
+                        value={item.reference ?? ""}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { reference: event.target.value })
+                        }
+                        placeholder="Référence"
+                        disabled={Boolean(item.part_id)}
+                      />
+                      <select
+                        value={item.category ?? ""}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { category: event.target.value })
+                        }
+                        disabled={Boolean(item.part_id)}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                      >
+                        <option value="">Type</option>
+                        {partCategories.map((category: any) => (
+                          <option key={category.id} value={category.name}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
                       <Input
                         type="number"
                         step="0.01"
-                        min="0"
-                        value={item.length_meters ?? ""}
+                        value={item.quantity}
                         onChange={(event) =>
-                          updateEditItem(item.key, { length_meters: Number(event.target.value) })
+                          updateEditItem(item.key, { quantity: Number(event.target.value) })
                         }
-                        placeholder="Long. ml"
-                        title="Longueur unitaire en mètres linéaires"
+                        placeholder="Qté"
                       />
+                      {item.pricing_unit === "linear_meter" && (
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.length_meters ?? ""}
+                          onChange={(event) =>
+                            updateEditItem(item.key, { length_meters: Number(event.target.value) })
+                          }
+                          placeholder="Long. ml"
+                          title="Longueur unitaire en mètres linéaires"
+                        />
+                      )}
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={item.unit_price}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { unit_price: Number(event.target.value) })
+                        }
+                        placeholder="PU HT"
+                      />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={item.unit_cost}
+                        onChange={(event) =>
+                          updateEditItem(item.key, { unit_cost: Number(event.target.value) })
+                        }
+                        placeholder="Coût"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeEditItem(item.key)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {partComponents.some(
+                      (component: any) => component.parent_part_id === item.part_id,
+                    ) && (
+                      <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
+                        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <Boxes className="h-3.5 w-3.5" /> Composition comprise et options
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {partComponents
+                            .filter((component: any) => component.parent_part_id === item.part_id)
+                            .map((component: any) => {
+                              const componentPart = parts.find(
+                                (part: any) => part.id === component.component_part_id,
+                              );
+                              const alreadyAdded = editItems.some(
+                                (row) =>
+                                  row.parent_part_id === item.part_id &&
+                                  row.part_id === component.component_part_id,
+                              );
+                              return (
+                                <Button
+                                  key={component.component_part_id}
+                                  type="button"
+                                  variant={alreadyAdded ? "secondary" : "outline"}
+                                  size="sm"
+                                  disabled={alreadyAdded}
+                                  className="justify-start"
+                                  onClick={() => addEditComponentToQuote(item, component)}
+                                >
+                                  {alreadyAdded ? "✓ " : "+ "}
+                                  {componentPart?.name ?? "Pièce inconnue"} · Qté{" "}
+                                  {component.quantity}
+                                  {component.relation_kind === "kit_component"
+                                    ? " · composition"
+                                    : component.relation_kind === "negotiated_option"
+                                      ? " · option négociée"
+                                      : " · accessoire unité"}
+                                </Button>
+                              );
+                            })}
+                        </div>
+                      </div>
                     )}
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.unit_price}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { unit_price: Number(event.target.value) })
-                      }
-                      placeholder="PU HT"
-                    />
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.unit_cost}
-                      onChange={(event) =>
-                        updateEditItem(item.key, { unit_cost: Number(event.target.value) })
-                      }
-                      placeholder="Coût"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeEditItem(item.key)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {hasBetterEquivalence && (
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-500/30 bg-green-100/70 p-2 text-xs text-green-800">
+                        <span>
+                          Équivalence plus rentable suggérée : {equivalenceSuggestion.part.name} (+
+                          {equivalenceSuggestion.marginGain.toFixed(2)} € de marge)
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 border-green-600 text-green-800 hover:bg-green-200"
+                          onClick={() =>
+                            applyEditEquivalenceSuggestion(item.key, equivalenceSuggestion)
+                          }
+                        >
+                          Remplacer
+                        </Button>
+                      </div>
+                    )}
+                    {editContractDiscountPct > 0 && item.part_id && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Réduction contrat appliquée : {editContractDiscountPct.toFixed(2)}%
+                      </div>
+                    )}
                   </div>
-                  {partComponents.some(
-                    (component: any) => component.parent_part_id === item.part_id,
-                  ) && (
-                    <div className="mt-3 rounded-md border border-dashed border-border/70 p-3">
-                      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        <Boxes className="h-3.5 w-3.5" /> Composition comprise et options
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {partComponents
-                          .filter((component: any) => component.parent_part_id === item.part_id)
-                          .map((component: any) => {
-                            const componentPart = parts.find(
-                              (part: any) => part.id === component.component_part_id,
-                            );
-                            const alreadyAdded = editItems.some(
-                              (row) =>
-                                row.parent_part_id === item.part_id &&
-                                row.part_id === component.component_part_id,
-                            );
-                            return (
-                              <Button
-                                key={component.component_part_id}
-                                type="button"
-                                variant={alreadyAdded ? "secondary" : "outline"}
-                                size="sm"
-                                disabled={alreadyAdded}
-                                className="justify-start"
-                                onClick={() => addEditComponentToQuote(item, component)}
-                              >
-                                {alreadyAdded ? "✓ " : "+ "}
-                                {componentPart?.name ?? "Pièce inconnue"} · Qté {component.quantity}
-                                {component.relation_kind === "kit_component"
-                                  ? " · composition"
-                                  : component.relation_kind === "negotiated_option"
-                                    ? " · option négociée"
-                                    : " · accessoire unité"}
-                              </Button>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  )}
-                  {editContractDiscountPct > 0 && item.part_id && (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Réduction contrat appliquée : {editContractDiscountPct.toFixed(2)}%
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
