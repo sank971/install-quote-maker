@@ -41,6 +41,11 @@ function NewQuote() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: clients = [] } = useList<any>("clients");
+  const { data: grandAccounts = [] } = useList<any>("grand_accounts");
+  const { data: grandAccountBpuItems = [] } = useList<any>("grand_account_bpu_items", {
+    orderBy: "created_at",
+    ascending: true,
+  });
   const { data: sites = [] } = useList<any>("sites");
   const { data: installs = [] } = useList<any>("installations");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
@@ -106,6 +111,12 @@ function NewQuote() {
   const contract = contracts.find((c: any) => c.id === contractId);
   const selectedClient = clients.find((c: any) => c.id === clientId);
   const selectedSite = sites.find((s: any) => s.id === siteId);
+  const selectedGrandAccount = grandAccounts.find(
+    (account: any) => account.id === selectedClient?.grand_account_id,
+  );
+  const grandAccountBpuCount = grandAccountBpuItems.filter(
+    (item: any) => item.grand_account_id === selectedGrandAccount?.id,
+  ).length;
   const contractDiscountPct = Number(contract?.parts_discount_pct ?? 0);
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
   const contractRepairsIncluded = Boolean(contract?.repairs_included);
@@ -399,6 +410,50 @@ function NewQuote() {
     return { original, replacement, missingReplacement: !replacement };
   };
 
+  const getGrandAccountPrice = (part: any, baseSalePrice: number, purchaseCost: number) => {
+    if (!selectedGrandAccount) return null;
+    const bpuItem = grandAccountBpuItems.find(
+      (row: any) => row.grand_account_id === selectedGrandAccount.id && row.part_id === part.id,
+    );
+    if (bpuItem) {
+      if (bpuItem.pricing_mode === "purchase_coef") {
+        return {
+          price: purchaseCost * Number(bpuItem.purchase_coef ?? 1),
+          label: `BPU grand compte : coef achat × ${Number(bpuItem.purchase_coef ?? 1).toFixed(2)}`,
+        };
+      }
+      if (bpuItem.pricing_mode === "discount") {
+        const discountPct = Number(bpuItem.discount_pct ?? 0);
+        return {
+          price: baseSalePrice * (1 - discountPct / 100),
+          label: `BPU grand compte : remise ${discountPct.toFixed(2)}%`,
+        };
+      }
+      return {
+        price: Number(bpuItem.manual_sale_price ?? baseSalePrice),
+        label: "BPU grand compte : prix manuel",
+      };
+    }
+
+    const outOfBpuCoef = Number(selectedGrandAccount.out_of_bpu_purchase_coef ?? 0);
+    if (outOfBpuCoef > 0 && purchaseCost > 0) {
+      return {
+        price: purchaseCost * outOfBpuCoef,
+        label: `Hors BPU grand compte : coef achat × ${outOfBpuCoef.toFixed(2)}`,
+      };
+    }
+
+    const outOfBpuDiscountPct = Number(selectedGrandAccount.out_of_bpu_discount_pct ?? 0);
+    if (outOfBpuDiscountPct > 0) {
+      return {
+        price: baseSalePrice * (1 - outOfBpuDiscountPct / 100),
+        label: `Hors BPU grand compte : remise ${outOfBpuDiscountPct.toFixed(2)}%`,
+      };
+    }
+
+    return null;
+  };
+
   const buildPartItem = (
     partId: string,
     patch: Partial<Item> = {},
@@ -447,6 +502,14 @@ function NewQuote() {
             0,
           )
       : null;
+    const purchaseCost = componentCost ?? cheapestCost(p.id);
+    const standardSalePrice = useConfiguratorLinearPrice
+      ? unitPriceOverride
+      : negotiatedKitPrice
+        ? Number(negotiatedKitPrice.negotiated_price)
+        : Number(p.sale_price) * (1 - discount);
+    const grandAccountPrice = getGrandAccountPrice(p, standardSalePrice, purchaseCost);
+
     return {
       key: crypto.randomUUID(),
       part_id: p.id,
@@ -459,12 +522,8 @@ function NewQuote() {
         (p.pricing_unit === "linear_meter" || useConfiguratorLinearPrice) && length > 0
           ? length
           : Number(p.length_meters ?? 0) || undefined,
-      unit_price: useConfiguratorLinearPrice
-        ? unitPriceOverride
-        : negotiatedKitPrice
-          ? Number(negotiatedKitPrice.negotiated_price)
-          : Number(p.sale_price) * (1 - discount),
-      unit_cost: componentCost ?? cheapestCost(p.id),
+      unit_price: grandAccountPrice?.price ?? standardSalePrice,
+      unit_cost: purchaseCost,
       pricing_unit: useConfiguratorLinearPrice ? "linear_meter" : (p.pricing_unit ?? "unit"),
       is_oversized: Boolean(p.is_oversized),
       ...patch,
@@ -1276,6 +1335,12 @@ function NewQuote() {
                         Pièce hors gabarit
                       </label>
                     )}
+                    {selectedGrandAccount && i.part_id && (
+                      <div className="mt-2 text-xs text-emerald-700">
+                        Tarif grand compte prioritaire appliqué si la pièce est au BPU ou si une
+                        condition hors BPU est configurée.
+                      </div>
+                    )}
                     {contractDiscountPct > 0 && (
                       <div className="mt-2 text-xs text-muted-foreground">
                         {i.part_id && parts.find((part: any) => part.id === i.part_id)?.is_kit
@@ -1403,6 +1468,17 @@ function NewQuote() {
                 <div className="mb-2 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
                   Type de contrat :{" "}
                   <span className="font-medium text-foreground">{contractTypeLabel}</span>
+                </div>
+              )}
+              {selectedGrandAccount && (
+                <div className="mb-2 rounded-md bg-emerald-50 p-2 text-xs text-emerald-800">
+                  Grand compte : <span className="font-medium">{selectedGrandAccount.name}</span> ·{" "}
+                  {grandAccountBpuCount} pièce(s) BPU
+                  {Number(selectedGrandAccount.out_of_bpu_purchase_coef ?? 0) > 0
+                    ? ` · hors BPU coef × ${Number(selectedGrandAccount.out_of_bpu_purchase_coef).toFixed(2)}`
+                    : Number(selectedGrandAccount.out_of_bpu_discount_pct ?? 0) > 0
+                      ? ` · hors BPU remise ${Number(selectedGrandAccount.out_of_bpu_discount_pct).toFixed(2)}%`
+                      : ""}
                 </div>
               )}
               {contractDiscountPct > 0 && (
