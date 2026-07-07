@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 export type TableName =
   | "grand_accounts"
+  | "grand_account_bpu_items"
   | "clients"
   | "sites"
   | "site_contacts"
