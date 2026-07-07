@@ -1001,6 +1001,9 @@ function PartsPage() {
       weight_kg: fd.get("weight_kg") ? Number(fd.get("weight_kg")) : null,
       is_kit: isKit,
       is_oversized: fd.get("is_oversized") === "on",
+      is_obsolete: fd.get("is_obsolete") === "on",
+      replacement_part_id: fd.get("replacement_part_id") || null,
+      replacement_notes: fd.get("replacement_notes") || null,
     });
     const supplierId = fd.get("supplier_id") as string | null;
     if (supplierId) {
@@ -1240,6 +1243,7 @@ function PartsPage() {
               (c: any) => c.parent_part_id === p.id && isVantailRelationKind(c.relation_kind),
             ).length;
             const isVantail = isVantailPart(p);
+            const replacementPart = parts.find((part: any) => part.id === p.replacement_part_id);
             const linkedSupplierParts = supplierParts.filter((sp: any) => sp.part_id === p.id);
             const linkedSupplierNames = linkedSupplierParts
               .map(
@@ -1267,8 +1271,14 @@ function PartsPage() {
                         </span>
                         <span className="mx-2 text-muted-foreground">·</span>
                         <span className="text-muted-foreground">
-                          {p.is_kit ? "Kit" : isVantail ? "Vantail" : "Pièce"} · Compat. :{" "}
-                          {typeCompatCount} types · {modelCompatCount} modèles
+                          {p.is_obsolete
+                            ? "Obsolète"
+                            : p.is_kit
+                              ? "Kit"
+                              : isVantail
+                                ? "Vantail"
+                                : "Pièce"}{" "}
+                          · Compat. : {typeCompatCount} types · {modelCompatCount} modèles
                           {equivalenceCount > 0 ? ` · ${equivalenceCount} équivalence(s)` : ""}
                         </span>
                         {[
@@ -1286,6 +1296,14 @@ function PartsPage() {
                               ]
                                 .filter(Boolean)
                                 .join(" · ")}
+                            </span>
+                          </>
+                        )}
+                        {p.is_obsolete && (
+                          <>
+                            <span className="mx-2 text-muted-foreground">·</span>
+                            <span className="font-medium text-destructive">
+                              Remplacement : {replacementPart?.name ?? "à définir"}
                             </span>
                           </>
                         )}
@@ -1641,6 +1659,41 @@ function PartsPage() {
                 />
                 Pièce hors gabarit
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  name="is_obsolete"
+                  type="checkbox"
+                  defaultChecked={Boolean(edit?.is_obsolete)}
+                />
+                Pièce obsolète
+              </label>
+              <div>
+                <Label>Pièce / kit de remplacement</Label>
+                <select
+                  name="replacement_part_id"
+                  defaultValue={edit?.replacement_part_id ?? ""}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">—</option>
+                  {parts
+                    .filter((part: any) => part.id !== edit?.id)
+                    .map((part: any) => (
+                      <option key={part.id} value={part.id}>
+                        {part.is_kit ? "Kit · " : ""}
+                        {part.name} {part.reference ? `— ${part.reference}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <Label>Note de remplacement</Label>
+              <Textarea
+                name="replacement_notes"
+                rows={2}
+                defaultValue={edit?.replacement_notes}
+                placeholder="Ex. Ancienne référence arrêtée, utiliser le nouveau kit complet."
+              />
             </div>
             <div>
               <Label>Description</Label>

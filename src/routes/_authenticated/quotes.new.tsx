@@ -110,7 +110,7 @@ function NewQuote() {
   const contractTypeLabel = contract?.type ? String(contract.type) : contract?.name;
   const contractRepairsIncluded = Boolean(contract?.repairs_included);
   const contractOnCallIncluded = Boolean(contract?.on_call_included);
-  const kits = parts.filter((part: any) => part.is_kit);
+  const kits = parts.filter((part: any) => part.is_kit && !part.is_obsolete);
   const effectiveLaborRate = Number(laborRate);
   const effectiveTravelCount = Math.max(0, Number(travelCount) || 0);
   const effectiveTravelFee = Number(travelFee);
@@ -391,12 +391,27 @@ function NewQuote() {
     return Math.min(...offers.map((o: any) => Number(o.purchase_price)));
   };
 
+  const getActiveReplacement = (partId: string) => {
+    const original = parts.find((x: any) => x.id === partId);
+    if (!original?.is_obsolete)
+      return { original, replacement: original, missingReplacement: false };
+    const replacement = parts.find((x: any) => x.id === original.replacement_part_id);
+    return { original, replacement, missingReplacement: !replacement };
+  };
+
   const buildPartItem = (
     partId: string,
     patch: Partial<Item> = {},
     sourceInstallationId = installationId,
   ): Item | null => {
-    const p = parts.find((x: any) => x.id === partId);
+    const { original, replacement, missingReplacement } = getActiveReplacement(partId);
+    if (missingReplacement) {
+      toast.error(
+        `La pièce obsolète « ${original?.name ?? "sélectionnée"} » n’a pas de remplacement configuré`,
+      );
+      return null;
+    }
+    const p = replacement;
     if (!p) return null;
     const installedPart = installationParts.find(
       (x: any) => x.installation_id === sourceInstallationId && x.part_id === partId,
@@ -436,7 +451,7 @@ function NewQuote() {
       key: crypto.randomUUID(),
       part_id: p.id,
       installation_id: sourceInstallationId || undefined,
-      description: details ? `${p.name} — ${details}` : p.name,
+      description: `${details ? `${p.name} — ${details}` : p.name}${original?.is_obsolete && original.id !== p.id ? ` (remplace ${original.name})` : ""}`,
       reference: installedPart?.reference_override || p.reference || "",
       category: installedPart?.component_type || p.category || "",
       quantity: 1,
@@ -485,13 +500,18 @@ function NewQuote() {
   };
 
   const addPart = (partId: string, sourceInstallationId = installationId) => {
+    const selectedPart = parts.find((part: any) => part.id === partId);
     const item = buildPartItem(partId, {}, sourceInstallationId);
     if (!item) return;
-    const kitComponents = parts.find((part: any) => part.id === partId)?.is_kit
+    if (selectedPart?.is_obsolete && selectedPart.id !== item.part_id) {
+      toast.info(`${selectedPart.name} est obsolète : remplacement ajouté au devis`);
+    }
+    const kitComponents = parts.find((part: any) => part.id === item.part_id)?.is_kit
       ? (partComponents
           .filter(
             (component: any) =>
-              component.parent_part_id === partId && component.relation_kind === "kit_component",
+              component.parent_part_id === item.part_id &&
+              component.relation_kind === "kit_component",
           )
           .map((component: any) => buildComponentItem(item, component, "compris dans le kit"))
           .filter(Boolean) as Item[])
@@ -978,13 +998,24 @@ function NewQuote() {
                   className="flex h-9 flex-1 min-w-[200px] rounded-md border border-input bg-transparent px-3 text-sm"
                 >
                   <option value="">+ Ajouter une pièce présente / compatible</option>
-                  {compatibleParts.map((p: any) => (
-                    <option key={p.id} value={p.id}>
-                      {presentPartIds.has(p.id) ? "✓ " : ""}
-                      {p.name} — {Number(p.sale_price).toFixed(2)}€/
-                      {p.pricing_unit === "linear_meter" ? "ml" : "u"}
-                    </option>
-                  ))}
+                  {compatibleParts.map((p: any) => {
+                    const replacement = p.is_obsolete
+                      ? parts.find((part: any) => part.id === p.replacement_part_id)
+                      : null;
+                    const displayedPart = replacement ?? p;
+                    return (
+                      <option key={p.id} value={p.id} disabled={p.is_obsolete && !replacement}>
+                        {presentPartIds.has(p.id) ? "✓ " : ""}
+                        {p.is_obsolete && replacement
+                          ? `${p.name} (obsolète → ${replacement.name})`
+                          : p.is_obsolete
+                            ? `${p.name} (obsolète sans remplacement)`
+                            : p.name}{" "}
+                        — {Number(displayedPart.sale_price).toFixed(2)}€/
+                        {displayedPart.pricing_unit === "linear_meter" ? "ml" : "u"}
+                      </option>
+                    );
+                  })}
                 </select>
                 {kits.length > 0 && (
                   <select
