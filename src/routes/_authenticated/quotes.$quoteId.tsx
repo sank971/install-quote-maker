@@ -123,6 +123,7 @@ function QuoteDetail() {
   const [editItems, setEditItems] = useState<EditableItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [editInstallationIds, setEditInstallationIds] = useState<string[]>([]);
+  const [editTargetInstallationId, setEditTargetInstallationId] = useState("");
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
 
   useEffect(() => {
@@ -181,6 +182,7 @@ function QuoteDetail() {
         ? [quote.installation_id]
         : [];
     setEditInstallationIds(ids);
+    setEditTargetInstallationId(ids[0] ?? "");
   }, [quote, quoteInstallations, isEditing]);
 
   if (!quote) return <p className="text-muted-foreground">Chargement...</p>;
@@ -227,7 +229,10 @@ function QuoteDetail() {
     editInstallationIds.includes(installRow.id),
   );
   const editInstallationId = editInstallationIds[0] ?? "";
-  const editInstallation = editSelectedInstallations[0];
+  const activeEditInstallationId = editTargetInstallationId || editInstallationId;
+  const editInstallation =
+    installs.find((installRow: any) => installRow.id === activeEditInstallationId) ??
+    editSelectedInstallations[0];
   const editContract = contracts.find(
     (contractRow: any) => contractRow.id === editQuote.contract_id,
   );
@@ -294,7 +299,7 @@ function QuoteDetail() {
   const buildEditPartItem = (
     partId: string,
     patch: Partial<EditableItem> = {},
-    sourceInstallationId = editInstallationId,
+    sourceInstallationId = activeEditInstallationId,
   ): EditableItem | null => {
     const part = parts.find((row: any) => row.id === partId);
     if (!part) return null;
@@ -510,6 +515,7 @@ function QuoteDetail() {
       ...current,
       {
         key: crypto.randomUUID(),
+        installation_id: activeEditInstallationId || undefined,
         description: "",
         reference: "",
         category: "",
@@ -1085,6 +1091,29 @@ function QuoteDetail() {
                   <Plus className="mr-1 h-4 w-4" /> Ligne libre
                 </Button>
               </div>
+              {editInstallationIds.length > 1 && (
+                <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                  <Label>Installation cible pour les pièces ajoutées</Label>
+                  <select
+                    value={activeEditInstallationId}
+                    onChange={(event) => {
+                      setEditTargetInstallationId(event.target.value);
+                      setSelectedPartTypes([]);
+                    }}
+                    className="mt-2 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    {editSelectedInstallations.map((row: any) => (
+                      <option key={row.id} value={row.id}>
+                        {row.name || row.installation_number || "Installation"}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Les nouvelles pièces seront rattachées à cette installation du devis
+                    multi-installations.
+                  </p>
+                </div>
+              )}
               {availablePartTypes.length > 0 && (
                 <div className="flex flex-wrap gap-2 rounded-md border border-border/60 p-3">
                   {availablePartTypes.map((type) => {
@@ -1264,7 +1293,12 @@ function QuoteDetail() {
                         >
                           <option value="billable_repair">Pièce réparation facturée</option>
                           <option value="use_site_stock">Utiliser stock site (non facturé)</option>
+                          <option value="use_technician_stock">Utiliser stock technicien</option>
                           <option value="replenish_site_stock">Commander pour stock site</option>
+                          <option value="replenish_technician_stock">
+                            Envoyer au stock technicien
+                          </option>
+                          <option value="direct_site_delivery">Livrer directement sur site</option>
                           <option value="audit_service">Levée de réserve / contrôle</option>
                         </select>
                         <select
@@ -1280,7 +1314,9 @@ function QuoteDetail() {
                           {storageLocations
                             .filter(
                               (loc: any) =>
-                                loc.type === "site" || loc.site_id === editQuote.site_id,
+                                ["site", "vehicule_technicien", "point_relais"].includes(
+                                  loc.type,
+                                ) || loc.site_id === editQuote.site_id,
                             )
                             .map((loc: any) => (
                               <option key={loc.id} value={loc.id}>
