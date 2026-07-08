@@ -28,6 +28,7 @@ import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedQuotesIndexRouteImport } from './routes/_authenticated/quotes.index'
 import { Route as AuthenticatedTicketTicketSlugRouteImport } from './routes/_authenticated/ticket.$ticketSlug'
 import { Route as AuthenticatedSuppliersSupplierIdRouteImport } from './routes/_authenticated/suppliers.$supplierId'
+import { Route as AuthenticatedStorageLocationsLocationIdRouteImport } from './routes/_authenticated/storage-locations.$locationId'
 import { Route as AuthenticatedSiteSiteSlugRouteImport } from './routes/_authenticated/site.$siteSlug'
 import { Route as AuthenticatedQuotesNewRouteImport } from './routes/_authenticated/quotes.new'
 import { Route as AuthenticatedQuotesQuoteIdRouteImport } from './routes/_authenticated/quotes.$quoteId'
@@ -135,6 +136,12 @@ const AuthenticatedSuppliersSupplierIdRoute =
     path: '/$supplierId',
     getParentRoute: () => AuthenticatedSuppliersRoute,
   } as any)
+const AuthenticatedStorageLocationsLocationIdRoute =
+  AuthenticatedStorageLocationsLocationIdRouteImport.update({
+    id: '/$locationId',
+    path: '/$locationId',
+    getParentRoute: () => AuthenticatedStorageLocationsRoute,
+  } as any)
 const AuthenticatedSiteSiteSlugRoute =
   AuthenticatedSiteSiteSlugRouteImport.update({
     id: '/site/$siteSlug',
@@ -177,7 +184,7 @@ export interface FileRoutesByFullPath {
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
-  '/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/storage-locations': typeof AuthenticatedStorageLocationsRouteWithChildren
   '/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/tickets': typeof AuthenticatedTicketsRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/site/$siteSlug': typeof AuthenticatedSiteSiteSlugRoute
+  '/storage-locations/$locationId': typeof AuthenticatedStorageLocationsLocationIdRoute
   '/suppliers/$supplierId': typeof AuthenticatedSuppliersSupplierIdRoute
   '/ticket/$ticketSlug': typeof AuthenticatedTicketTicketSlugRoute
   '/quotes/': typeof AuthenticatedQuotesIndexRoute
@@ -202,7 +210,7 @@ export interface FileRoutesByTo {
   '/parts': typeof AuthenticatedPartsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
-  '/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/storage-locations': typeof AuthenticatedStorageLocationsRouteWithChildren
   '/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/tickets': typeof AuthenticatedTicketsRoute
@@ -211,6 +219,7 @@ export interface FileRoutesByTo {
   '/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/site/$siteSlug': typeof AuthenticatedSiteSiteSlugRoute
+  '/storage-locations/$locationId': typeof AuthenticatedStorageLocationsLocationIdRoute
   '/suppliers/$supplierId': typeof AuthenticatedSuppliersSupplierIdRoute
   '/ticket/$ticketSlug': typeof AuthenticatedTicketTicketSlugRoute
   '/quotes': typeof AuthenticatedQuotesIndexRoute
@@ -229,7 +238,7 @@ export interface FileRoutesById {
   '/_authenticated/parts': typeof AuthenticatedPartsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
-  '/_authenticated/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/_authenticated/storage-locations': typeof AuthenticatedStorageLocationsRouteWithChildren
   '/_authenticated/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/_authenticated/tickets': typeof AuthenticatedTicketsRoute
@@ -238,6 +247,7 @@ export interface FileRoutesById {
   '/_authenticated/quotes/$quoteId': typeof AuthenticatedQuotesQuoteIdRoute
   '/_authenticated/quotes/new': typeof AuthenticatedQuotesNewRoute
   '/_authenticated/site/$siteSlug': typeof AuthenticatedSiteSiteSlugRoute
+  '/_authenticated/storage-locations/$locationId': typeof AuthenticatedStorageLocationsLocationIdRoute
   '/_authenticated/suppliers/$supplierId': typeof AuthenticatedSuppliersSupplierIdRoute
   '/_authenticated/ticket/$ticketSlug': typeof AuthenticatedTicketTicketSlugRoute
   '/_authenticated/quotes/': typeof AuthenticatedQuotesIndexRoute
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/quotes/$quoteId'
     | '/quotes/new'
     | '/site/$siteSlug'
+    | '/storage-locations/$locationId'
     | '/suppliers/$supplierId'
     | '/ticket/$ticketSlug'
     | '/quotes/'
@@ -290,6 +301,7 @@ export interface FileRouteTypes {
     | '/quotes/$quoteId'
     | '/quotes/new'
     | '/site/$siteSlug'
+    | '/storage-locations/$locationId'
     | '/suppliers/$supplierId'
     | '/ticket/$ticketSlug'
     | '/quotes'
@@ -316,6 +328,7 @@ export interface FileRouteTypes {
     | '/_authenticated/quotes/$quoteId'
     | '/_authenticated/quotes/new'
     | '/_authenticated/site/$siteSlug'
+    | '/_authenticated/storage-locations/$locationId'
     | '/_authenticated/suppliers/$supplierId'
     | '/_authenticated/ticket/$ticketSlug'
     | '/_authenticated/quotes/'
@@ -462,6 +475,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSuppliersSupplierIdRouteImport
       parentRoute: typeof AuthenticatedSuppliersRoute
     }
+    '/_authenticated/storage-locations/$locationId': {
+      id: '/_authenticated/storage-locations/$locationId'
+      path: '/$locationId'
+      fullPath: '/storage-locations/$locationId'
+      preLoaderRoute: typeof AuthenticatedStorageLocationsLocationIdRouteImport
+      parentRoute: typeof AuthenticatedStorageLocationsRoute
+    }
     '/_authenticated/site/$siteSlug': {
       id: '/_authenticated/site/$siteSlug'
       path: '/site/$siteSlug'
@@ -511,6 +531,21 @@ const AuthenticatedClientsRouteChildren: AuthenticatedClientsRouteChildren = {
 const AuthenticatedClientsRouteWithChildren =
   AuthenticatedClientsRoute._addFileChildren(AuthenticatedClientsRouteChildren)
 
+interface AuthenticatedStorageLocationsRouteChildren {
+  AuthenticatedStorageLocationsLocationIdRoute: typeof AuthenticatedStorageLocationsLocationIdRoute
+}
+
+const AuthenticatedStorageLocationsRouteChildren: AuthenticatedStorageLocationsRouteChildren =
+  {
+    AuthenticatedStorageLocationsLocationIdRoute:
+      AuthenticatedStorageLocationsLocationIdRoute,
+  }
+
+const AuthenticatedStorageLocationsRouteWithChildren =
+  AuthenticatedStorageLocationsRoute._addFileChildren(
+    AuthenticatedStorageLocationsRouteChildren,
+  )
+
 interface AuthenticatedSuppliersRouteChildren {
   AuthenticatedSuppliersSupplierIdRoute: typeof AuthenticatedSuppliersSupplierIdRoute
 }
@@ -536,7 +571,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPartsRoute: typeof AuthenticatedPartsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
-  AuthenticatedStorageLocationsRoute: typeof AuthenticatedStorageLocationsRoute
+  AuthenticatedStorageLocationsRoute: typeof AuthenticatedStorageLocationsRouteWithChildren
   AuthenticatedSubcontractorsRoute: typeof AuthenticatedSubcontractorsRoute
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRouteWithChildren
   AuthenticatedTicketsRoute: typeof AuthenticatedTicketsRoute
@@ -558,7 +593,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPartsRoute: AuthenticatedPartsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSitesRoute: AuthenticatedSitesRoute,
-  AuthenticatedStorageLocationsRoute: AuthenticatedStorageLocationsRoute,
+  AuthenticatedStorageLocationsRoute:
+    AuthenticatedStorageLocationsRouteWithChildren,
   AuthenticatedSubcontractorsRoute: AuthenticatedSubcontractorsRoute,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRouteWithChildren,
   AuthenticatedTicketsRoute: AuthenticatedTicketsRoute,

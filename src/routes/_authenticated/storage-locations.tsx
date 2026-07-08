@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, MapPin, Plus, Save, Upload, Warehouse } from "lucide-react";
+import { Download, ExternalLink, MapPin, Plus, Save, Upload, Warehouse } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -36,13 +36,15 @@ function StorageLocationsPage() {
   const { data: stocks = [] } = useList<any>("storage_location_stocks", { orderBy: "updated_at" });
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
+  const { data: suppliers = [] } = useList<any>("suppliers", { orderBy: "name", ascending: true });
+  const { data: stockTickets = [] } = useList<any>("stock_tickets", { orderBy: "created_at" });
   const [editing, setEditing] = useState<any>(null);
   const technicianStocks = locations.filter(
     (location: any) => location.type === "vehicule_technicien",
   );
 
   const invalidate = () =>
-    ["storage_locations", "storage_location_stocks"].forEach((t) =>
+    ["storage_locations", "storage_location_stocks", "stock_tickets"].forEach((t) =>
       qc.invalidateQueries({ queryKey: [t] }),
     );
 
@@ -162,10 +164,29 @@ function StorageLocationsPage() {
 
   const upsertStock = async (payload: any) => {
     const owner_id = await currentUserId();
-    const { error } = await (supabase.from("storage_location_stocks" as any) as any).upsert(
-      { owner_id, ...payload },
-      { onConflict: "storage_location_id,part_id" },
-    );
+    const cleanPayload = {
+      owner_id,
+      storage_location_id: String(payload.storage_location_id),
+      part_id: String(payload.part_id),
+      supplier_part_id: null,
+      quantity_available: Number(payload.quantity_available || 0),
+      quantity_reserved: Number(payload.quantity_reserved || 0),
+      quantity_minimum: Number(payload.quantity_minimum || 0),
+    };
+    const { data: existing, error: lookupError } = await (
+      supabase.from("storage_location_stocks" as any) as any
+    )
+      .select("id")
+      .eq("storage_location_id", cleanPayload.storage_location_id)
+      .eq("part_id", cleanPayload.part_id)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    const query = existing?.id
+      ? (supabase.from("storage_location_stocks" as any) as any)
+          .update(cleanPayload)
+          .eq("id", existing.id)
+      : (supabase.from("storage_location_stocks" as any) as any).insert(cleanPayload);
+    const { error } = await query;
     if (error) throw error;
   };
 
@@ -183,6 +204,43 @@ function StorageLocationsPage() {
       event.currentTarget.reset();
       invalidate();
       toast.success("Pièce ajoutée au lieu de stockage");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const createStockTicket = async (event: any) => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    try {
+      const owner_id = await currentUserId();
+      const type = String(fd.get("type"));
+      const sourceLocationId = String(fd.get("source_location_id") || "");
+      const supplierId = String(fd.get("supplier_id") || "");
+      if (type === "transfert_interne" && !sourceLocationId) {
+        toast.error("Sélectionnez un lieu source pour l’échange de stock interne");
+        return;
+      }
+      if (type === "commande_fournisseur" && !supplierId) {
+        toast.error("Sélectionnez un fournisseur pour la commande");
+        return;
+      }
+      const payload: any = {
+        owner_id,
+        type,
+        status: fd.get("status") || "en_attente",
+        source_location_id: type === "transfert_interne" ? sourceLocationId : null,
+        destination_location_id: fd.get("destination_location_id"),
+        supplier_id: type === "commande_fournisseur" ? supplierId : null,
+        part_id: fd.get("part_id"),
+        quantity: Number(fd.get("quantity") || 1),
+        notes: fd.get("notes") || null,
+      };
+      const { error } = await (supabase.from("stock_tickets" as any) as any).insert(payload);
+      if (error) throw error;
+      event.currentTarget.reset();
+      invalidate();
+      toast.success("Ticket stock créé");
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -374,6 +432,85 @@ function StorageLocationsPage() {
               </Button>
             </form>
           </div>
+          <div className="mb-4 rounded-md border p-4">
+            <div className="mb-3">
+              <h3 className="font-medium">Créer un ticket stock</h3>
+              <p className="text-sm text-muted-foreground">
+                Pour alimenter un lieu, choisissez soit un transfert depuis un stock interne, soit
+                une commande fournisseur. Le stock n’est mouvementé qu’à la complétion du ticket.
+              </p>
+            </div>
+            <form onSubmit={createStockTicket} className="grid gap-3 md:grid-cols-3">
+              <Select name="type" defaultValue="transfert_interne">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="transfert_interne">Échange de stock interne</SelectItem>
+                  <SelectItem value="commande_fournisseur">Commande fournisseur</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select name="source_location_id">
+                <SelectTrigger>
+                  <SelectValue placeholder="Lieu source interne" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((l: any) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select name="destination_location_id" required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Lieu destination" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((l: any) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select name="supplier_id">
+                <SelectTrigger>
+                  <SelectValue placeholder="Fournisseur (si commande)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {suppliers.map((supplier: any) => (
+                    <SelectItem key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select name="part_id" required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pièce" />
+                </SelectTrigger>
+                <SelectContent>
+                  {parts.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {[p.reference, p.name].filter(Boolean).join(" · ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                name="quantity"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Quantité"
+                required
+              />
+              <Input name="notes" className="md:col-span-2" placeholder="Notes" />
+              <Button variant="secondary">Créer le ticket</Button>
+            </form>
+          </div>
+
           <div className="mb-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
             Les stocks techniciens peuvent être créés avec le type « Stock technicien ». Les pièces
             sous le minimum apparaissent en rouge pour préparer un envoi vers le point relais le
@@ -402,11 +539,30 @@ function StorageLocationsPage() {
                         · {loc.latitude?.toFixed?.(4) ?? "—"}, {loc.longitude?.toFixed?.(4) ?? "—"}
                       </div>
                     </div>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(loc)}>
-                      Modifier
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(loc)}>
+                        Modifier
+                      </Button>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link to="/storage-locations/$locationId" params={{ locationId: loc.id }}>
+                          <ExternalLink className="mr-1 h-3 w-3" />
+                          Tickets
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                   <Badge variant={loc.is_active ? "secondary" : "outline"}>{loc.type}</Badge>
+                  <Badge className="ml-2" variant="outline">
+                    {
+                      stockTickets.filter(
+                        (ticket: any) =>
+                          [ticket.source_location_id, ticket.destination_location_id].includes(
+                            loc.id,
+                          ) && !["termine", "annule"].includes(ticket.status),
+                      ).length
+                    }{" "}
+                    ticket(s) en cours
+                  </Badge>
                   {loc.type === "point_relais" && (
                     <Badge className="ml-2" variant="outline">
                       Livraison pièces techniciens
