@@ -246,7 +246,6 @@ function OrdersPage() {
 
       {enrichedOrders.length === 0 ? (
         <EmptyState
-          icon={PackageCheck}
           title="Aucune commande à afficher"
           description="Les commandes de pièces créées depuis les tickets apparaîtront ici."
         />

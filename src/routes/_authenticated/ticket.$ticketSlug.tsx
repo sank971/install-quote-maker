@@ -449,7 +449,7 @@ function TicketDetail() {
         );
 
         if (quoteItems.length > 0) {
-          const { error: itemsError } = await supabase.from("quote_items").insert(quoteItems);
+          const { error: itemsError } = await (supabase.from("quote_items") as any).insert(quoteItems);
           if (itemsError) throw itemsError;
         }
       }

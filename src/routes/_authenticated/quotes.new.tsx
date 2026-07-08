@@ -827,14 +827,14 @@ function NewQuote() {
         if (qiError) throw qiError;
       }
       if (calculationLogs.length > 0) {
-        const { error: logError } = await supabase.from("quote_calculation_logs").insert(
+        const { error: logError } = await (supabase.from("quote_calculation_logs") as any).insert(
           calculationLogs.map((log) => ({
             owner_id,
             quote_id: quote.id,
             session_key: number,
             step: log.step,
             message: log.message,
-            details: log.details ?? {},
+            details: (log.details ?? {}) as any,
           })),
         );
         if (logError) throw logError;
@@ -855,7 +855,7 @@ function NewQuote() {
           relation_kind: i.relation_kind ?? null,
           supplier_id: i.supplier_id ?? null,
         }));
-        const { error: e2 } = await supabase.from("quote_items").insert(rows);
+        const { error: e2 } = await (supabase.from("quote_items") as any).insert(rows);
         if (e2) throw e2;
       }
       qc.invalidateQueries({ queryKey: ["parts"] });
@@ -1333,8 +1333,8 @@ function NewQuote() {
                     {hasBetterEquivalence && (
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-500/30 bg-green-100/70 p-2 text-xs text-green-800">
                         <span>
-                          Équivalence plus rentable suggérée : {equivalenceSuggestion.part.name} (+
-                          {equivalenceSuggestion.marginGain.toFixed(2)} € de marge)
+                          Équivalence plus rentable suggérée : {equivalenceSuggestion!.part.name} (+
+                          {equivalenceSuggestion!.marginGain.toFixed(2)} € de marge)
                         </span>
                         <Button
                           type="button"
