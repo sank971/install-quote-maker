@@ -19,6 +19,7 @@ import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { geocodeAddress } from "@/lib/stock-workflow";
 
 export const Route = createFileRoute("/_authenticated/sites")({
   component: SitesPage,
@@ -96,11 +97,17 @@ function SitesList() {
           clientCache.set(client.name.toLowerCase(), client);
         }
         if (!client) continue;
+        const address = pick(row, "adresse", "address") || null;
+        const latitude = pick(row, "latitude") ? Number(pick(row, "latitude")) : null;
+        const longitude = pick(row, "longitude") ? Number(pick(row, "longitude")) : null;
+        const geocoded = !latitude || !longitude ? await geocodeAddress({ address }) : null;
         const payload = {
           owner_id,
           client_id: client.id,
           name: siteName,
-          address: pick(row, "adresse", "address") || null,
+          address,
+          latitude: latitude ?? geocoded?.latitude ?? null,
+          longitude: longitude ?? geocoded?.longitude ?? null,
           email: pick(row, "email_site", "email") || null,
           contact_name: pick(row, "contact_site", "contact_name") || null,
           contact_phone: pick(row, "telephone_site", "contact_phone") || null,
@@ -132,13 +139,17 @@ function SitesList() {
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const address = fd.get("address")?.toString() || null;
+    const latitude = fd.get("latitude") ? Number(fd.get("latitude")) : null;
+    const longitude = fd.get("longitude") ? Number(fd.get("longitude")) : null;
+    const geocoded = !latitude || !longitude ? await geocodeAddress({ address }) : null;
     await upsert.mutateAsync({
       id: edit.id,
       client_id: edit.client_id,
       name: fd.get("name"),
-      address: fd.get("address") || null,
-      latitude: fd.get("latitude") ? Number(fd.get("latitude")) : null,
-      longitude: fd.get("longitude") ? Number(fd.get("longitude")) : null,
+      address,
+      latitude: latitude ?? geocoded?.latitude ?? null,
+      longitude: longitude ?? geocoded?.longitude ?? null,
       email: fd.get("email") || null,
       contact_name: fd.get("contact_name") || null,
       contact_phone: fd.get("contact_phone") || null,

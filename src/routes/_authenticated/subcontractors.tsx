@@ -30,6 +30,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
+import { geocodeAddress } from "@/lib/stock-workflow";
 
 export const Route = createFileRoute("/_authenticated/subcontractors")({
   component: SubcontractorsPage,
@@ -127,15 +128,19 @@ function SubcontractorsPage() {
       for (const row of rows) {
         const name = pick(row, "nom", "name");
         if (!name) continue;
+        const address = pick(row, "adresse", "address") || null;
+        const latitude = pick(row, "latitude") ? Number(pick(row, "latitude")) : null;
+        const longitude = pick(row, "longitude") ? Number(pick(row, "longitude")) : null;
+        const geocoded = !latitude || !longitude ? await geocodeAddress({ address }) : null;
         const payload = {
           owner_id,
           name,
           kind: pick(row, "type", "kind") || "sst",
           email: pick(row, "email") || null,
           phone: pick(row, "telephone", "phone") || null,
-          address: pick(row, "adresse", "address") || null,
-          latitude: pick(row, "latitude") ? Number(pick(row, "latitude")) : null,
-          longitude: pick(row, "longitude") ? Number(pick(row, "longitude")) : null,
+          address,
+          latitude: latitude ?? geocoded?.latitude ?? null,
+          longitude: longitude ?? geocoded?.longitude ?? null,
           hourly_rate: Number(pick(row, "taux_horaire", "hourly_rate") || 0),
           travel_rate: Number(pick(row, "deplacement", "travel_rate") || 0),
           half_day_rate: Number(pick(row, "demi_journee", "half_day_rate") || 0),
@@ -163,15 +168,19 @@ function SubcontractorsPage() {
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const address = fd.get("address")?.toString() || null;
+    const latitude = fd.get("latitude") ? Number(fd.get("latitude")) : null;
+    const longitude = fd.get("longitude") ? Number(fd.get("longitude")) : null;
+    const geocoded = !latitude || !longitude ? await geocodeAddress({ address }) : null;
     const saved = await upsert.mutateAsync({
       id: edit.id,
       name: fd.get("name"),
       kind: fd.get("kind") || "sst",
       email: fd.get("email") || null,
       phone: fd.get("phone") || null,
-      address: fd.get("address") || null,
-      latitude: fd.get("latitude") ? Number(fd.get("latitude")) : null,
-      longitude: fd.get("longitude") ? Number(fd.get("longitude")) : null,
+      address,
+      latitude: latitude ?? geocoded?.latitude ?? null,
+      longitude: longitude ?? geocoded?.longitude ?? null,
       payment_terms: fd.get("payment_terms") || null,
       account_holder: fd.get("account_holder") || null,
       iban: fd.get("iban") || null,
