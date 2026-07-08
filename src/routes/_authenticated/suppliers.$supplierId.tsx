@@ -23,10 +23,20 @@ export const Route = createFileRoute("/_authenticated/suppliers/$supplierId")({
 const money = (value: number) =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
 
-const percent = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+const percent = (value: number | null | undefined) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "—";
+  return `${numericValue > 0 ? "+" : ""}${numericValue.toFixed(1)}%`;
+};
 
 const totalOfferCost = (offer?: any | null) =>
   offer ? Number(offer.purchase_price || 0) + Number(offer.shipping_cost || 0) : 0;
+
+const cheapestOffer = (offers: any[]) =>
+  offers.reduce<any | null>(
+    (best, row) => (!best || totalOfferCost(row) < totalOfferCost(best) ? row : best),
+    null,
+  );
 
 function SupplierStatsPage() {
   const { supplierId } = Route.useParams();
@@ -51,10 +61,7 @@ function SupplierStatsPage() {
         const otherAverage =
           otherOffers.reduce((sum: number, row: any) => sum + totalOfferCost(row), 0) /
           (otherOffers.length || 1);
-        const cheapest = offersForPart.reduce(
-          (best: any, row: any) => (totalOfferCost(row) < totalOfferCost(best) ? row : best),
-          offersForPart[0],
-        );
+        const cheapest = cheapestOffer(offersForPart);
         const cheapestCost = totalOfferCost(cheapest);
         return {
           part: parts.find((part: any) => part.id === offer.part_id),
@@ -112,10 +119,7 @@ function SupplierStatsPage() {
     const partsSoldByOthers = [...allPartIdsSoldByOthers]
       .map((partId) => {
         const offersForPart = supplierParts.filter((row: any) => row.part_id === partId);
-        const cheapest = offersForPart.reduce(
-          (best: any, row: any) => (totalOfferCost(row) < totalOfferCost(best) ? row : best),
-          offersForPart[0],
-        );
+        const cheapest = cheapestOffer(offersForPart);
         const ownOffer = offerByPart.get(partId);
         const cheapestCost = totalOfferCost(cheapest);
         return {
