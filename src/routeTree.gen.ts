@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTicketsRouteImport } from './routes/_authenticated/tickets'
 import { Route as AuthenticatedSuppliersRouteImport } from './routes/_authenticated/suppliers'
+import { Route as AuthenticatedSubcontractorsRouteImport } from './routes/_authenticated/subcontractors'
 import { Route as AuthenticatedStorageLocationsRouteImport } from './routes/_authenticated/storage-locations'
 import { Route as AuthenticatedSitesRouteImport } from './routes/_authenticated/sites'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
@@ -57,6 +58,12 @@ const AuthenticatedSuppliersRoute = AuthenticatedSuppliersRouteImport.update({
   path: '/suppliers',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSubcontractorsRoute =
+  AuthenticatedSubcontractorsRouteImport.update({
+    id: '/subcontractors',
+    path: '/subcontractors',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedStorageLocationsRoute =
   AuthenticatedStorageLocationsRouteImport.update({
     id: '/storage-locations',
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/tickets': typeof AuthenticatedTicketsRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
@@ -195,6 +203,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sites': typeof AuthenticatedSitesRoute
   '/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/tickets': typeof AuthenticatedTicketsRoute
   '/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
@@ -221,6 +230,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sites': typeof AuthenticatedSitesRoute
   '/_authenticated/storage-locations': typeof AuthenticatedStorageLocationsRoute
+  '/_authenticated/subcontractors': typeof AuthenticatedSubcontractorsRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRouteWithChildren
   '/_authenticated/tickets': typeof AuthenticatedTicketsRoute
   '/_authenticated/clients/$clientId': typeof AuthenticatedClientsClientIdRoute
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/storage-locations'
+    | '/subcontractors'
     | '/suppliers'
     | '/tickets'
     | '/clients/$clientId'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/storage-locations'
+    | '/subcontractors'
     | '/suppliers'
     | '/tickets'
     | '/clients/$clientId'
@@ -296,6 +308,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/sites'
     | '/_authenticated/storage-locations'
+    | '/_authenticated/subcontractors'
     | '/_authenticated/suppliers'
     | '/_authenticated/tickets'
     | '/_authenticated/clients/$clientId'
@@ -349,6 +362,13 @@ declare module '@tanstack/react-router' {
       path: '/suppliers'
       fullPath: '/suppliers'
       preLoaderRoute: typeof AuthenticatedSuppliersRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/subcontractors': {
+      id: '/_authenticated/subcontractors'
+      path: '/subcontractors'
+      fullPath: '/subcontractors'
+      preLoaderRoute: typeof AuthenticatedSubcontractorsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/storage-locations': {
@@ -517,6 +537,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSitesRoute: typeof AuthenticatedSitesRoute
   AuthenticatedStorageLocationsRoute: typeof AuthenticatedStorageLocationsRoute
+  AuthenticatedSubcontractorsRoute: typeof AuthenticatedSubcontractorsRoute
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRouteWithChildren
   AuthenticatedTicketsRoute: typeof AuthenticatedTicketsRoute
   AuthenticatedInstallationInstallationSlugRoute: typeof AuthenticatedInstallationInstallationSlugRoute
@@ -538,6 +559,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSitesRoute: AuthenticatedSitesRoute,
   AuthenticatedStorageLocationsRoute: AuthenticatedStorageLocationsRoute,
+  AuthenticatedSubcontractorsRoute: AuthenticatedSubcontractorsRoute,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRouteWithChildren,
   AuthenticatedTicketsRoute: AuthenticatedTicketsRoute,
   AuthenticatedInstallationInstallationSlugRoute:

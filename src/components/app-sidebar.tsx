@@ -9,6 +9,7 @@ import {
   PackageCheck,
   Warehouse,
   Truck,
+  MapPinned,
   FileText,
   ClipboardList,
   ScrollText,
@@ -43,6 +44,7 @@ const nav = [
   { title: "Commandes", to: "/orders", icon: PackageCheck },
   { title: "Stocks", to: "/storage-locations", icon: Warehouse },
   { title: "Fournisseurs", to: "/suppliers", icon: Truck },
+  { title: "SST & carte", to: "/subcontractors", icon: MapPinned },
   { title: "Contrats", to: "/contracts", icon: ScrollText },
 ];
 
