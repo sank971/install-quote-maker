@@ -1,6 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState, type ReactNode } from "react";
-import { Plus, Pencil, Trash2, Building2, Users, Wrench, Ticket, Euro, Tag } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Building2,
+  Users,
+  Wrench,
+  Ticket,
+  Euro,
+  Tag,
+  Download,
+  Upload,
+} from "lucide-react";
 import { useList, useRemove, useUpsert } from "@/lib/db-hooks";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,6 +27,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/grand-accounts")({
   component: GrandAccountsPage,
@@ -76,6 +92,7 @@ function GrandAccountsPage() {
     ascending: true,
   });
   const upsert = useUpsert("grand_accounts", [["grand_accounts"]]);
+  const qc = useQueryClient();
   const bpuUpsert = useUpsert("grand_account_bpu_items", [["grand_account_bpu_items"]]);
   const bpuRemove = useRemove("grand_account_bpu_items", [["grand_account_bpu_items"]]);
   const remove = useRemove("grand_accounts", [
@@ -119,6 +136,61 @@ function GrandAccountsPage() {
     });
   }, [clients, installations, quoteItems, quotes, sites, tickets]);
 
+  const exportGrandAccounts = () =>
+    downloadCsv(
+      "grands_comptes.csv",
+      grandAccounts.map((account: any) => ({
+        nom: account.name,
+        contact: account.contact_name,
+        email: account.email,
+        telephone: account.phone,
+        coefficient_achat_hors_bpu: account.out_of_bpu_purchase_coef,
+        remise_hors_bpu_pct: account.out_of_bpu_discount_pct,
+        notes: account.notes,
+      })),
+      [
+        "nom",
+        "contact",
+        "email",
+        "telephone",
+        "coefficient_achat_hors_bpu",
+        "remise_hors_bpu_pct",
+        "notes",
+      ],
+    );
+
+  const importGrandAccounts = () =>
+    importCsvFile(async (rows) => {
+      const { data } = await supabase.auth.getUser();
+      const owner_id = data.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      for (const row of rows) {
+        const name = pick(row, "nom", "name");
+        if (!name) continue;
+        const payload = {
+          owner_id,
+          name,
+          contact_name: pick(row, "contact", "contact_name") || null,
+          email: pick(row, "email") || null,
+          phone: pick(row, "telephone", "phone") || null,
+          out_of_bpu_purchase_coef:
+            pick(row, "coefficient_achat_hors_bpu", "out_of_bpu_purchase_coef") || null,
+          out_of_bpu_discount_pct: Number(
+            pick(row, "remise_hors_bpu_pct", "out_of_bpu_discount_pct") || 0,
+          ),
+          notes: pick(row, "notes") || null,
+        };
+        const existing = grandAccounts.find(
+          (account: any) => account.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing)
+          await (supabase.from("grand_accounts") as any).update(payload).eq("id", existing.id);
+        else await (supabase.from("grand_accounts") as any).insert(payload);
+      }
+      qc.invalidateQueries({ queryKey: ["grand_accounts"] });
+      toast.success("Grands comptes importés");
+    });
+
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -141,15 +213,25 @@ function GrandAccountsPage() {
         title="Grands comptes"
         description="Regroupez plusieurs clients et suivez leurs statistiques consolidées."
         actions={
-          <Button
-            onClick={() => {
-              setEdit({});
-              setOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau grand compte
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportGrandAccounts}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importGrandAccounts}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button
+              onClick={() => {
+                setEdit({});
+                setOpen(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Nouveau grand compte
+            </Button>
+          </div>
         }
       />
 

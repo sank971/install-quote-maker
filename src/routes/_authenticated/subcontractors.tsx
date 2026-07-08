@@ -1,7 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { MapPinned, Plus, Pencil, Trash2, RotateCcw, Calculator } from "lucide-react";
+import {
+  MapPinned,
+  Plus,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Calculator,
+  Download,
+  Upload,
+} from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,6 +28,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useList, useRemove, useUpsert } from "@/lib/db-hooks";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 export const Route = createFileRoute("/_authenticated/subcontractors")({
   component: SubcontractorsPage,
@@ -45,6 +56,7 @@ const km = (a: Point, b: Point) => {
 };
 
 function SubcontractorsPage() {
+  const qc = useQueryClient();
   const { data: subcontractors = [] } = useList<any>("subcontractors", {
     orderBy: "name",
     ascending: true,
@@ -78,6 +90,79 @@ function SubcontractorsPage() {
     const billable = Math.max(0, distance - Number(sub.included_km || 0));
     return { distance, billable, extra: billable * Number(sub.extra_km_rate || 0) };
   }, [selectedSite, selectedSub, sites, subcontractors]);
+
+  const exportSubcontractors = () =>
+    downloadCsv(
+      "sous_traitants.csv",
+      subcontractors.map((s: any) => ({
+        nom: s.name,
+        type: s.kind,
+        email: s.email,
+        telephone: s.phone,
+        adresse: s.address,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        taux_horaire: s.hourly_rate,
+        deplacement: s.travel_rate,
+        demi_journee: s.half_day_rate,
+        journee: s.day_rate,
+        km_inclus: s.included_km,
+        tarif_km_sup: s.extra_km_rate,
+        notes: s.notes,
+      })),
+      [
+        "nom",
+        "type",
+        "email",
+        "telephone",
+        "adresse",
+        "latitude",
+        "longitude",
+        "taux_horaire",
+        "deplacement",
+        "demi_journee",
+        "journee",
+        "km_inclus",
+        "tarif_km_sup",
+        "notes",
+      ],
+    );
+
+  const importSubcontractors = () =>
+    importCsvFile(async (rows) => {
+      const { data } = await supabase.auth.getUser();
+      const owner_id = data.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+      for (const row of rows) {
+        const name = pick(row, "nom", "name");
+        if (!name) continue;
+        const payload = {
+          owner_id,
+          name,
+          kind: pick(row, "type", "kind") || "sst",
+          email: pick(row, "email") || null,
+          phone: pick(row, "telephone", "phone") || null,
+          address: pick(row, "adresse", "address") || null,
+          latitude: pick(row, "latitude") ? Number(pick(row, "latitude")) : null,
+          longitude: pick(row, "longitude") ? Number(pick(row, "longitude")) : null,
+          hourly_rate: Number(pick(row, "taux_horaire", "hourly_rate") || 0),
+          travel_rate: Number(pick(row, "deplacement", "travel_rate") || 0),
+          half_day_rate: Number(pick(row, "demi_journee", "half_day_rate") || 0),
+          day_rate: Number(pick(row, "journee", "day_rate") || 0),
+          included_km: Number(pick(row, "km_inclus", "included_km") || 0),
+          extra_km_rate: Number(pick(row, "tarif_km_sup", "extra_km_rate") || 0),
+          notes: pick(row, "notes") || null,
+        };
+        const existing = subcontractors.find(
+          (s: any) => s.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing)
+          await (supabase.from("subcontractors") as any).update(payload).eq("id", existing.id);
+        else await (supabase.from("subcontractors") as any).insert(payload);
+      }
+      qc.invalidateQueries({ queryKey: ["subcontractors"] });
+      toast.success("Sous-traitants importés");
+    });
 
   const openEditor = (s?: any) => {
     setEdit(s ?? {});
@@ -141,10 +226,20 @@ function SubcontractorsPage() {
         title="Sous-traitants & carte"
         description="Techniciens, SST, sites, zones d’intervention et frais kilométriques à vol d’oiseau."
         actions={
-          <Button onClick={() => openEditor()}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau SST / technicien
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportSubcontractors}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importSubcontractors}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button onClick={() => openEditor()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouveau SST / technicien
+            </Button>
+          </div>
         }
       />
       <Card className="p-4">
