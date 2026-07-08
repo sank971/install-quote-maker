@@ -190,25 +190,6 @@ function StorageLocationsPage() {
     if (error) throw error;
   };
 
-  const saveStock = async (event: any) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    try {
-      await upsertStock({
-        storage_location_id: fd.get("storage_location_id"),
-        part_id: fd.get("part_id"),
-        quantity_available: Number(fd.get("quantity_available") || 0),
-        quantity_reserved: Number(fd.get("quantity_reserved") || 0),
-        quantity_minimum: Number(fd.get("quantity_minimum") || 0),
-      });
-      event.currentTarget.reset();
-      invalidate();
-      toast.success("Pièce ajoutée au lieu de stockage");
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
-
   const createStockTicket = async (event: any) => {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
@@ -362,38 +343,11 @@ function StorageLocationsPage() {
           <CardTitle className="text-base">Stock par lieu et réassort technicien</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={saveStock} className="mb-4 grid gap-3 md:grid-cols-5">
-            <Select name="storage_location_id" required>
-              <SelectTrigger>
-                <SelectValue placeholder="Lieu" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="part_id" required>
-              <SelectTrigger>
-                <SelectValue placeholder="Pièce" />
-              </SelectTrigger>
-              <SelectContent>
-                {parts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input name="quantity_available" type="number" step="1" placeholder="Disponible" />
-            <Input name="quantity_reserved" type="number" step="1" placeholder="Réservé" />
-            <Input name="quantity_minimum" type="number" step="1" placeholder="Minimum" />
-            <Button variant="outline" className="md:col-span-5">
-              Mettre à jour le stock
-            </Button>
-          </form>
+          <div className="mb-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            L’ajout et le réassort des pièces passent désormais par les tickets stock. Créez un
+            ticket ci-dessous, puis complétez-le depuis la page tickets du lieu pour mouvementer le
+            stock.
+          </div>
 
           <div className="mb-4 rounded-md border bg-muted/30 p-4">
             <div className="mb-3">
@@ -544,7 +498,7 @@ function StorageLocationsPage() {
                         Modifier
                       </Button>
                       <Button size="sm" variant="outline" asChild>
-                        <Link to="/storage-locations/$locationId" params={{ locationId: loc.id }}>
+                        <Link to="/stock-tickets/$locationId" params={{ locationId: loc.id }}>
                           <ExternalLink className="mr-1 h-3 w-3" />
                           Tickets
                         </Link>
@@ -569,48 +523,6 @@ function StorageLocationsPage() {
                     </Badge>
                   )}
 
-                  <form
-                    onSubmit={saveStock}
-                    className="mt-3 grid gap-2 rounded-md bg-muted/30 p-2 md:grid-cols-[1fr_90px_90px_90px_auto]"
-                  >
-                    <input type="hidden" name="storage_location_id" value={loc.id} />
-                    <Select name="part_id" required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Ajouter une pièce" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {parts.map((part: any) => (
-                          <SelectItem key={part.id} value={part.id}>
-                            {[part.reference, part.name].filter(Boolean).join(" · ")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      name="quantity_available"
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="Dispo"
-                    />
-                    <Input
-                      name="quantity_reserved"
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="Réservé"
-                    />
-                    <Input
-                      name="quantity_minimum"
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="Min"
-                    />
-                    <Button size="sm" variant="outline">
-                      Ajouter
-                    </Button>
-                  </form>
                   <div className="mt-3 space-y-1 text-sm">
                     {locStocks.length === 0 ? (
                       <span className="text-muted-foreground">Aucun stock</span>
