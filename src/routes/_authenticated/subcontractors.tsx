@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapPinned,
   Plus,
@@ -36,15 +36,6 @@ export const Route = createFileRoute("/_authenticated/subcontractors")({
 });
 
 type Point = { lat: number; lng: number };
-const bounds = { minLat: 41, maxLat: 51.5, minLng: -5.5, maxLng: 9.8 };
-const toPct = (p: Point) => ({
-  x: ((p.lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * 100,
-  y: ((bounds.maxLat - p.lat) / (bounds.maxLat - bounds.minLat)) * 100,
-});
-const fromPct = (x: number, y: number) => ({
-  lng: bounds.minLng + (x / 100) * (bounds.maxLng - bounds.minLng),
-  lat: bounds.maxLat - (y / 100) * (bounds.maxLat - bounds.minLat),
-});
 const km = (a: Point, b: Point) => {
   const r = 6371,
     dLat = ((b.lat - a.lat) * Math.PI) / 180,
@@ -212,13 +203,9 @@ function SubcontractorsPage() {
     setOpen(false);
   };
 
-  const addZonePoint = (e: React.MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    setZone([
-      ...zone,
-      fromPct(((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100),
-    ]);
-  };
+  const addZonePoint = useCallback((point: Point) => {
+    setZone((current) => [...current, point]);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -481,7 +468,7 @@ function SubcontractorsPage() {
                   Réinitialiser
                 </Button>
               </div>
-              <EditableMap zone={zone} onClick={addZonePoint} />
+              <EditableMap zone={zone} onAddPoint={addZonePoint} />
             </div>
             <div>
               <Label>Notes</Label>
@@ -500,100 +487,186 @@ function SubcontractorsPage() {
   );
 }
 
+type LeafletNamespace = any;
+type LeafletMapInstance = any;
+type LeafletLayerGroup = any;
+
+declare global {
+  interface Window {
+    L?: LeafletNamespace;
+    __leafletLoader?: Promise<LeafletNamespace>;
+  }
+}
+
+const FRANCE_CENTER: [number, number] = [46.603354, 1.888334];
+const FRANCE_BOUNDS: [[number, number], [number, number]] = [
+  [41, -5.5],
+  [51.5, 9.8],
+];
+const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+
+function loadLeaflet() {
+  if (typeof window === "undefined")
+    return Promise.reject(new Error("Leaflet requiert le navigateur"));
+  if (window.L) return Promise.resolve(window.L);
+  if (window.__leafletLoader) return window.__leafletLoader;
+
+  if (!document.querySelector(`link[href="${LEAFLET_CSS_URL}"]`)) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = LEAFLET_CSS_URL;
+    document.head.appendChild(link);
+  }
+
+  window.__leafletLoader = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${LEAFLET_JS_URL}"]`);
+    const script = existing ?? document.createElement("script");
+    script.src = LEAFLET_JS_URL;
+    script.async = true;
+    script.onload = () =>
+      window.L ? resolve(window.L) : reject(new Error("Leaflet indisponible"));
+    script.onerror = () => reject(new Error("Impossible de charger Leaflet"));
+    if (!existing) document.body.appendChild(script);
+  });
+
+  return window.__leafletLoader;
+}
+
 function FranceMap({ sites, subcontractors }: { sites: any[]; subcontractors: any[] }) {
+  const zones = subcontractors
+    .filter((s: any) => Array.isArray(s.intervention_zone) && s.intervention_zone.length > 2)
+    .map((s: any) => ({ id: s.id, name: s.name, points: s.intervention_zone }));
+  const markers = [
+    ...sites.map((s: any) => ({
+      id: `site-${s.id}`,
+      point: { lat: Number(s.latitude), lng: Number(s.longitude) },
+      label: s.name,
+      kind: "site" as const,
+    })),
+    ...subcontractors
+      .filter((s: any) => s.latitude && s.longitude)
+      .map((s: any) => ({
+        id: `sub-${s.id}`,
+        point: { lat: Number(s.latitude), lng: Number(s.longitude) },
+        label: s.name,
+        kind: "subcontractor" as const,
+      })),
+  ];
+
   return (
     <Card className="overflow-hidden p-4">
       <div className="mb-3 flex items-center gap-2 font-medium">
         <MapPinned className="h-4 w-4" />
         Carte France — sites et SST / techniciens
       </div>
-      <div className="relative h-[520px] overflow-hidden rounded-lg border bg-[#dcead7] bg-[url('https://tile.openstreetmap.org/6/31/22.png')] bg-cover">
-        {subcontractors.map(
-          (s: any) =>
-            Array.isArray(s.intervention_zone) &&
-            s.intervention_zone.length > 2 && (
-              <Polygon
-                key={s.id}
-                points={s.intervention_zone}
-                className="fill-primary/10 stroke-primary"
-              />
-            ),
-        )}
-        {sites.map((s: any) => (
-          <Marker
-            key={s.id}
-            point={{ lat: Number(s.latitude), lng: Number(s.longitude) }}
-            label={s.name}
-            color="bg-blue-600"
-          />
-        ))}
-        {subcontractors
-          .filter((s: any) => s.latitude && s.longitude)
-          .map((s: any) => (
-            <Marker
-              key={s.id}
-              point={{ lat: Number(s.latitude), lng: Number(s.longitude) }}
-              label={s.name}
-              color="bg-amber-500"
-            />
-          ))}
-      </div>
+      <LeafletMap className="h-[520px]" markers={markers} zones={zones} />
       <div className="mt-2 text-xs text-muted-foreground">
-        Fond OpenStreetMap, projection simplifiée pour positionner rapidement les points en France.
-        Bleu = sites, orange = SST / techniciens.
+        Carte interactive LeafletJS avec fond OpenStreetMap. Bleu = sites, orange = SST /
+        techniciens, polygones = zones d’intervention.
       </div>
     </Card>
   );
 }
-function EditableMap({
-  zone,
-  onClick,
+function EditableMap({ zone, onAddPoint }: { zone: Point[]; onAddPoint: (point: Point) => void }) {
+  return (
+    <LeafletMap
+      className="h-80 cursor-crosshair"
+      editable
+      markers={zone.map((point, index) => ({
+        id: `zone-${index}`,
+        point,
+        label: `${index + 1}`,
+        kind: "zone" as const,
+      }))}
+      zones={zone.length > 1 ? [{ id: "current-zone", name: "Zone en cours", points: zone }] : []}
+      onAddPoint={onAddPoint}
+    />
+  );
+}
+
+function LeafletMap({
+  className,
+  editable = false,
+  markers,
+  zones,
+  onAddPoint,
 }: {
-  zone: Point[];
-  onClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  className: string;
+  editable?: boolean;
+  markers: { id: string; point: Point; label: string; kind: "site" | "subcontractor" | "zone" }[];
+  zones: { id: string; name: string; points: Point[] }[];
+  onAddPoint?: (point: Point) => void;
 }) {
-  return (
-    <div
-      onClick={onClick}
-      className="relative h-80 cursor-crosshair overflow-hidden rounded-lg border bg-[#dcead7] bg-[url('https://tile.openstreetmap.org/6/31/22.png')] bg-cover"
-    >
-      <Polygon points={zone} className="fill-primary/20 stroke-primary" />
-      {zone.map((p, i) => (
-        <Marker key={i} point={p} label={`${i + 1}`} color="bg-primary" />
-      ))}
-    </div>
-  );
-}
-function Marker({ point, label, color }: { point: Point; label: string; color: string }) {
-  const p = toPct(point);
-  return (
-    <div
-      title={label}
-      className="absolute -translate-x-1/2 -translate-y-1/2"
-      style={{ left: `${p.x}%`, top: `${p.y}%` }}
-    >
-      <div className={`h-3 w-3 rounded-full ${color} ring-2 ring-white`} />
-      <div className="mt-1 max-w-32 truncate rounded bg-background/90 px-1 text-[10px] shadow">
-        {label}
-      </div>
-    </div>
-  );
-}
-function Polygon({ points, className }: { points: Point[]; className: string }) {
-  if (points.length < 2) return null;
-  return (
-    <svg className="pointer-events-none absolute inset-0 h-full w-full">
-      <polygon
-        points={points
-          .map((p) => {
-            const q = toPct(p);
-            return `${q.x},${q.y}`;
-          })
-          .join(" ")}
-        className={className}
-        strokeWidth="0.5"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
+  const ref = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletMapInstance | null>(null);
+  const layerRef = useRef<LeafletLayerGroup | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    loadLeaflet().then((L) => {
+      if (!mounted || !ref.current || mapRef.current) return;
+      const map = L.map(ref.current, { scrollWheelZoom: false }).setView(
+        FRANCE_CENTER,
+        editable ? 5 : 6,
+      );
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+      map.fitBounds(FRANCE_BOUNDS);
+      layerRef.current = L.layerGroup().addTo(map);
+      mapRef.current = map;
+      if (editable && onAddPoint) {
+        map.on("click", (event: any) =>
+          onAddPoint({ lat: event.latlng.lat, lng: event.latlng.lng }),
+        );
+      }
+    });
+    return () => {
+      mounted = false;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      layerRef.current = null;
+    };
+  }, [editable, onAddPoint]);
+
+  useEffect(() => {
+    loadLeaflet().then((L) => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      layer.clearLayers();
+      zones.forEach((zone) => {
+        L.polygon(
+          zone.points.map((p) => [p.lat, p.lng]),
+          {
+            color: "hsl(var(--primary))",
+            fillColor: "hsl(var(--primary))",
+            fillOpacity: 0.16,
+            weight: 2,
+          },
+        )
+          .bindPopup(zone.name)
+          .addTo(layer);
+      });
+      markers.forEach((marker) => {
+        const color =
+          marker.kind === "site"
+            ? "#2563eb"
+            : marker.kind === "subcontractor"
+              ? "#f59e0b"
+              : "hsl(var(--primary))";
+        const icon = L.divIcon({
+          className: "",
+          html: `<span style="display:block;width:0.85rem;height:0.85rem;border-radius:9999px;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></span>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        });
+        L.marker([marker.point.lat, marker.point.lng], { icon })
+          .bindTooltip(marker.label)
+          .addTo(layer);
+      });
+    });
+  }, [markers, zones]);
+
+  return <div ref={ref} className={`overflow-hidden rounded-lg border ${className}`} />;
 }
