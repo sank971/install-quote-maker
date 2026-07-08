@@ -47,6 +47,8 @@ function StorageLocationsPage() {
     const fd = new FormData(event.currentTarget);
     try {
       const owner_id = await currentUserId();
+      const selectedSiteId = fd.get("site_id") === "__none" ? null : fd.get("site_id") || null;
+      const selectedSite = sites.find((site: any) => site.id === selectedSiteId);
       const payload: any = {
         owner_id,
         name: fd.get("name"),
@@ -55,14 +57,20 @@ function StorageLocationsPage() {
         postal_code: fd.get("postal_code"),
         city: fd.get("city"),
         country: fd.get("country") || "France",
-        site_id: fd.get("site_id") === "__none" ? null : fd.get("site_id") || null,
+        site_id: selectedSiteId,
         is_active: fd.get("is_active") === "on",
       };
-      const geo =
-        payload.type === "site"
-          ? { latitude: null, longitude: null }
-          : await geocodeStorageAddress(payload);
-      Object.assign(payload, geo);
+      if (payload.type === "site" && selectedSite) {
+        payload.name = payload.name || `Stock site · ${selectedSite.name}`;
+        payload.address = selectedSite.address || payload.address || "Adresse site à compléter";
+        payload.postal_code = selectedSite.postal_code ?? payload.postal_code ?? null;
+        payload.city = selectedSite.city ?? payload.city ?? null;
+        payload.country = selectedSite.country ?? payload.country ?? "France";
+        payload.latitude = selectedSite.latitude ?? null;
+        payload.longitude = selectedSite.longitude ?? null;
+      } else {
+        Object.assign(payload, await geocodeStorageAddress(payload));
+      }
       const query = editing?.id
         ? (supabase.from("storage_locations" as any) as any).update(payload).eq("id", editing.id)
         : (supabase.from("storage_locations" as any) as any).insert(payload);
@@ -148,7 +156,7 @@ function StorageLocationsPage() {
                 <SelectItem value="__none">Aucun site</SelectItem>
                 {sites.map((site: any) => (
                   <SelectItem key={site.id} value={site.id}>
-                    {site.name}
+                    {[site.site_number, site.name, site.address].filter(Boolean).join(" · ")}
                   </SelectItem>
                 ))}
               </SelectContent>
