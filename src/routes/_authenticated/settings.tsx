@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useList, useUpsert, useRemove } from "@/lib/db-hooks";
 import { PageHeader } from "@/components/page-header";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { downloadCsv } from "@/lib/csv";
-import { Download, Plus, Trash2, Pencil, X } from "lucide-react";
+import { Download, Plus, Trash2, Pencil, X, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -577,6 +577,23 @@ function SettingsPage() {
           </Button>
         }
       />
+
+      <Card className="mb-6 border-primary/20 bg-primary/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Settings2 className="h-4 w-4" /> Paramètres KPI / coûts Dashboard
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
+          <p>
+            Renseignez les coûts kilométriques, carburant, temps technicien, administratif, envois
+            et marge minimum utilisés pour calculer les KPI de rentabilité du tableau de bord.
+          </p>
+          <Button asChild>
+            <Link to="/cost-settings">Configurer les coûts</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="mb-6 border-primary/20 bg-primary/5">
         <CardHeader>

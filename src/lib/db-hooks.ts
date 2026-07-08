@@ -55,7 +55,9 @@ export type TableName =
   | "bom_template_items"
   | "part_compatibilities"
   | "quote_calculation_logs"
-  | "cost_settings";
+  | "cost_settings"
+  | "invoices"
+  | "invoice_items";
 
 export function useList<T = any>(
   table: TableName,
