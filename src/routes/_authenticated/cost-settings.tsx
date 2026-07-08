@@ -8,6 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DEFAULT_COST_SETTINGS } from "@/lib/analytics";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,14 +33,13 @@ function CostSettingsPage() {
     const row = (list.data ?? [])[0];
     if (row) {
       setForm({
-        cost_per_km: Number(row.cost_per_km),
-        fuel_price: Number(row.fuel_price),
-        vehicle_consumption: Number(row.vehicle_consumption),
-        vehicle_cost_per_km: Number(row.vehicle_cost_per_km),
-        technician_hourly_cost: Number(row.technician_hourly_cost),
-        admin_hourly_cost: Number(row.admin_hourly_cost),
-        average_shipping_cost: Number(row.average_shipping_cost),
-        minimum_margin_pct: Number(row.minimum_margin_pct),
+        ...DEFAULT_COST_SETTINGS,
+        ...Object.fromEntries(
+          Object.entries(DEFAULT_COST_SETTINGS).map(([key, fallback]) => [
+            key,
+            typeof fallback === "number" ? Number(row[key] ?? fallback) : (row[key] ?? fallback),
+          ]),
+        ),
         agency_address: row.agency_address ?? "",
       });
     }
@@ -75,7 +81,9 @@ function CostSettingsPage() {
         type={type}
         step={type === "number" ? "0.01" : undefined}
         value={form[key] as any}
-        onChange={(e) => setForm({ ...form, [key]: type === "number" ? Number(e.target.value) : e.target.value })}
+        onChange={(e) =>
+          setForm({ ...form, [key]: type === "number" ? Number(e.target.value) : e.target.value })
+        }
         className="mt-1"
       />
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
@@ -101,7 +109,46 @@ function CostSettingsPage() {
             {field("technician_hourly_cost", "Coût horaire technicien (€)")}
             {field("admin_hourly_cost", "Coût horaire administratif (€)")}
             {field("average_shipping_cost", "Coût moyen d'envoi de pièce (€)")}
-            {field("minimum_margin_pct", "Marge minimum souhaitée (%)", "Sous ce seuil, la ligne passe en orange")}
+            {field(
+              "minimum_margin_pct",
+              "Marge minimum souhaitée (%)",
+              "Sous ce seuil, la ligne passe en orange",
+            )}
+            {field("default_technicians_count", "Nb techniciens par défaut")}
+            {field("default_onsite_minutes", "Temps sur site par défaut (min)")}
+            {field("default_travel_minutes", "Trajet par défaut (min)")}
+            {field("default_admin_before_minutes", "Admin avant intervention (min)")}
+            {field("default_admin_after_minutes", "Admin après intervention (min)")}
+            {field("default_part_storage_cost", "Stockage pièce par défaut (€)")}
+            {field("default_part_preparation_cost", "Préparation pièce par défaut (€)")}
+            {field("default_part_packaging_cost", "Emballage pièce par défaut (€)")}
+          </div>
+          <div className="grid gap-4 rounded-md border bg-muted/20 p-4 sm:grid-cols-2">
+            <div>
+              <Label className="text-sm">Mode frais généraux</Label>
+              <Select
+                value={form.overhead_mode}
+                onValueChange={(value) => setForm({ ...form, overhead_mode: value as any })}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed_per_intervention">
+                    Montant fixe par intervention
+                  </SelectItem>
+                  <SelectItem value="fixed_per_hour">Montant fixe par heure</SelectItem>
+                  <SelectItem value="revenue_percentage">% du chiffre d'affaires</SelectItem>
+                  <SelectItem value="direct_cost_percentage">% du coût direct</SelectItem>
+                  <SelectItem value="agency_cost">Coût par agence</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {field("overhead_fixed_amount", "Frais généraux fixes (€)")}
+            {field("overhead_hourly_amount", "Frais généraux horaires (€)")}
+            {field("overhead_revenue_pct", "% CA frais généraux")}
+            {field("overhead_direct_cost_pct", "% coût direct frais généraux")}
+            {field("overhead_agency_amount", "Coût agence par intervention (€)")}
           </div>
           <div>
             <Label className="text-sm">Adresse agence (départ technicien)</Label>

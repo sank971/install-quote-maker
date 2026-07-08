@@ -30,6 +30,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { canCloseTicket, currentUserId, setTicketStatus } from "@/lib/ticket-workflow";
 import { refreshCommandTicketReadiness, suggestStorageLocation } from "@/lib/stock-workflow";
+import { DEFAULT_COST_SETTINGS, computeInterventionRealCost } from "@/lib/analytics";
 
 export const Route = createFileRoute("/_authenticated/ticket/$ticketSlug")({
   component: TicketDetail,
@@ -98,6 +99,15 @@ function TicketDetail() {
     orderBy: "name",
     ascending: true,
   });
+  const { data: costSettingsRows = [] } = useList<any>("cost_settings");
+  const { data: technicianProfiles = [] } = useList<any>("technician_cost_profiles");
+  const { data: vehicles = [] } = useList<any>("vehicles");
+  const { data: interventionTechnicianTimes = [] } = useList<any>("intervention_technician_times");
+  const { data: interventionPartsCosts = [] } = useList<any>("intervention_parts_costs");
+  const { data: interventionShipments = [] } = useList<any>("intervention_shipments");
+  const { data: interventionSubcontractors = [] } = useList<any>("intervention_subcontractors");
+  const { data: interventionEquipments = [] } = useList<any>("intervention_equipments");
+  const { data: adminSettings = [] } = useList<any>("intervention_type_admin_settings");
 
   const [expandedIntervention, setExpandedIntervention] = useState<string | null>(null);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
@@ -118,6 +128,11 @@ function TicketDetail() {
       "history_events",
       "quote_tickets",
       "ticket_group_tickets",
+      "intervention_technician_times",
+      "intervention_parts_costs",
+      "intervention_shipments",
+      "intervention_subcontractors",
+      "intervention_equipments",
       "installation_parts",
       "part_model_compat",
     ].forEach((t) => qc.invalidateQueries({ queryKey: [t] }));
@@ -235,6 +250,249 @@ function TicketDetail() {
         .filter(Boolean),
     );
     return availablePartTypes.map((type) => ({ type, status: hsTypes.has(type) ? "HS" : "OK" }));
+  };
+
+  const geocodeAddress = async (address: string) => {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`,
+    );
+    const [match] = await response.json();
+    if (!match) throw new Error(`Adresse introuvable : ${address}`);
+    return { lat: Number(match.lat), lon: Number(match.lon) };
+  };
+
+  const calculateOsmRoute = async (intervention: any) => {
+    try {
+      const settings = { ...DEFAULT_COST_SETTINGS, ...costSettingsRows[0] };
+      const site = sites.find((row: any) => row.id === ticket?.site_id);
+      const sourceAddress = intervention.route_source_address || settings.agency_address;
+      const clientAddress =
+        intervention.route_client_address ||
+        site?.address ||
+        [site?.street, site?.postal_code, site?.city].filter(Boolean).join(" ");
+      if (!sourceAddress || !clientAddress) {
+        toast.error("Adresse agence/source ou adresse client manquante");
+        return;
+      }
+      const [source, client] = await Promise.all([
+        geocodeAddress(sourceAddress),
+        geocodeAddress(clientAddress),
+      ]);
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${source.lon},${source.lat};${client.lon},${client.lat};${source.lon},${source.lat}?overview=false`,
+      );
+      const data = await response.json();
+      const route = data.routes?.[0];
+      if (!route) throw new Error("Aucun itinéraire OSRM trouvé");
+      const totalKm = Number(route.distance || 0) / 1000;
+      const totalMinutes = Number(route.duration || 0) / 60;
+      const { error } = await (supabase.from("interventions" as any) as any)
+        .update({
+          route_source_address: sourceAddress,
+          route_client_address: clientAddress,
+          outbound_distance_km: totalKm / 2,
+          return_distance_km: totalKm / 2,
+          outbound_travel_minutes: totalMinutes / 2,
+          return_travel_minutes: totalMinutes / 2,
+          distance_km: totalKm,
+          travel_minutes: totalMinutes,
+          calculation_status: "partial",
+        })
+        .eq("id", intervention.id);
+      if (error) throw error;
+      invalidate();
+      toast.success("Distance et temps de trajet calculés avec OpenStreetMap / OSRM");
+    } catch (error: any) {
+      toast.error(error.message ?? "Calcul d’itinéraire impossible");
+    }
+  };
+
+  const saveInterventionCostBasics = async (e: any, intervention: any) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const payload = {
+      billed_revenue: Number(fd.get("billed_revenue") || 0),
+      technician_count: Number(fd.get("technician_count") || 1),
+      onsite_minutes: Number(fd.get("onsite_minutes") || 0),
+      travel_minutes: Number(fd.get("travel_minutes") || 0),
+      distance_km: Number(fd.get("distance_km") || 0),
+      manual_labor_cost: fd.get("manual_labor_cost") ? Number(fd.get("manual_labor_cost")) : null,
+      manual_vehicle_cost: fd.get("manual_vehicle_cost")
+        ? Number(fd.get("manual_vehicle_cost"))
+        : null,
+      manual_overhead_cost: fd.get("manual_overhead_cost")
+        ? Number(fd.get("manual_overhead_cost"))
+        : null,
+      calculation_status: fd.get("calculation_status") || "estimated",
+    };
+    const { error } = await (supabase.from("interventions" as any) as any)
+      .update(payload)
+      .eq("id", intervention.id);
+    if (error) return toast.error(error.message);
+    invalidate();
+    toast.success("Coûts d'intervention enregistrés");
+  };
+
+  const fmtEur = (value: number) =>
+    new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
+
+  const renderRealCostCard = (intervention: any) => {
+    const settings = { ...DEFAULT_COST_SETTINGS, ...costSettingsRows[0] };
+    const quoteRevenue = ticketQuotes.reduce(
+      (sum: number, quote: any) => sum + Number(quote.total_ttc ?? quote.total_ht ?? 0),
+      0,
+    );
+    const cost = computeInterventionRealCost(intervention, settings, {
+      technicianTimes: interventionTechnicianTimes.filter(
+        (row: any) => row.intervention_id === intervention.id,
+      ),
+      technicianProfiles,
+      vehicle: vehicles.find((vehicle: any) => vehicle.id === intervention.vehicle_id),
+      parts: interventionPartsCosts.filter((row: any) => row.intervention_id === intervention.id),
+      shipments: interventionShipments.filter(
+        (row: any) => row.intervention_id === intervention.id,
+      ),
+      subcontractors: interventionSubcontractors.filter(
+        (row: any) => row.intervention_id === intervention.id,
+      ),
+      equipments: interventionEquipments.filter(
+        (row: any) => row.intervention_id === intervention.id,
+      ),
+      adminSetting: adminSettings.find((row: any) => row.intervention_type === intervention.type),
+      revenue: Number(intervention.billed_revenue || quoteRevenue),
+    });
+    return (
+      <Card className="border-blue-200 bg-blue-50/40">
+        <CardHeader>
+          <CardTitle className="text-base">Coût réel & marge</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <b>CA facturé</b>
+              <br />
+              {fmtEur(cost.revenue)}
+            </div>
+            <div>
+              <b>Coût réel</b>
+              <br />
+              {fmtEur(cost.total)}
+            </div>
+            <div>
+              <b>Marge nette</b>
+              <br />
+              <span className={cost.netMargin >= 0 ? "text-green-700" : "text-red-700"}>
+                {fmtEur(cost.netMargin)}
+              </span>
+            </div>
+            <div>Main-d'œuvre : {fmtEur(cost.labor)}</div>
+            <div>Véhicule : {fmtEur(cost.vehicle)}</div>
+            <div>Temps trajet : {fmtEur(cost.travelLabor)}</div>
+            <div>Pièces : {fmtEur(cost.parts)}</div>
+            <div>Expédition : {fmtEur(cost.shipping)}</div>
+            <div>Sous-traitance : {fmtEur(cost.subcontractor)}</div>
+            <div>Administratif : {fmtEur(cost.admin)}</div>
+            <div>Équipements : {fmtEur(cost.equipment)}</div>
+            <div>Frais généraux : {fmtEur(cost.overhead)}</div>
+            <div>Taux de marge : {cost.marginPct.toFixed(1)}%</div>
+            <div>Rentabilité : {cost.profitabilityPct.toFixed(1)}%</div>
+            <div>{cost.profitable ? "Intervention rentable" : "Intervention non rentable"}</div>
+          </div>
+          <Badge variant={cost.status === "complete" ? "default" : "secondary"}>
+            Calcul {cost.status}
+          </Badge>
+          {cost.warnings.length > 0 && (
+            <p className="text-xs text-orange-700">⚠️ {cost.warnings.join(" · ")}</p>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => calculateOsmRoute(intervention)}
+          >
+            Calculer distance / trajet via OSM
+          </Button>
+          <form
+            onSubmit={(e) => saveInterventionCostBasics(e, intervention)}
+            className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-4"
+          >
+            <Input
+              name="billed_revenue"
+              type="number"
+              step="0.01"
+              defaultValue={intervention.billed_revenue ?? quoteRevenue}
+              placeholder="CA facturé"
+            />
+            <Input
+              name="technician_count"
+              type="number"
+              step="1"
+              defaultValue={intervention.technician_count ?? 1}
+              placeholder="Techniciens"
+            />
+            <Input
+              name="onsite_minutes"
+              type="number"
+              step="1"
+              defaultValue={intervention.onsite_minutes ?? ""}
+              placeholder="Temps site min"
+            />
+            <Input
+              name="travel_minutes"
+              type="number"
+              step="1"
+              defaultValue={intervention.travel_minutes ?? ""}
+              placeholder="Trajet min"
+            />
+            <Input
+              name="distance_km"
+              type="number"
+              step="0.1"
+              defaultValue={intervention.distance_km ?? ""}
+              placeholder="Distance km"
+            />
+            <Input
+              name="manual_labor_cost"
+              type="number"
+              step="0.01"
+              defaultValue={intervention.manual_labor_cost ?? ""}
+              placeholder="MO manuelle"
+            />
+            <Input
+              name="manual_vehicle_cost"
+              type="number"
+              step="0.01"
+              defaultValue={intervention.manual_vehicle_cost ?? ""}
+              placeholder="Véhicule manuel"
+            />
+            <Input
+              name="manual_overhead_cost"
+              type="number"
+              step="0.01"
+              defaultValue={intervention.manual_overhead_cost ?? ""}
+              placeholder="FG manuels"
+            />
+            <Select
+              name="calculation_status"
+              defaultValue={intervention.calculation_status ?? "estimated"}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="complete">Complet</SelectItem>
+                <SelectItem value="partial">Partiel</SelectItem>
+                <SelectItem value="estimated">Estimé</SelectItem>
+                <SelectItem value="manual">Manuel</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" size="sm">
+              Enregistrer coûts
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
   };
 
   const assign = async (intervention: any) => {
@@ -1021,7 +1279,10 @@ function TicketDetail() {
                       )}
                     </div>
 
+                    {renderRealCostCard(intervention)}
+
                     {/* Status buttons */}
+                    {renderRealCostCard(intervention)}
                     <div className="flex flex-wrap gap-2">
                       {["planifiee", "en_cours", "rapport_a_rediger", "terminee", "echec"].map(
                         (s) => (

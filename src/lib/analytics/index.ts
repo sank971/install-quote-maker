@@ -11,6 +11,25 @@ export type CostSettings = {
   average_shipping_cost: number;
   minimum_margin_pct: number;
   agency_address?: string | null;
+  default_technicians_count: number;
+  default_onsite_minutes: number;
+  default_travel_minutes: number;
+  default_admin_before_minutes: number;
+  default_admin_after_minutes: number;
+  overhead_mode:
+    | "fixed_per_intervention"
+    | "fixed_per_hour"
+    | "revenue_percentage"
+    | "direct_cost_percentage"
+    | "agency_cost";
+  overhead_fixed_amount: number;
+  overhead_hourly_amount: number;
+  overhead_revenue_pct: number;
+  overhead_direct_cost_pct: number;
+  overhead_agency_amount: number;
+  default_part_storage_cost: number;
+  default_part_preparation_cost: number;
+  default_part_packaging_cost: number;
 };
 
 export const DEFAULT_COST_SETTINGS: CostSettings = {
@@ -23,6 +42,20 @@ export const DEFAULT_COST_SETTINGS: CostSettings = {
   average_shipping_cost: 15,
   minimum_margin_pct: 25,
   agency_address: null,
+  default_technicians_count: 1,
+  default_onsite_minutes: 60,
+  default_travel_minutes: 30,
+  default_admin_before_minutes: 15,
+  default_admin_after_minutes: 15,
+  overhead_mode: "fixed_per_intervention",
+  overhead_fixed_amount: 0,
+  overhead_hourly_amount: 0,
+  overhead_revenue_pct: 0,
+  overhead_direct_cost_pct: 0,
+  overhead_agency_amount: 0,
+  default_part_storage_cost: 0,
+  default_part_preparation_cost: 0,
+  default_part_packaging_cost: 0,
 };
 
 export type Period = "day" | "week" | "month" | "quarter" | "year" | "all" | "custom";
@@ -78,7 +111,10 @@ export function periodRange(f: Filters): { from: Date | null; to: Date | null } 
   return { from, to };
 }
 
-export function inPeriod(dateStr: string | null | undefined, range: { from: Date | null; to: Date | null }) {
+export function inPeriod(
+  dateStr: string | null | undefined,
+  range: { from: Date | null; to: Date | null },
+) {
   if (!range.from && !range.to) return true;
   if (!dateStr) return true;
   const d = new Date(dateStr);
@@ -95,9 +131,10 @@ export function computeInterventionCost(intervention: any, settings: CostSetting
   const onsiteMin = n(intervention.onsite_minutes);
   const adminMin = n(intervention.admin_minutes);
   const km = distance * settings.vehicle_cost_per_km;
-  const fuel = intervention.fuel_cost != null
-    ? n(intervention.fuel_cost)
-    : (distance * settings.vehicle_consumption * settings.fuel_price) / 100;
+  const fuel =
+    intervention.fuel_cost != null
+      ? n(intervention.fuel_cost)
+      : (distance * settings.vehicle_consumption * settings.fuel_price) / 100;
   const tolls = n(intervention.toll_parking_cost);
   const travelLabor = (travelMin / 60) * settings.technician_hourly_cost;
   const onsiteLabor = (onsiteMin / 60) * settings.technician_hourly_cost;
@@ -117,8 +154,7 @@ export function computeInterventionCost(intervention: any, settings: CostSetting
 export function computeQuoteRevenue(quote: any, items: any[]) {
   const partsRevenue = items.reduce((s, it) => s + n(it.unit_price) * n(it.quantity), 0);
   const partsCost = items.reduce((s, it) => s + n(it.unit_cost) * n(it.quantity), 0);
-  const laborRevenue =
-    n(quote.labor_hours) * (n(quote.travel_count) || 1) * n(quote.labor_rate);
+  const laborRevenue = n(quote.labor_hours) * (n(quote.travel_count) || 1) * n(quote.labor_rate);
   const travelRevenue = n(quote.travel_fee);
   return {
     partsRevenue,
@@ -151,6 +187,172 @@ export function computePartOrderCost(order: any, items: any[], settings: CostSet
   };
 }
 
+export function effectiveTechnicianHourlyCost(profile: any, settings: CostSettings) {
+  if (!profile) return settings.technician_hourly_cost;
+  return (
+    n(profile.manual_hourly_cost) ||
+    n(profile.real_hourly_cost) ||
+    n(profile.calculated_hourly_cost) ||
+    settings.technician_hourly_cost
+  );
+}
+
+export function effectiveVehicleCostPerKm(vehicle: any, settings: CostSettings) {
+  if (!vehicle) return settings.vehicle_cost_per_km || settings.cost_per_km;
+  return (
+    n(vehicle.manual_cost_per_km) ||
+    n(vehicle.calculated_cost_per_km) ||
+    settings.vehicle_cost_per_km ||
+    settings.cost_per_km
+  );
+}
+
+export function computeInterventionRealCost(
+  intervention: any,
+  settings: CostSettings,
+  details: {
+    technicianTimes?: any[];
+    technicianProfiles?: any[];
+    vehicle?: any;
+    parts?: any[];
+    shipments?: any[];
+    subcontractors?: any[];
+    equipments?: any[];
+    adminSetting?: any;
+    revenue?: number;
+  } = {},
+) {
+  const warnings: string[] = [];
+  const technicianTimes = details.technicianTimes ?? [];
+  const technicianProfiles = details.technicianProfiles ?? [];
+  const technicianCount = Math.max(
+    1,
+    n(intervention.technician_count) || n(settings.default_technicians_count) || 1,
+  );
+  const fallbackTravelMinutes =
+    n(intervention.travel_minutes) || n(settings.default_travel_minutes);
+  const travelMinutes =
+    n(intervention.outbound_travel_minutes) + n(intervention.return_travel_minutes) ||
+    fallbackTravelMinutes;
+  const onsiteMinutes = n(intervention.onsite_minutes) || n(settings.default_onsite_minutes);
+
+  let labor = 0;
+  let travelLabor = 0;
+  if (technicianTimes.length > 0) {
+    for (const time of technicianTimes) {
+      const profile = technicianProfiles.find(
+        (p) => p.technician_id && p.technician_id === time.technician_id,
+      );
+      const hourly = n(time.hourly_cost) || effectiveTechnicianHourlyCost(profile, settings);
+      labor += (n(time.onsite_minutes) / 60) * hourly;
+      travelLabor += (n(time.travel_minutes) / 60) * hourly;
+    }
+  } else {
+    warnings.push("Détail temps technicien absent : moyenne utilisée");
+    labor = technicianCount * (onsiteMinutes / 60) * settings.technician_hourly_cost;
+    travelLabor = technicianCount * (travelMinutes / 60) * settings.technician_hourly_cost;
+  }
+
+  const distance =
+    n(intervention.distance_km) ||
+    n(intervention.outbound_distance_km) + n(intervention.return_distance_km);
+  if (!distance) warnings.push("Distance absente : coût véhicule à 0 sauf coût manuel");
+  const vehicle = distance * effectiveVehicleCostPerKm(details.vehicle, settings);
+
+  const parts = (details.parts ?? []).reduce((sum, p) => {
+    const unit = p.from_internal_stock
+      ? n(p.weighted_average_cost) || n(p.purchase_price)
+      : n(p.purchase_price);
+    return (
+      sum + n(p.quantity) * unit + n(p.storage_cost) + n(p.preparation_cost) + n(p.packaging_cost)
+    );
+  }, 0);
+  const shipping = (details.shipments ?? []).reduce(
+    (sum, s) =>
+      sum +
+      n(s.shipping_cost) +
+      n(s.packaging_cost) +
+      n(s.preparation_cost) +
+      n(s.transport_insurance) +
+      n(s.return_fees),
+    0,
+  );
+  const subcontractor = (details.subcontractors ?? []).reduce(
+    (sum, s) => sum + n(s.billed_amount) + n(s.travel_fees) + n(s.material_fees) + n(s.extra_fees),
+    0,
+  );
+  const equipment = (details.equipments ?? []).reduce(
+    (sum, e) =>
+      sum +
+      n(e.fixed_usage_cost) +
+      n(e.hourly_cost) * n(e.usage_hours) +
+      n(e.daily_cost) * Math.max(1, n(e.usage_days)) +
+      n(e.delivery_cost) +
+      n(e.external_rental_cost) +
+      n(e.estimated_maintenance_cost),
+    0,
+  );
+
+  const adminSetting = details.adminSetting;
+  const adminMinutes =
+    n(intervention.admin_minutes) ||
+    (adminSetting
+      ? n(adminSetting.admin_before_minutes) +
+        n(adminSetting.admin_after_minutes) +
+        n(adminSetting.planning_minutes) +
+        n(adminSetting.quote_minutes) +
+        n(adminSetting.part_order_minutes) +
+        n(adminSetting.invoicing_minutes) +
+        n(adminSetting.closing_minutes)
+      : n(settings.default_admin_before_minutes) + n(settings.default_admin_after_minutes));
+  const admin =
+    (adminMinutes / 60) * (n(adminSetting?.admin_hourly_cost) || settings.admin_hourly_cost);
+  const revenue = n(details.revenue ?? intervention.billed_revenue);
+  const directCost =
+    (intervention.manual_labor_cost ?? labor) +
+    (intervention.manual_vehicle_cost ?? vehicle) +
+    (intervention.manual_travel_labor_cost ?? travelLabor) +
+    (intervention.manual_parts_cost ?? parts) +
+    (intervention.manual_shipping_cost ?? shipping) +
+    (intervention.manual_subcontractor_cost ?? subcontractor) +
+    (intervention.manual_admin_cost ?? admin) +
+    (intervention.manual_equipment_cost ?? equipment);
+  const totalHours = ((onsiteMinutes + travelMinutes) / 60) * technicianCount;
+  const overheadAuto =
+    settings.overhead_mode === "fixed_per_hour"
+      ? totalHours * settings.overhead_hourly_amount
+      : settings.overhead_mode === "revenue_percentage"
+        ? (revenue * settings.overhead_revenue_pct) / 100
+        : settings.overhead_mode === "direct_cost_percentage"
+          ? (directCost * settings.overhead_direct_cost_pct) / 100
+          : settings.overhead_mode === "agency_cost"
+            ? settings.overhead_agency_amount
+            : settings.overhead_fixed_amount;
+  const overhead = intervention.manual_overhead_cost ?? overheadAuto;
+  const total = directCost + overhead;
+  const netMargin = revenue - total;
+  return {
+    labor: intervention.manual_labor_cost ?? labor,
+    vehicle: intervention.manual_vehicle_cost ?? vehicle,
+    travelLabor: intervention.manual_travel_labor_cost ?? travelLabor,
+    parts: intervention.manual_parts_cost ?? parts,
+    shipping: intervention.manual_shipping_cost ?? shipping,
+    subcontractor: intervention.manual_subcontractor_cost ?? subcontractor,
+    admin: intervention.manual_admin_cost ?? admin,
+    equipment: intervention.manual_equipment_cost ?? equipment,
+    overhead,
+    total,
+    revenue,
+    netMargin,
+    grossMargin: revenue - directCost,
+    marginPct: revenue > 0 ? (netMargin / revenue) * 100 : 0,
+    profitabilityPct: total > 0 ? (netMargin / total) * 100 : 0,
+    status: intervention.calculation_status ?? (warnings.length ? "estimated" : "complete"),
+    warnings: [...warnings, ...(intervention.calculation_warnings ?? [])],
+    profitable: netMargin >= 0,
+  };
+}
+
 // ----- Aggregations -----
 
 export type ProfitRow = {
@@ -168,7 +370,11 @@ export type ProfitRow = {
   status: "green" | "amber" | "red";
 };
 
-function statusFor(marginPct: number, revenue: number, minMargin: number): "green" | "amber" | "red" {
+function statusFor(
+  marginPct: number,
+  revenue: number,
+  minMargin: number,
+): "green" | "amber" | "red" {
   if (revenue <= 0) return "amber";
   if (marginPct < 0) return "red";
   if (marginPct < minMargin) return "amber";
@@ -348,7 +554,20 @@ export function aggregateBySite(data: Datasets, settings: CostSettings): ProfitR
   const ensure = (id: string, label: string, sub?: string) => {
     let r = rows.get(id);
     if (!r) {
-      r = { key: id, label, sublabel: sub, revenue: 0, cost: 0, grossMargin: 0, netMargin: 0, marginPct: 0, interventionCount: 0, quoteCount: 0, acceptedQuotes: 0, status: "green" };
+      r = {
+        key: id,
+        label,
+        sublabel: sub,
+        revenue: 0,
+        cost: 0,
+        grossMargin: 0,
+        netMargin: 0,
+        marginPct: 0,
+        interventionCount: 0,
+        quoteCount: 0,
+        acceptedQuotes: 0,
+        status: "green",
+      };
       rows.set(id, r);
     }
     return r;
@@ -385,11 +604,21 @@ export function aggregateBySite(data: Datasets, settings: CostSettings): ProfitR
 }
 
 export function topParts(data: Datasets) {
-  const map = new Map<string, { label: string; ref?: string; qty: number; orders: number; revenue: number; cost: number }>();
+  const map = new Map<
+    string,
+    { label: string; ref?: string; qty: number; orders: number; revenue: number; cost: number }
+  >();
   data.partOrderItems.forEach((it) => {
     const key = it.part_id ?? it.designation ?? "unknown";
     const part = data.parts.find((p) => p.id === it.part_id);
-    const row = map.get(key) ?? { label: part?.name ?? it.designation ?? "Pièce", ref: part?.reference, qty: 0, orders: 0, revenue: 0, cost: 0 };
+    const row = map.get(key) ?? {
+      label: part?.name ?? it.designation ?? "Pièce",
+      ref: part?.reference,
+      qty: 0,
+      orders: 0,
+      revenue: 0,
+      cost: 0,
+    };
     row.qty += n(it.quantity);
     row.orders += 1;
     row.cost += n(it.unit_purchase_cost_actual ?? it.unit_cost) * n(it.quantity);
@@ -398,21 +627,40 @@ export function topParts(data: Datasets) {
   data.quoteItems.forEach((it) => {
     if (!it.part_id) return;
     const part = data.parts.find((p) => p.id === it.part_id);
-    const row = map.get(it.part_id) ?? { label: part?.name ?? "Pièce", ref: part?.reference, qty: 0, orders: 0, revenue: 0, cost: 0 };
+    const row = map.get(it.part_id) ?? {
+      label: part?.name ?? "Pièce",
+      ref: part?.reference,
+      qty: 0,
+      orders: 0,
+      revenue: 0,
+      cost: 0,
+    };
     row.revenue += n(it.unit_price) * n(it.quantity);
     map.set(it.part_id, row);
   });
   return [...map.values()]
-    .map((r) => ({ ...r, margin: r.revenue - r.cost, marginPct: r.revenue > 0 ? ((r.revenue - r.cost) / r.revenue) * 100 : 0 }))
+    .map((r) => ({
+      ...r,
+      margin: r.revenue - r.cost,
+      marginPct: r.revenue > 0 ? ((r.revenue - r.cost) / r.revenue) * 100 : 0,
+    }))
     .sort((a, b) => b.qty - a.qty);
 }
 
 export function topSuppliers(data: Datasets) {
-  const map = new Map<string, { label: string; orders: number; volume: number; distinctParts: Set<string> }>();
+  const map = new Map<
+    string,
+    { label: string; orders: number; volume: number; distinctParts: Set<string> }
+  >();
   data.partOrders.forEach((po) => {
     if (!po.supplier_id) return;
     const supplier = data.suppliers.find((s) => s.id === po.supplier_id);
-    const row = map.get(po.supplier_id) ?? { label: supplier?.name ?? "Fournisseur", orders: 0, volume: 0, distinctParts: new Set<string>() };
+    const row = map.get(po.supplier_id) ?? {
+      label: supplier?.name ?? "Fournisseur",
+      orders: 0,
+      volume: 0,
+      distinctParts: new Set<string>(),
+    };
     row.orders++;
     const items = data.partOrderItems.filter((it) => it.part_order_id === po.id);
     items.forEach((it) => {
@@ -422,7 +670,13 @@ export function topSuppliers(data: Datasets) {
     map.set(po.supplier_id, row);
   });
   return [...map.entries()]
-    .map(([id, r]) => ({ key: id, label: r.label, orders: r.orders, volume: r.volume, distinctPartCount: r.distinctParts.size }))
+    .map(([id, r]) => ({
+      key: id,
+      label: r.label,
+      orders: r.orders,
+      volume: r.volume,
+      distinctPartCount: r.distinctParts.size,
+    }))
     .sort((a, b) => b.volume - a.volume);
 }
 
@@ -444,10 +698,19 @@ export function fleetBreakdown(data: Datasets) {
 }
 
 export function computeTechnicians(data: Datasets, settings: CostSettings) {
-  const map = new Map<string, { id: string; interventions: number; km: number; travelCost: number; totalCost: number }>();
+  const map = new Map<
+    string,
+    { id: string; interventions: number; km: number; travelCost: number; totalCost: number }
+  >();
   data.interventions.forEach((i) => {
     if (!i.technician_id) return;
-    const row = map.get(i.technician_id) ?? { id: i.technician_id, interventions: 0, km: 0, travelCost: 0, totalCost: 0 };
+    const row = map.get(i.technician_id) ?? {
+      id: i.technician_id,
+      interventions: 0,
+      km: 0,
+      travelCost: 0,
+      totalCost: 0,
+    };
     row.interventions++;
     row.km += n(i.distance_km);
     const c = computeInterventionCost(i, settings);
@@ -508,29 +771,65 @@ export function computeGlobalKpis(data: Datasets, settings: CostSettings) {
     travelCost: interventionCostBreakdown.travel,
     laborCost: interventionCostBreakdown.labor,
     shippingCost,
-    activeContracts: data.contracts.filter((c) => c.status === "actif" || c.status === "active" || !c.status).length,
+    activeContracts: data.contracts.filter(
+      (c) => c.status === "actif" || c.status === "active" || !c.status,
+    ).length,
   };
 }
 
-export function buildAlerts(clientRows: ProfitRow[], contractRows: ProfitRow[], siteRows: ProfitRow[], parts: ReturnType<typeof topParts>, suppliers: ReturnType<typeof topSuppliers>, settings: CostSettings) {
+export function buildAlerts(
+  clientRows: ProfitRow[],
+  contractRows: ProfitRow[],
+  siteRows: ProfitRow[],
+  parts: ReturnType<typeof topParts>,
+  suppliers: ReturnType<typeof topSuppliers>,
+  settings: CostSettings,
+) {
   const alerts: { level: "red" | "amber"; message: string }[] = [];
-  contractRows.filter((c) => c.status === "red").forEach((c) =>
-    alerts.push({ level: "red", message: `Contrat déficitaire : ${c.label} (${c.netMargin.toFixed(0)} €)` }),
-  );
-  clientRows.slice(0, 30).filter((c) => c.status === "red").forEach((c) =>
-    alerts.push({ level: "red", message: `Client non rentable : ${c.label} (marge ${c.marginPct.toFixed(1)}%)` }),
-  );
-  siteRows.filter((s) => s.interventionCount >= 10).forEach((s) =>
-    alerts.push({ level: "amber", message: `Site avec beaucoup d'interventions : ${s.label} (${s.interventionCount})` }),
-  );
+  contractRows
+    .filter((c) => c.status === "red")
+    .forEach((c) =>
+      alerts.push({
+        level: "red",
+        message: `Contrat déficitaire : ${c.label} (${c.netMargin.toFixed(0)} €)`,
+      }),
+    );
+  clientRows
+    .slice(0, 30)
+    .filter((c) => c.status === "red")
+    .forEach((c) =>
+      alerts.push({
+        level: "red",
+        message: `Client non rentable : ${c.label} (marge ${c.marginPct.toFixed(1)}%)`,
+      }),
+    );
+  siteRows
+    .filter((s) => s.interventionCount >= 10)
+    .forEach((s) =>
+      alerts.push({
+        level: "amber",
+        message: `Site avec beaucoup d'interventions : ${s.label} (${s.interventionCount})`,
+      }),
+    );
   parts.slice(0, 5).forEach((p) => {
-    if (p.orders >= 5) alerts.push({ level: "amber", message: `Pièce très commandée : ${p.label} (${p.orders} commandes) — prévoir du stock.` });
+    if (p.orders >= 5)
+      alerts.push({
+        level: "amber",
+        message: `Pièce très commandée : ${p.label} (${p.orders} commandes) — prévoir du stock.`,
+      });
     if (p.revenue > 0 && p.marginPct < settings.minimum_margin_pct) {
-      alerts.push({ level: "amber", message: `Marge faible sur ${p.label} (${p.marginPct.toFixed(1)}%)` });
+      alerts.push({
+        level: "amber",
+        message: `Marge faible sur ${p.label} (${p.marginPct.toFixed(1)}%)`,
+      });
     }
   });
   suppliers.slice(0, 3).forEach((s) => {
-    if (s.orders >= 10) alerts.push({ level: "amber", message: `Fournisseur à fort volume : ${s.label} — négocier les tarifs.` });
+    if (s.orders >= 10)
+      alerts.push({
+        level: "amber",
+        message: `Fournisseur à fort volume : ${s.label} — négocier les tarifs.`,
+      });
   });
   return alerts;
 }
