@@ -37,6 +37,9 @@ function StorageLocationsPage() {
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
   const [editing, setEditing] = useState<any>(null);
+  const technicianStocks = locations.filter(
+    (location: any) => location.type === "vehicule_technicien",
+  );
 
   const invalidate = () =>
     ["storage_locations", "storage_location_stocks"].forEach((t) =>
@@ -157,26 +160,64 @@ function StorageLocationsPage() {
     }
   };
 
+  const upsertStock = async (payload: any) => {
+    const owner_id = await currentUserId();
+    const { error } = await (supabase.from("storage_location_stocks" as any) as any).upsert(
+      { owner_id, ...payload },
+      { onConflict: "storage_location_id,part_id" },
+    );
+    if (error) throw error;
+  };
+
   const saveStock = async (event: any) => {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
-    const owner_id = await currentUserId();
-    const payload = {
-      owner_id,
-      storage_location_id: fd.get("storage_location_id"),
-      part_id: fd.get("part_id"),
-      quantity_available: Number(fd.get("quantity_available") || 0),
-      quantity_reserved: Number(fd.get("quantity_reserved") || 0),
-      quantity_minimum: Number(fd.get("quantity_minimum") || 0),
-    };
-    const { error } = await (supabase.from("storage_location_stocks" as any) as any).upsert(
-      payload,
-      { onConflict: "storage_location_id,part_id" },
-    );
-    if (error) return toast.error(error.message);
-    event.currentTarget.reset();
-    invalidate();
-    toast.success("Stock mis à jour");
+    try {
+      await upsertStock({
+        storage_location_id: fd.get("storage_location_id"),
+        part_id: fd.get("part_id"),
+        quantity_available: Number(fd.get("quantity_available") || 0),
+        quantity_reserved: Number(fd.get("quantity_reserved") || 0),
+        quantity_minimum: Number(fd.get("quantity_minimum") || 0),
+      });
+      event.currentTarget.reset();
+      invalidate();
+      toast.success("Pièce ajoutée au lieu de stockage");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const saveTechnicianDefaultStock = async (event: any) => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const partId = fd.get("part_id");
+    const minimum = Number(fd.get("quantity_minimum") || 0);
+    if (!technicianStocks.length) {
+      toast.error("Créez d’abord au moins un lieu de type Stock technicien");
+      return;
+    }
+    try {
+      await Promise.all(
+        technicianStocks.map((location: any) => {
+          const existing = stocks.find(
+            (stock: any) => stock.storage_location_id === location.id && stock.part_id === partId,
+          );
+          return upsertStock({
+            storage_location_id: location.id,
+            part_id: partId,
+            quantity_available: Number(existing?.quantity_available || 0),
+            quantity_reserved: Number(existing?.quantity_reserved || 0),
+            quantity_minimum: minimum,
+          });
+        }),
+      );
+      event.currentTarget.reset();
+      invalidate();
+      toast.success("Pièce obligatoire ajoutée à tous les stocks techniciens");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
   };
 
   return (
@@ -295,6 +336,44 @@ function StorageLocationsPage() {
               Mettre à jour le stock
             </Button>
           </form>
+
+          <div className="mb-4 rounded-md border bg-muted/30 p-4">
+            <div className="mb-3">
+              <h3 className="font-medium">Pièces que les techniciens doivent toujours avoir</h3>
+              <p className="text-sm text-muted-foreground">
+                Définissez un minimum commun : la pièce est ajoutée automatiquement à chaque stock
+                technicien existant, même si la quantité disponible est encore à 0.
+              </p>
+            </div>
+            <form
+              onSubmit={saveTechnicianDefaultStock}
+              className="grid gap-3 md:grid-cols-[1fr_180px_auto]"
+            >
+              <Select name="part_id" required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pièce obligatoire" />
+                </SelectTrigger>
+                <SelectContent>
+                  {parts.map((part: any) => (
+                    <SelectItem key={part.id} value={part.id}>
+                      {[part.reference, part.name].filter(Boolean).join(" · ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                name="quantity_minimum"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Minimum permanent"
+                required
+              />
+              <Button variant="secondary" disabled={!technicianStocks.length}>
+                Définir pour les techniciens
+              </Button>
+            </form>
+          </div>
           <div className="mb-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
             Les stocks techniciens peuvent être créés avec le type « Stock technicien ». Les pièces
             sous le minimum apparaissent en rouge pour préparer un envoi vers le point relais le
@@ -333,6 +412,49 @@ function StorageLocationsPage() {
                       Livraison pièces techniciens
                     </Badge>
                   )}
+
+                  <form
+                    onSubmit={saveStock}
+                    className="mt-3 grid gap-2 rounded-md bg-muted/30 p-2 md:grid-cols-[1fr_90px_90px_90px_auto]"
+                  >
+                    <input type="hidden" name="storage_location_id" value={loc.id} />
+                    <Select name="part_id" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Ajouter une pièce" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parts.map((part: any) => (
+                          <SelectItem key={part.id} value={part.id}>
+                            {[part.reference, part.name].filter(Boolean).join(" · ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      name="quantity_available"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Dispo"
+                    />
+                    <Input
+                      name="quantity_reserved"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Réservé"
+                    />
+                    <Input
+                      name="quantity_minimum"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Min"
+                    />
+                    <Button size="sm" variant="outline">
+                      Ajouter
+                    </Button>
+                  </form>
                   <div className="mt-3 space-y-1 text-sm">
                     {locStocks.length === 0 ? (
                       <span className="text-muted-foreground">Aucun stock</span>
