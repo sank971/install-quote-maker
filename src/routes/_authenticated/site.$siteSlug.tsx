@@ -55,6 +55,17 @@ function SiteDetail() {
   const { data: quotes = [] } = useList<any>("quotes");
   const { data: quoteItems = [] } = useList<any>("quote_items");
   const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
+  const { data: storageLocations = [] } = useList<any>("storage_locations", {
+    filter: (q) => q.eq("site_id", siteId),
+    key: ["storage_locations", "bySite", siteId],
+    enabled: !!siteId,
+  });
+  const storageLocationIds = storageLocations.map((location: any) => location.id);
+  const { data: storageStocks = [] } = useList<any>("storage_location_stocks", {
+    filter: (q: any) => q.in("storage_location_id", storageLocationIds),
+    key: ["storage_location_stocks", "bySite", siteId, storageLocationIds.join(",")],
+    enabled: storageLocationIds.length > 0,
+  });
   const { data: tickets = [] } = useList<any>("tickets", {
     filter: (q) => q.eq("site_id", siteId),
     key: ["tickets", "bySite", siteId],
@@ -298,6 +309,72 @@ function SiteDetail() {
           <div>
             <span className="text-muted-foreground">Notes :</span> {site.notes || "—"}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Stock sur site</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {storageLocations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Aucun lieu de stock n'est encore lié à ce site.
+            </p>
+          ) : (
+            storageLocations.map((location: any) => {
+              const locationStocks = storageStocks.filter(
+                (stock: any) => stock.storage_location_id === location.id,
+              );
+              return (
+                <div key={location.id} className="rounded-md border p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium">
+                        <Package className="mr-2 inline h-4 w-4 text-primary" />
+                        {location.name}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        <MapPin className="mr-1 inline h-3 w-3" />
+                        {[location.address, location.postal_code, location.city, location.country]
+                          .filter(Boolean)
+                          .join(", ") || "Adresse non renseignée"}
+                        {location.latitude != null && location.longitude != null
+                          ? ` · GPS ${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`
+                          : ""}
+                      </div>
+                    </div>
+                    <Badge variant={location.is_active ? "secondary" : "outline"}>
+                      {location.is_active ? "Actif" : "Inactif"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {locationStocks.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Aucune pièce en stock.</p>
+                    ) : (
+                      locationStocks.map((stock: any) => {
+                        const part = parts.find((item: any) => item.id === stock.part_id);
+                        const available =
+                          Number(stock.quantity_available || 0) -
+                          Number(stock.quantity_reserved || 0);
+                        return (
+                          <div
+                            key={stock.id}
+                            className="flex justify-between gap-3 rounded bg-muted/50 p-2"
+                          >
+                            <span>{part?.name ?? "Pièce"}</span>
+                            <span className="text-right">
+                              {available} dispo · {stock.quantity_reserved} réservé
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
 
