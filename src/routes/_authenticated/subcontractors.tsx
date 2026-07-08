@@ -560,6 +560,7 @@ function FranceMap({ sites, subcontractors }: { sites: any[]; subcontractors: an
         point: { lat: Number(s.latitude), lng: Number(s.longitude) },
         label: s.name,
         kind: "subcontractor" as const,
+        includedKm: Number(s.included_km || 0),
       })),
   ];
 
@@ -572,7 +573,8 @@ function FranceMap({ sites, subcontractors }: { sites: any[]; subcontractors: an
       <LeafletMap className="h-[520px]" markers={markers} zones={zones} />
       <div className="mt-2 text-xs text-muted-foreground">
         Carte interactive LeafletJS avec fond OpenStreetMap. Bleu = sites, orange = SST /
-        techniciens, polygones = zones d’intervention.
+        techniciens, polygones = zones d’intervention. Cliquez sur un SST pour afficher son rayon de
+        kilomètres inclus.
       </div>
     </Card>
   );
@@ -603,13 +605,20 @@ function LeafletMap({
 }: {
   className: string;
   editable?: boolean;
-  markers: { id: string; point: Point; label: string; kind: "site" | "subcontractor" | "zone" }[];
+  markers: {
+    id: string;
+    point: Point;
+    label: string;
+    kind: "site" | "subcontractor" | "zone";
+    includedKm?: number;
+  }[];
   zones: { id: string; name: string; points: Point[] }[];
   onAddPoint?: (point: Point) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMapInstance | null>(null);
   const layerRef = useRef<LeafletLayerGroup | null>(null);
+  const [selectedSubcontractorId, setSelectedSubcontractorId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -657,6 +666,24 @@ function LeafletMap({
           .bindPopup(zone.name)
           .addTo(layer);
       });
+      const selectedSubcontractor = markers.find(
+        (marker) => marker.id === selectedSubcontractorId && marker.kind === "subcontractor",
+      );
+      if (selectedSubcontractor?.includedKm && selectedSubcontractor.includedKm > 0) {
+        L.circle([selectedSubcontractor.point.lat, selectedSubcontractor.point.lng], {
+          radius: selectedSubcontractor.includedKm * 1000,
+          color: "#f59e0b",
+          fillColor: "#f59e0b",
+          fillOpacity: 0.12,
+          weight: 2,
+        })
+          .bindPopup(
+            `${selectedSubcontractor.label}<br>${selectedSubcontractor.includedKm.toLocaleString(
+              "fr-FR",
+            )} km inclus`,
+          )
+          .addTo(layer);
+      }
       markers.forEach((marker) => {
         const color =
           marker.kind === "site"
@@ -670,12 +697,20 @@ function LeafletMap({
           iconSize: [14, 14],
           iconAnchor: [7, 7],
         });
-        L.marker([marker.point.lat, marker.point.lng], { icon })
+        const popupText =
+          marker.kind === "subcontractor"
+            ? `${marker.label}<br>${Number(marker.includedKm || 0).toLocaleString("fr-FR")} km inclus`
+            : marker.label;
+        const leafletMarker = L.marker([marker.point.lat, marker.point.lng], { icon })
           .bindTooltip(marker.label)
+          .bindPopup(popupText)
           .addTo(layer);
+        if (marker.kind === "subcontractor") {
+          leafletMarker.on("click", () => setSelectedSubcontractorId(marker.id));
+        }
       });
     });
-  }, [markers, zones]);
+  }, [markers, selectedSubcontractorId, zones]);
 
   return <div ref={ref} className={`overflow-hidden rounded-lg border ${className}`} />;
 }
