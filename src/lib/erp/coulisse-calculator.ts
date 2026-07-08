@@ -14,9 +14,11 @@ const norm = (value: unknown) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-const num = (value: unknown, fallback = 0) => {
+const num = (value: unknown, fallback: unknown = 0) => {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (Number.isFinite(parsed)) return parsed;
+  const parsedFallback = Number(fallback);
+  return Number.isFinite(parsedFallback) ? parsedFallback : 0;
 };
 
 const list = (value: unknown) =>

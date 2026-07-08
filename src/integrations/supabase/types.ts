@@ -526,6 +526,54 @@ export type Database = {
           },
         ]
       }
+      cost_settings: {
+        Row: {
+          admin_hourly_cost: number
+          agency_address: string | null
+          average_shipping_cost: number
+          cost_per_km: number
+          created_at: string
+          fuel_price: number
+          id: string
+          minimum_margin_pct: number
+          owner_id: string
+          technician_hourly_cost: number
+          updated_at: string
+          vehicle_consumption: number
+          vehicle_cost_per_km: number
+        }
+        Insert: {
+          admin_hourly_cost?: number
+          agency_address?: string | null
+          average_shipping_cost?: number
+          cost_per_km?: number
+          created_at?: string
+          fuel_price?: number
+          id?: string
+          minimum_margin_pct?: number
+          owner_id: string
+          technician_hourly_cost?: number
+          updated_at?: string
+          vehicle_consumption?: number
+          vehicle_cost_per_km?: number
+        }
+        Update: {
+          admin_hourly_cost?: number
+          agency_address?: string | null
+          average_shipping_cost?: number
+          cost_per_km?: number
+          created_at?: string
+          fuel_price?: number
+          id?: string
+          minimum_margin_pct?: number
+          owner_id?: string
+          technician_hourly_cost?: number
+          updated_at?: string
+          vehicle_consumption?: number
+          vehicle_cost_per_km?: number
+        }
+        Relationships: []
+      }
       grand_account_bpu_items: {
         Row: {
           created_at: string
@@ -1128,56 +1176,86 @@ export type Database = {
       }
       interventions: {
         Row: {
+          admin_minutes: number | null
           completed_at: string | null
           created_at: string
           date: string
           description: string | null
+          distance_km: number | null
+          extra_cost: number | null
+          extra_cost_reason: string | null
+          fuel_cost: number | null
           id: string
           installation_id: string
+          onsite_minutes: number | null
           owner_id: string
           scheduled_at: string | null
           site_id: string | null
+          start_address: string | null
           started_at: string | null
           status: string
+          subcontractor_cost: number | null
           technician_id: string | null
           ticket_id: string | null
           title: string
+          toll_parking_cost: number | null
+          travel_minutes: number | null
           type: string
           updated_at: string
         }
         Insert: {
+          admin_minutes?: number | null
           completed_at?: string | null
           created_at?: string
           date?: string
           description?: string | null
+          distance_km?: number | null
+          extra_cost?: number | null
+          extra_cost_reason?: string | null
+          fuel_cost?: number | null
           id?: string
           installation_id: string
+          onsite_minutes?: number | null
           owner_id: string
           scheduled_at?: string | null
           site_id?: string | null
+          start_address?: string | null
           started_at?: string | null
           status?: string
+          subcontractor_cost?: number | null
           technician_id?: string | null
           ticket_id?: string | null
           title: string
+          toll_parking_cost?: number | null
+          travel_minutes?: number | null
           type?: string
           updated_at?: string
         }
         Update: {
+          admin_minutes?: number | null
           completed_at?: string | null
           created_at?: string
           date?: string
           description?: string | null
+          distance_km?: number | null
+          extra_cost?: number | null
+          extra_cost_reason?: string | null
+          fuel_cost?: number | null
           id?: string
           installation_id?: string
+          onsite_minutes?: number | null
           owner_id?: string
           scheduled_at?: string | null
           site_id?: string | null
+          start_address?: string | null
           started_at?: string | null
           status?: string
+          subcontractor_cost?: number | null
           technician_id?: string | null
           ticket_id?: string | null
           title?: string
+          toll_parking_cost?: number | null
+          travel_minutes?: number | null
           type?: string
           updated_at?: string
         }
@@ -1539,6 +1617,7 @@ export type Database = {
           suggestion: Json
           supplier_id: string | null
           supplier_part_id: string | null
+          unit_purchase_cost_actual: number | null
         }
         Insert: {
           brand?: string | null
@@ -1562,6 +1641,7 @@ export type Database = {
           suggestion?: Json
           supplier_id?: string | null
           supplier_part_id?: string | null
+          unit_purchase_cost_actual?: number | null
         }
         Update: {
           brand?: string | null
@@ -1585,6 +1665,7 @@ export type Database = {
           suggestion?: Json
           supplier_id?: string | null
           supplier_part_id?: string | null
+          unit_purchase_cost_actual?: number | null
         }
         Relationships: [
           {
@@ -1632,10 +1713,13 @@ export type Database = {
           notes: string | null
           ordered_at: string | null
           owner_id: string
+          pickup_cost: number | null
           quote_id: string | null
           received_at: string | null
+          shipping_cost: number | null
           status: string
           stock_analysis: Json
+          supplier_delivery_cost: number | null
           supplier_id: string | null
           ticket_id: string
           updated_at: string
@@ -1647,10 +1731,13 @@ export type Database = {
           notes?: string | null
           ordered_at?: string | null
           owner_id: string
+          pickup_cost?: number | null
           quote_id?: string | null
           received_at?: string | null
+          shipping_cost?: number | null
           status?: string
           stock_analysis?: Json
+          supplier_delivery_cost?: number | null
           supplier_id?: string | null
           ticket_id: string
           updated_at?: string
@@ -1662,10 +1749,13 @@ export type Database = {
           notes?: string | null
           ordered_at?: string | null
           owner_id?: string
+          pickup_cost?: number | null
           quote_id?: string | null
           received_at?: string | null
+          shipping_cost?: number | null
           status?: string
           stock_analysis?: Json
+          supplier_delivery_cost?: number | null
           supplier_id?: string | null
           ticket_id?: string
           updated_at?: string

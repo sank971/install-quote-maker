@@ -277,7 +277,7 @@ function QuoteDetail() {
       .filter((row: any) => row.installation_id === editInstallation.id)
       .forEach((row: any) => compatibilityPartIds.add(row.part_id));
   }
-  const componentTypes = new Set(componentTypeNames.map((name) => normalizeName(name)));
+  const componentTypes = new Set(componentTypeNames.map((name: string) => normalizeName(name)));
   const selectedTypes = new Set(selectedPartTypes.map((name) => normalizeName(name)));
   const compatibleParts = (
     !editInstallation?.model_id && !editInstallation?.type_id
@@ -753,7 +753,7 @@ function QuoteDetail() {
         .map((row: any) => {
           const part = parts.find((candidate: any) => candidate.id === row.equivalent_part_id);
           if (!part) return null;
-          const candidate = buildEditPartItem(part.id, item.installation_id ?? editInstallationId);
+          const candidate = buildEditPartItem(part.id, {}, item.installation_id ?? editInstallationId);
           if (!candidate) return null;
           const equivalentItem = { ...candidate, quantity: item.quantity };
           const candidateMargin = getEditableMargin(equivalentItem);
@@ -1372,8 +1372,8 @@ function QuoteDetail() {
                     {hasBetterEquivalence && (
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-500/30 bg-green-100/70 p-2 text-xs text-green-800">
                         <span>
-                          Équivalence plus rentable suggérée : {equivalenceSuggestion.part.name} (+
-                          {equivalenceSuggestion.marginGain.toFixed(2)} € de marge)
+                          Équivalence plus rentable suggérée : {equivalenceSuggestion!.part.name} (+
+                          {equivalenceSuggestion!.marginGain.toFixed(2)} € de marge)
                         </span>
                         <Button
                           type="button"

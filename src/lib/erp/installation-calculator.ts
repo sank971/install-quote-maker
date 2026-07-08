@@ -36,13 +36,13 @@ export function calculateInstallationQuote(args: {
   const formulaResult = runFormulas(args.formulas, base);
   const ruleResult = runRules(args.rules, { ...args.input, ...formulaResult.metrics });
   const logs = [...formulaResult.logs, ...ruleResult.logs];
-  const forcedFamilies = ruleResult.actions
+  const forcedFamilies: BomItem[] = ruleResult.actions
     .filter((action) => action.type === "add_part_family" && action.part_family)
     .map((action) => ({
       part_family: String(action.part_family),
       quantity: Number(action.quantity ?? 1),
     }));
-  const families = [...args.bomItems, ...forcedFamilies].sort(
+  const families: BomItem[] = [...args.bomItems, ...forcedFamilies].sort(
     (a, b) => Number(a.position ?? 0) - Number(b.position ?? 0),
   );
   const compatibleParts = filterCompatibleParts(args.parts, args.compatibilities ?? [], args.input);
