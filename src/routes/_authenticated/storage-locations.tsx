@@ -2,7 +2,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MapPin, Plus, Save, Warehouse } from "lucide-react";
+import { Download, MapPin, Plus, Save, Upload, Warehouse } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { useList } from "@/lib/db-hooks";
 import { currentUserId } from "@/lib/ticket-workflow";
 import { geocodeStorageAddress } from "@/lib/stock-workflow";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 export const Route = createFileRoute("/_authenticated/storage-locations")({
   component: StorageLocationsPage,
@@ -41,6 +42,77 @@ function StorageLocationsPage() {
     ["storage_locations", "storage_location_stocks"].forEach((t) =>
       qc.invalidateQueries({ queryKey: [t] }),
     );
+
+  const exportLocations = () =>
+    downloadCsv(
+      "lieux_stockage.csv",
+      locations.map((location: any) => ({
+        nom: location.name,
+        type: location.type,
+        adresse: location.address,
+        code_postal: location.postal_code,
+        ville: location.city,
+        pays: location.country,
+        site: sites.find((site: any) => site.id === location.site_id)?.name ?? "",
+        actif: location.is_active ? "oui" : "non",
+        latitude: location.latitude,
+        longitude: location.longitude,
+      })),
+      [
+        "nom",
+        "type",
+        "adresse",
+        "code_postal",
+        "ville",
+        "pays",
+        "site",
+        "actif",
+        "latitude",
+        "longitude",
+      ],
+    );
+
+  const importLocations = () =>
+    importCsvFile(async (rows) => {
+      const owner_id = await currentUserId();
+      for (const row of rows) {
+        const name = pick(row, "nom", "name");
+        if (!name) continue;
+        const siteName = pick(row, "site", "site_name");
+        const site = siteName
+          ? sites.find(
+              (s: any) =>
+                s.name.toLowerCase() === siteName.toLowerCase() || s.site_number === siteName,
+            )
+          : null;
+        const payload: any = {
+          owner_id,
+          name,
+          type: pick(row, "type") || "autre",
+          address: pick(row, "adresse", "address") || null,
+          postal_code: pick(row, "code_postal", "postal_code") || null,
+          city: pick(row, "ville", "city") || null,
+          country: pick(row, "pays", "country") || "France",
+          site_id: site?.id ?? null,
+          is_active: !["non", "false", "0"].includes(pick(row, "actif", "is_active").toLowerCase()),
+          latitude: pick(row, "latitude") ? Number(pick(row, "latitude")) : null,
+          longitude: pick(row, "longitude") ? Number(pick(row, "longitude")) : null,
+        };
+        if ((!payload.latitude || !payload.longitude) && payload.address) {
+          Object.assign(payload, await geocodeStorageAddress(payload));
+        }
+        const existing = locations.find(
+          (location: any) => location.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing)
+          await (supabase.from("storage_locations" as any) as any)
+            .update(payload)
+            .eq("id", existing.id);
+        else await (supabase.from("storage_locations" as any) as any).insert(payload);
+      }
+      invalidate();
+      toast.success("Lieux de stockage importés");
+    });
 
   const saveLocation = async (event: any) => {
     event.preventDefault();
@@ -112,6 +184,18 @@ function StorageLocationsPage() {
       <PageHeader
         title="Lieux de stockage"
         description="Agences, dépôts, véhicules techniciens et stocks par pièce."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportLocations}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importLocations}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+          </div>
+        }
       />
       <Card>
         <CardHeader>
