@@ -23,6 +23,7 @@ import { Route as AuthenticatedOrdersRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedInstallationsRouteImport } from './routes/_authenticated/installations'
 import { Route as AuthenticatedGrandAccountsRouteImport } from './routes/_authenticated/grand-accounts'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCostSettingsRouteImport } from './routes/_authenticated/cost-settings'
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
 import { Route as AuthenticatedQuotesIndexRouteImport } from './routes/_authenticated/quotes.index'
@@ -108,6 +109,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCostSettingsRoute =
+  AuthenticatedCostSettingsRouteImport.update({
+    id: '/cost-settings',
+    path: '/cost-settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedContractsRoute = AuthenticatedContractsRouteImport.update({
   id: '/contracts',
   path: '/contracts',
@@ -177,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
+  '/cost-settings': typeof AuthenticatedCostSettingsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/installations': typeof AuthenticatedInstallationsRoute
@@ -203,6 +211,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/clients': typeof AuthenticatedClientsRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRoute
+  '/cost-settings': typeof AuthenticatedCostSettingsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/installations': typeof AuthenticatedInstallationsRoute
@@ -231,6 +240,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/clients': typeof AuthenticatedClientsRouteWithChildren
   '/_authenticated/contracts': typeof AuthenticatedContractsRoute
+  '/_authenticated/cost-settings': typeof AuthenticatedCostSettingsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/grand-accounts': typeof AuthenticatedGrandAccountsRoute
   '/_authenticated/installations': typeof AuthenticatedInstallationsRoute
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/clients'
     | '/contracts'
+    | '/cost-settings'
     | '/dashboard'
     | '/grand-accounts'
     | '/installations'
@@ -285,6 +296,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/clients'
     | '/contracts'
+    | '/cost-settings'
     | '/dashboard'
     | '/grand-accounts'
     | '/installations'
@@ -312,6 +324,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/clients'
     | '/_authenticated/contracts'
+    | '/_authenticated/cost-settings'
     | '/_authenticated/dashboard'
     | '/_authenticated/grand-accounts'
     | '/_authenticated/installations'
@@ -440,6 +453,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/cost-settings': {
+      id: '/_authenticated/cost-settings'
+      path: '/cost-settings'
+      fullPath: '/cost-settings'
+      preLoaderRoute: typeof AuthenticatedCostSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/contracts': {
       id: '/_authenticated/contracts'
       path: '/contracts'
@@ -564,6 +584,7 @@ const AuthenticatedSuppliersRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedClientsRoute: typeof AuthenticatedClientsRouteWithChildren
   AuthenticatedContractsRoute: typeof AuthenticatedContractsRoute
+  AuthenticatedCostSettingsRoute: typeof AuthenticatedCostSettingsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedGrandAccountsRoute: typeof AuthenticatedGrandAccountsRoute
   AuthenticatedInstallationsRoute: typeof AuthenticatedInstallationsRoute
@@ -586,6 +607,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedClientsRoute: AuthenticatedClientsRouteWithChildren,
   AuthenticatedContractsRoute: AuthenticatedContractsRoute,
+  AuthenticatedCostSettingsRoute: AuthenticatedCostSettingsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedGrandAccountsRoute: AuthenticatedGrandAccountsRoute,
   AuthenticatedInstallationsRoute: AuthenticatedInstallationsRoute,
