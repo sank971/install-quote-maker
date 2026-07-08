@@ -10,6 +10,7 @@ import {
   Calculator,
   Download,
   Upload,
+  Warehouse,
 } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
-import { geocodeAddress } from "@/lib/stock-workflow";
+import { geocodeAddress, geocodeStorageAddress } from "@/lib/stock-workflow";
+import { currentUserId } from "@/lib/ticket-workflow";
 
 export const Route = createFileRoute("/_authenticated/subcontractors")({
   component: SubcontractorsPage,
@@ -220,6 +222,63 @@ function SubcontractorsPage() {
     setOpen(false);
   };
 
+  const createTechnicianStock = async (subcontractor: any) => {
+    if (subcontractor.stock_location_id) {
+      toast.info("Un stock est déjà assigné à ce technicien / SST");
+      return;
+    }
+
+    try {
+      const owner_id = await currentUserId();
+      const name = `stock ${subcontractor.name}`;
+      const existing = storageLocations.find(
+        (loc: any) => loc.name.toLowerCase() === name.toLowerCase(),
+      );
+
+      let location = existing;
+      if (!location) {
+        const payload: any = {
+          owner_id,
+          name,
+          type: "vehicule_technicien",
+          address: subcontractor.address || "Adresse à compléter",
+          postal_code: null,
+          city: null,
+          country: "France",
+          latitude: subcontractor.latitude ?? null,
+          longitude: subcontractor.longitude ?? null,
+          is_active: true,
+        };
+
+        if ((!payload.latitude || !payload.longitude) && subcontractor.address) {
+          Object.assign(payload, await geocodeStorageAddress(payload));
+        }
+
+        const { data: created, error: createError } = await (
+          supabase.from("storage_locations" as any) as any
+        )
+          .insert(payload)
+          .select("*")
+          .single();
+        if (createError) throw createError;
+        location = created;
+      }
+
+      const { error: updateError } = await (supabase.from("subcontractors") as any)
+        .update({ stock_location_id: location.id })
+        .eq("id", subcontractor.id);
+      if (updateError) throw updateError;
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["subcontractors"] }),
+        qc.invalidateQueries({ queryKey: ["storage_locations"] }),
+      ]);
+      toast.success(`Stock technicien « ${location.name} » créé et assigné`);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
   const addZonePoint = useCallback((point: Point) => {
     setZone((current) => [...current, point]);
   }, []);
@@ -325,6 +384,16 @@ function SubcontractorsPage() {
                     </div>
                   </div>
                   <div className="flex">
+                    {!s.stock_location_id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Créer et assigner un stock technicien"
+                        onClick={() => createTechnicianStock(s)}
+                      >
+                        <Warehouse className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" onClick={() => openEditor(s)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
