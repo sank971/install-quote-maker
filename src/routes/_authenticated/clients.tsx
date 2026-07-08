@@ -20,6 +20,7 @@ import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { geocodeAddress } from "@/lib/stock-workflow";
 
 export const Route = createFileRoute("/_authenticated/clients")({
   component: ClientsPage,
@@ -325,10 +326,14 @@ function ClientsList() {
             onSubmit={async (e) => {
               e.preventDefault();
               const fd = new FormData(e.currentTarget);
+              const address = fd.get("address")?.toString() || null;
+              const geocoded = await geocodeAddress({ address });
               await upsertSite.mutateAsync({
                 client_id: siteClient.id,
                 name: fd.get("name"),
-                address: fd.get("address") || null,
+                address,
+                latitude: geocoded.latitude,
+                longitude: geocoded.longitude,
                 contact_name: fd.get("contact_name") || null,
                 contact_phone: fd.get("contact_phone") || null,
                 notes: fd.get("notes") || null,

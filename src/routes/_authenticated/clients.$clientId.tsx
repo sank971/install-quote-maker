@@ -17,6 +17,7 @@ import {
 import { Plus, ChevronLeft, MapPin, Pencil, Trash2, User, Mail, Phone, Euro } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { geocodeAddress } from "@/lib/stock-workflow";
 
 export const Route = createFileRoute("/_authenticated/clients/$clientId")({
   component: ClientDetail,
@@ -131,11 +132,17 @@ function ClientDetail() {
   const submitSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const address = fd.get("address")?.toString() || null;
+    const shouldGeocode =
+      address && (address !== siteEdit.address || !siteEdit.latitude || !siteEdit.longitude);
+    const geocoded = shouldGeocode ? await geocodeAddress({ address }) : null;
     await upsertSite.mutateAsync({
       id: siteEdit.id,
       client_id: clientId,
       name: fd.get("name"),
-      address: fd.get("address") || null,
+      address,
+      latitude: geocoded?.latitude ?? siteEdit.latitude ?? null,
+      longitude: geocoded?.longitude ?? siteEdit.longitude ?? null,
       email: fd.get("email") || null,
       contact_name: fd.get("contact_name") || null,
       contact_phone: fd.get("contact_phone") || null,
