@@ -56,6 +56,14 @@ export type TableName =
   | "part_compatibilities"
   | "quote_calculation_logs"
   | "cost_settings"
+  | "technician_cost_profiles"
+  | "vehicles"
+  | "intervention_technician_times"
+  | "intervention_parts_costs"
+  | "intervention_shipments"
+  | "intervention_subcontractors"
+  | "intervention_equipments"
+  | "intervention_type_admin_settings"
   | "invoices"
   | "invoice_items";
 
