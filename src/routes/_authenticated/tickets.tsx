@@ -123,12 +123,14 @@ function TicketsPage() {
       const isSiteStockOrder = mode === "site_stock_order";
       const isReserveLift = mode === "reserve_lift";
       const installationIdsToCreate =
-        isMaintenance || isSiteStockOrder || isReserveLift
+        isMaintenance || isReserveLift
           ? siteInstallations.map((installation: any) => installation.id)
-          : selectedInstallationIds;
-      if (installationIdsToCreate.length === 0) {
+          : isSiteStockOrder
+            ? []
+            : selectedInstallationIds;
+      if (!isSiteStockOrder && installationIdsToCreate.length === 0) {
         throw new Error(
-          isMaintenance
+          isMaintenance || isReserveLift
             ? "Ce site ne contient aucune installation"
             : "Sélectionnez au moins une installation du site",
         );
@@ -146,7 +148,7 @@ function TicketsPage() {
       const description = String(fd.get("description") || "").trim();
       let group: any = null;
 
-      if (installationIdsToCreate.length > 1) {
+      if (!isSiteStockOrder && installationIdsToCreate.length > 1) {
         const { data, error } = await (supabase.from("ticket_groups" as any) as any)
           .insert({
             owner_id,
@@ -165,6 +167,51 @@ function TicketsPage() {
           .single();
         if (error) throw error;
         group = data;
+      }
+
+      if (isSiteStockOrder) {
+        const { data: storageLocationId, error: storageError } = await (supabase.rpc as any)(
+          "ensure_site_storage_location",
+          {
+            p_site_id: site.id,
+            p_owner_id: owner_id,
+          },
+        );
+        if (storageError) throw storageError;
+
+        const { data: ticket, error } = await (supabase.from("tickets" as any) as any)
+          .insert({
+            owner_id,
+            client_id: site.client_id,
+            site_id: site.id,
+            installation_id: null,
+            title,
+            description: [
+              "Ticket pour devis/commande de pièces destinées au stock sur site",
+              description,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            status: "devis_a_creer",
+            ticket_type: "site_stock_order",
+            storage_location_id: storageLocationId,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (!ticket) throw new Error("Le ticket n'a pas pu être créé");
+
+        await (supabase.from("history_events" as any) as any).insert({
+          owner_id,
+          ticket_id: ticket.id,
+          site_id: site.id,
+          installation_id: null,
+          event_type: "site_stock_ticket_created",
+          title: "Ticket stock site créé",
+          description: title,
+          metadata: { storage_location_id: storageLocationId },
+          actor_id: owner_id,
+        });
       }
 
       for (const installationId of installationIdsToCreate) {
@@ -228,7 +275,7 @@ function TicketsPage() {
           if (updateTicketError) throw updateTicketError;
         }
       }
-      const ticketCount = installationIdsToCreate.length;
+      const ticketCount = isSiteStockOrder ? 1 : installationIdsToCreate.length;
       form.reset();
       setSelectedInstallationIds([]);
       setShowCreateForm(false);
@@ -382,36 +429,50 @@ function TicketsPage() {
 
               <div className="grid gap-2">
                 <Label>
-                  {createMode !== "ticket"
-                    ? "2. Installations incluses dans le dossier site"
-                    : "2. Sélectionner les installations du site concerné"}
+                  {createMode === "site_stock_order"
+                    ? "2. Stock sur site (aucune installation liée)"
+                    : createMode !== "ticket"
+                      ? "2. Installations incluses dans le dossier site"
+                      : "2. Sélectionner les installations du site concerné"}
                 </Label>
                 {selectedSite ? (
                   <div className="rounded-md border p-3">
                     <p className="mb-2 text-sm text-muted-foreground">
                       {selectedClient?.name} · {selectedSite.name}
                     </p>
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {siteInstallations.map((installation: any) => (
-                        <label key={installation.id} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={
-                              createMode !== "ticket" ||
-                              selectedInstallationIds.includes(installation.id)
-                            }
-                            disabled={createMode !== "ticket"}
-                            onChange={() => toggleSelectedInstallation(installation.id)}
-                          />
-                          {installation.name}
-                        </label>
-                      ))}
-                    </div>
-                    {siteInstallations.length === 0 ? (
+                    {createMode === "site_stock_order" ? (
                       <p className="text-sm text-muted-foreground">
-                        Aucune installation n'est rattachée à ce site.
+                        Le ticket sera lié uniquement au site et au stock sur site, sans diagnostic
+                        ni installation.
                       </p>
-                    ) : null}
+                    ) : (
+                      <>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {siteInstallations.map((installation: any) => (
+                            <label
+                              key={installation.id}
+                              className="flex items-center gap-2 text-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={
+                                  createMode !== "ticket" ||
+                                  selectedInstallationIds.includes(installation.id)
+                                }
+                                disabled={createMode !== "ticket"}
+                                onChange={() => toggleSelectedInstallation(installation.id)}
+                              />
+                              {installation.name}
+                            </label>
+                          ))}
+                        </div>
+                        {siteInstallations.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            Aucune installation n'est rattachée à ce site.
+                          </p>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <p className="rounded-md border p-3 text-sm text-muted-foreground">
@@ -445,14 +506,16 @@ function TicketsPage() {
               <Button
                 disabled={
                   !selectedSiteId ||
-                  (createMode === "ticket" && selectedInstallationIds.length === 0)
+                  (createMode === "ticket" && selectedInstallationIds.length === 0) ||
+                  ((createMode === "maintenance" || createMode === "reserve_lift") &&
+                    siteInstallations.length === 0)
                 }
               >
                 <Plus className="mr-2 h-4 w-4" />
                 {createMode === "maintenance"
                   ? `Créer le dossier maintenance (${siteInstallations.length} installations)`
                   : createMode === "site_stock_order"
-                    ? `Créer les tickets stock site (${siteInstallations.length} installations)`
+                    ? "Créer le ticket stock site"
                     : createMode === "reserve_lift"
                       ? `Créer la levée de réserve (${siteInstallations.length} installations)`
                       : selectedInstallationIds.length > 1

@@ -123,6 +123,7 @@ function TicketDetail() {
   const site = sites.find((s: any) => s.id === ticket.site_id);
   const client = clients.find((c: any) => c.id === ticket.client_id);
   const installation = installations.find((i: any) => i.id === ticket.installation_id);
+  const isSiteStockTicket = ticket.ticket_type === "site_stock_order";
   const currentGroupIds = new Set(
     groupTickets.filter((row: any) => row.ticket_id === ticketId).map((row: any) => row.group_id),
   );
@@ -303,7 +304,7 @@ function TicketDetail() {
   };
 
   const createQuoteFromTicket = async () => {
-    if (!ticket || !installation) return toast.error("Données manquantes");
+    if (!ticket || (!installation && !isSiteStockTicket)) return toast.error("Données manquantes");
     const owner_id = await currentUserId();
     try {
       const number = `DEV-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -358,14 +359,16 @@ function TicketDetail() {
           quote_number: number,
           client_id: ticket.client_id,
           site_id: ticket.site_id,
-          installation_id: ticket.installation_id,
+          installation_id: isSiteStockTicket ? null : ticket.installation_id,
           vat_rate: 20,
           notes: [
-            hasRelatedTickets
-              ? `Devis global créé depuis les tickets ${quoteTicketsToLink
-                  .map((item: any) => item.ticket_number)
-                  .join(", ")}`
-              : `Devis créé depuis le ticket ${ticket.ticket_number}`,
+            isSiteStockTicket
+              ? `Devis stock sur site créé depuis le ticket ${ticket.ticket_number}`
+              : hasRelatedTickets
+                ? `Devis global créé depuis les tickets ${quoteTicketsToLink
+                    .map((item: any) => item.ticket_number)
+                    .join(", ")}`
+                : `Devis créé depuis le ticket ${ticket.ticket_number}`,
             diagnosticReports.length > 0
               ? `Problèmes signalés : ${diagnosticReports
                   .map((report: any) => report.constat)
@@ -384,16 +387,20 @@ function TicketDetail() {
 
       if (quoteError) throw quoteError;
 
-      // Add all linked ticket installations to quote
-      const { error: qiError } = await (supabase.from("quote_installations" as any) as any).insert(
-        quoteInstallationIds.map((installationId, position) => ({
-          owner_id,
-          quote_id: quote.id,
-          installation_id: installationId,
-          position,
-        })),
-      );
-      if (qiError) throw qiError;
+      // Add linked ticket installations to quote when the workflow targets installations.
+      if (quoteInstallationIds.length > 0) {
+        const { error: qiError } = await (
+          supabase.from("quote_installations" as any) as any
+        ).insert(
+          quoteInstallationIds.map((installationId, position) => ({
+            owner_id,
+            quote_id: quote.id,
+            installation_id: installationId,
+            position,
+          })),
+        );
+        if (qiError) throw qiError;
+      }
 
       // Link quote to ticket
       const { error: qtError } = await (supabase.from("quote_tickets" as any) as any).insert(
@@ -765,8 +772,15 @@ function TicketDetail() {
           </div>
           <div>
             <span className="text-muted-foreground">Installation :</span>{" "}
-            {installation?.name || "—"}
+            {isSiteStockTicket ? "Aucune (stock sur site)" : installation?.name || "—"}
           </div>
+          {isSiteStockTicket && (
+            <div>
+              <span className="text-muted-foreground">Stock sur site :</span>{" "}
+              {storageLocations.find((location: any) => location.id === ticket.storage_location_id)
+                ?.name || "—"}
+            </div>
+          )}
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">Titre :</span> {ticket.title}
           </div>
@@ -1039,12 +1053,16 @@ function TicketDetail() {
           })}
 
         {/* Create Quote Button - appears when report is done */}
-        {ticketReports.length > 0 && ticketQuotes.length === 0 && linkedQuotes.length === 0 && (
-          <Button onClick={createQuoteFromTicket} className="w-full" size="lg">
-            <Plus className="mr-2 h-5 w-5" />
-            Créer un devis depuis ce ticket
-          </Button>
-        )}
+        {(ticketReports.length > 0 || isSiteStockTicket) &&
+          ticketQuotes.length === 0 &&
+          linkedQuotes.length === 0 && (
+            <Button onClick={createQuoteFromTicket} className="w-full" size="lg">
+              <Plus className="mr-2 h-5 w-5" />
+              {isSiteStockTicket
+                ? "Créer un devis pour le stock sur site"
+                : "Créer un devis depuis ce ticket"}
+            </Button>
+          )}
 
         {/* Devis */}
         {(ticketQuotes.length > 0 || linkedQuotes.length > 0) && (
