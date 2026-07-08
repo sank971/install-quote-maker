@@ -84,6 +84,7 @@ function NewQuote() {
   const [clientId, setClientId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [installationIds, setInstallationIds] = useState<string[]>([]);
+  const [targetInstallationId, setTargetInstallationId] = useState("");
   const [contractId, setContractId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
@@ -107,7 +108,9 @@ function NewQuote() {
   const siteInstalls = installs.filter((i: any) => i.site_id === siteId);
   const selectedInstallations = installs.filter((i: any) => installationIds.includes(i.id));
   const installationId = installationIds[0] ?? "";
-  const installation = selectedInstallations[0];
+  const activeInstallationId = targetInstallationId || installationId;
+  const installation =
+    installs.find((i: any) => i.id === activeInstallationId) ?? selectedInstallations[0];
   const contract = contracts.find((c: any) => c.id === contractId);
   const selectedClient = clients.find((c: any) => c.id === clientId);
   const selectedSite = sites.find((s: any) => s.id === siteId);
@@ -693,6 +696,7 @@ function NewQuote() {
       ...prev,
       {
         key: crypto.randomUUID(),
+        installation_id: activeInstallationId || undefined,
         description: "",
         reference: "",
         category: selectedPartTypes[0] ?? "",
@@ -916,6 +920,7 @@ function NewQuote() {
                     setClientId(e.target.value);
                     setSiteId("");
                     setInstallationIds([]);
+                    setTargetInstallationId("");
                     setSelectedPartTypes([]);
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
@@ -935,6 +940,7 @@ function NewQuote() {
                   onChange={(e) => {
                     setSiteId(e.target.value);
                     setInstallationIds([]);
+                    setTargetInstallationId("");
                     setSelectedPartTypes([]);
                   }}
                   disabled={!clientId}
@@ -964,6 +970,9 @@ function NewQuote() {
                             onChange={() => {
                               setInstallationIds((current) =>
                                 checked ? current.filter((id) => id !== i.id) : [...current, i.id],
+                              );
+                              setTargetInstallationId((current) =>
+                                checked && current === i.id ? "" : current || i.id,
                               );
                               setSelectedPartTypes([]);
                               if (!checked && i.contract_id)
@@ -1010,6 +1019,30 @@ function NewQuote() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {installationIds.length > 1 && (
+                <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                  <Label>Installation cible pour les pièces ajoutées</Label>
+                  <select
+                    value={activeInstallationId}
+                    onChange={(e) => {
+                      setTargetInstallationId(e.target.value);
+                      setSelectedPartTypes([]);
+                    }}
+                    className="mt-2 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    {selectedInstallations.map((row: any) => (
+                      <option key={row.id} value={row.id}>
+                        {row.name || row.installation_number || "Installation"}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Les pièces, kits, accessoires et lignes générées seront rattachés à cette
+                    installation du devis multi-installations.
+                  </p>
+                </div>
+              )}
+
               {availablePartTypes.length > 0 && (
                 <div className="rounded-md border border-border/60 p-3">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

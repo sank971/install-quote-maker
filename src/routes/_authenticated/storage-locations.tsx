@@ -183,7 +183,7 @@ function StorageLocationsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Lieux de stockage"
-        description="Agences, dépôts, véhicules techniciens et stocks par pièce."
+        description="Agences, dépôts, points relais, stocks techniciens et stocks par pièce."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={exportLocations}>
@@ -214,8 +214,9 @@ function StorageLocationsPage() {
               <SelectContent>
                 <SelectItem value="agence">Agence</SelectItem>
                 <SelectItem value="depot">Dépôt</SelectItem>
-                <SelectItem value="vehicule_technicien">Véhicule technicien</SelectItem>
-                <SelectItem value="site">Stock sur site</SelectItem>
+                <SelectItem value="vehicule_technicien">Stock technicien</SelectItem>
+                <SelectItem value="point_relais">Point relais</SelectItem>
+                <SelectItem value="site">Stock sur site / livraison chantier</SelectItem>
                 <SelectItem value="autre">Autre</SelectItem>
               </SelectContent>
             </Select>
@@ -259,7 +260,7 @@ function StorageLocationsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Stock par lieu</CardTitle>
+          <CardTitle className="text-base">Stock par lieu et réassort technicien</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={saveStock} className="mb-4 grid gap-3 md:grid-cols-5">
@@ -294,6 +295,12 @@ function StorageLocationsPage() {
               Mettre à jour le stock
             </Button>
           </form>
+          <div className="mb-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            Les stocks techniciens peuvent être créés avec le type « Stock technicien ». Les pièces
+            sous le minimum apparaissent en rouge pour préparer un envoi vers le point relais le
+            plus proche du technicien, ou directement vers le chantier via un lieu « Stock sur site
+            ».
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             {locations.map((loc) => {
               const locStocks = stocks.filter((s) => s.storage_location_id === loc.id);
@@ -321,6 +328,11 @@ function StorageLocationsPage() {
                     </Button>
                   </div>
                   <Badge variant={loc.is_active ? "secondary" : "outline"}>{loc.type}</Badge>
+                  {loc.type === "point_relais" && (
+                    <Badge className="ml-2" variant="outline">
+                      Livraison pièces techniciens
+                    </Badge>
+                  )}
                   <div className="mt-3 space-y-1 text-sm">
                     {locStocks.length === 0 ? (
                       <span className="text-muted-foreground">Aucun stock</span>
@@ -331,10 +343,18 @@ function StorageLocationsPage() {
                           Number(stock.quantity_available || 0) -
                           Number(stock.quantity_reserved || 0);
                         return (
-                          <div key={stock.id} className="flex justify-between">
+                          <div
+                            key={stock.id}
+                            className={`flex justify-between rounded px-2 py-1 ${
+                              real < Number(stock.quantity_minimum || 0)
+                                ? "bg-destructive/10 text-destructive"
+                                : ""
+                            }`}
+                          >
                             <span>{part?.name ?? "Pièce"}</span>
                             <span>
-                              {real} dispo ({stock.quantity_reserved} réservé)
+                              {real} dispo ({stock.quantity_reserved} réservé · min.{" "}
+                              {stock.quantity_minimum ?? 0})
                             </span>
                           </div>
                         );

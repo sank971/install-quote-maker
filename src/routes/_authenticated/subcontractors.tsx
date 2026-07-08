@@ -59,6 +59,10 @@ function SubcontractorsPage() {
     ascending: true,
   });
   const { data: sites = [] } = useList<any>("sites", { orderBy: "name", ascending: true });
+  const { data: storageLocations = [] } = useList<any>("storage_locations", {
+    orderBy: "name",
+    ascending: true,
+  });
   const upsert = useUpsert("subcontractors", [
     ["subcontractors"],
     ["subcontractor_installation_types"],
@@ -147,6 +151,8 @@ function SubcontractorsPage() {
           day_rate: Number(pick(row, "journee", "day_rate") || 0),
           included_km: Number(pick(row, "km_inclus", "included_km") || 0),
           extra_km_rate: Number(pick(row, "tarif_km_sup", "extra_km_rate") || 0),
+          relay_location_id: pick(row, "point_relais_id", "relay_location_id") || null,
+          stock_location_id: pick(row, "stock_technicien_id", "stock_location_id") || null,
           notes: pick(row, "notes") || null,
         };
         const existing = subcontractors.find(
@@ -192,6 +198,8 @@ function SubcontractorsPage() {
       included_km: Number(fd.get("included_km") || 0),
       extra_km_rate: Number(fd.get("extra_km_rate") || 0),
       intervention_zone: zone,
+      relay_location_id: fd.get("relay_location_id") || null,
+      stock_location_id: fd.get("stock_location_id") || null,
       notes: fd.get("notes") || null,
     });
     const { data } = await supabase.auth.getUser();
@@ -307,6 +315,14 @@ function SubcontractorsPage() {
                     <div className="mt-1 text-xs text-muted-foreground">
                       Types : {st.join(", ") || "non renseigné"}
                     </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Point relais :{" "}
+                      {storageLocations.find((loc: any) => loc.id === s.relay_location_id)?.name ??
+                        "non renseigné"}
+                      {" · "}Stock :{" "}
+                      {storageLocations.find((loc: any) => loc.id === s.stock_location_id)?.name ??
+                        "non renseigné"}
+                    </div>
                   </div>
                   <div className="flex">
                     <Button variant="ghost" size="icon" onClick={() => openEditor(s)}>
@@ -377,6 +393,40 @@ function SubcontractorsPage() {
                   step="0.000001"
                   defaultValue={edit?.longitude}
                 />
+              </div>
+              <div>
+                <Label>Point relais de livraison</Label>
+                <select
+                  name="relay_location_id"
+                  defaultValue={edit?.relay_location_id ?? ""}
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="">Aucun / livraison chantier</option>
+                  {storageLocations
+                    .filter((loc: any) => loc.type === "point_relais")
+                    .map((loc: any) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <Label>Stock technicien</Label>
+                <select
+                  name="stock_location_id"
+                  defaultValue={edit?.stock_location_id ?? ""}
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="">Aucun stock dédié</option>
+                  {storageLocations
+                    .filter((loc: any) => loc.type === "vehicule_technicien")
+                    .map((loc: any) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name}
+                      </option>
+                    ))}
+                </select>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4">
