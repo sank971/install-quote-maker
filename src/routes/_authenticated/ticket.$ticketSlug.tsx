@@ -85,6 +85,8 @@ function TicketDetail() {
   const { data: storageLocations = [] } = useList<any>("storage_locations");
   const { data: storageStocks = [] } = useList<any>("storage_location_stocks");
   const { data: stockMovements = [] } = useList<any>("stock_movements");
+  const { data: invoices = [] } = useList<any>("invoices");
+  const { data: invoiceItems = [] } = useList<any>("invoice_items");
   const { data: history = [] } = useList<any>("history_events");
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: parts = [] } = useList<any>("parts");
@@ -111,6 +113,8 @@ function TicketDetail() {
       "part_order_items",
       "storage_location_stocks",
       "stock_movements",
+      "invoices",
+      "invoice_items",
       "history_events",
       "quote_tickets",
       "ticket_group_tickets",
@@ -155,9 +159,39 @@ function TicketDetail() {
   const ticketPartOrderItems = partOrderItems.filter((item: any) =>
     ticketPartOrderIds.has(item.part_order_id),
   );
-  const ticketStockMovements = stockMovements.filter((movement: any) =>
-    ticketPartOrderIds.has(movement.command_ticket_id),
+  const ticketStockMovements = stockMovements.filter(
+    (movement: any) =>
+      ticketPartOrderIds.has(movement.command_ticket_id) ||
+      movement.reason?.includes(ticket.ticket_number),
   );
+  const ticketInvoices = invoices.filter((invoice: any) => invoice.ticket_id === ticketId);
+  const ticketInvoiceIds = new Set(ticketInvoices.map((invoice: any) => invoice.id));
+  const ticketInvoiceItems = invoiceItems.filter((item: any) =>
+    ticketInvoiceIds.has(item.invoice_id),
+  );
+  const siteStorageLocation = storageLocations.find(
+    (location: any) =>
+      location.id === ticket.storage_location_id ||
+      (location.type === "site" &&
+        location.site_id === ticket.site_id &&
+        location.is_active !== false),
+  );
+  const replacementStockChoices = storageStocks
+    .map((stock: any) => {
+      const part = parts.find((p: any) => p.id === stock.part_id);
+      const location = storageLocations.find((loc: any) => loc.id === stock.storage_location_id);
+      const available =
+        Number(stock.quantity_available || 0) - Number(stock.quantity_reserved || 0);
+      return { stock, part, location, available };
+    })
+    .filter(
+      (choice: any) =>
+        choice.part &&
+        choice.location &&
+        choice.available > 0 &&
+        ["vehicule_technicien", "site"].includes(choice.location.type) &&
+        (choice.location.type !== "site" || choice.location.id === siteStorageLocation?.id),
+    );
   const stockReference = {
     latitude: ticket.latitude ?? site?.latitude,
     longitude: ticket.longitude ?? site?.longitude,
@@ -449,7 +483,9 @@ function TicketDetail() {
         );
 
         if (quoteItems.length > 0) {
-          const { error: itemsError } = await (supabase.from("quote_items") as any).insert(quoteItems);
+          const { error: itemsError } = await (supabase.from("quote_items") as any).insert(
+            quoteItems,
+          );
           if (itemsError) throw itemsError;
         }
       }
@@ -546,6 +582,103 @@ function TicketDetail() {
     e.currentTarget.reset();
     invalidate();
     toast.success("Commande de pièces créée");
+  };
+
+  const createOnsiteInvoice = async (e: any) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    if (fd.get("client_accepted") !== "on") {
+      return toast.error("Validation client obligatoire avant facturation");
+    }
+    const partId = String(fd.get("part_id") || "");
+    const sourceType = String(fd.get("source_type") || "technician_stock");
+    const qty = Number(fd.get("quantity") || 1);
+    const unitPrice = sourceType === "site_stock" ? 0 : Number(fd.get("unit_price") || 0);
+    const part = parts.find((p: any) => p.id === partId);
+    const locationId = String(fd.get("storage_location_id") || "");
+    const location = storageLocations.find((loc: any) => loc.id === locationId);
+    if (!part || !location) return toast.error("Sélectionnez une pièce disponible en stock");
+    const available = storageStocks
+      .filter((stock: any) => stock.part_id === partId && stock.storage_location_id === locationId)
+      .reduce(
+        (sum: number, stock: any) =>
+          sum + Number(stock.quantity_available || 0) - Number(stock.quantity_reserved || 0),
+        0,
+      );
+    if (qty <= 0 || qty > available)
+      return toast.error(`Stock insuffisant (${available} disponible)`);
+
+    try {
+      const owner_id = await currentUserId();
+      const subtotal = qty * unitPrice;
+      const invoiceNumber = num("FAC");
+      const { data: invoice, error: invoiceError } = await (supabase.from("invoices" as any) as any)
+        .insert({
+          owner_id,
+          invoice_number: invoiceNumber,
+          ticket_id: ticketId,
+          client_id: ticket.client_id,
+          site_id: ticket.site_id,
+          installation_id: ticket.installation_id,
+          status: sourceType === "site_stock" ? "emise" : "brouillon",
+          subtotal,
+          vat_rate: 20,
+          total: subtotal * 1.2,
+          client_accepted_at: new Date().toISOString(),
+          notes:
+            sourceType === "site_stock"
+              ? "Remplacement consommé depuis le stock site : aucune facturation de pièce."
+              : "Remplacement sur place validé par le client avant facturation.",
+        })
+        .select()
+        .single();
+      if (invoiceError) throw invoiceError;
+      const { error: itemError } = await (supabase.from("invoice_items" as any) as any).insert({
+        owner_id,
+        invoice_id: invoice.id,
+        part_id: part.id,
+        storage_location_id: location.id,
+        source_type: sourceType,
+        description: `${part.name} · ${location.name}`,
+        quantity: qty,
+        unit_price: unitPrice,
+        total: subtotal,
+      });
+      if (itemError) throw itemError;
+      const { error: stockError } = await (supabase.from("storage_location_stocks" as any) as any)
+        .update({ quantity_available: available - qty })
+        .eq("storage_location_id", location.id)
+        .eq("part_id", part.id);
+      if (stockError) throw stockError;
+      await (supabase.from("stock_movements" as any) as any).insert({
+        owner_id,
+        storage_location_id: location.id,
+        part_id: part.id,
+        movement_type: "sortie_stock",
+        quantity: qty,
+        reason: `${sourceType === "site_stock" ? "Utilisation stock site" : "Remplacement facturé"} · ${ticket.ticket_number}`,
+        created_by: owner_id,
+      });
+      await (supabase.from("history_events" as any) as any).insert({
+        owner_id,
+        ticket_id: ticketId,
+        site_id: ticket.site_id,
+        installation_id: ticket.installation_id,
+        event_type: "onsite_replacement_invoiced",
+        title:
+          sourceType === "site_stock"
+            ? "Pièce utilisée depuis stock site"
+            : "Facture de remplacement créée",
+        description: `${qty} × ${part.name} depuis ${location.name}`,
+        metadata: { invoice_id: invoice.id, source_type: sourceType },
+        actor_id: owner_id,
+      });
+      e.currentTarget.reset();
+      invalidate();
+      toast.success(sourceType === "site_stock" ? "Stock site consommé" : "Facture créée");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const markReceived = async (order: any) => {
@@ -1351,6 +1484,103 @@ function TicketDetail() {
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              Facturation remplacement sur place
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Le technicien peut sélectionner une pièce disponible dans son véhicule (facturable
+              après accord client) ou consommer le stock sur site (non facturé, traçabilité stock).
+            </div>
+            {ticketInvoices.length > 0 && (
+              <div className="space-y-2">
+                {ticketInvoices.map((invoice: any) => (
+                  <div key={invoice.id} className="rounded-md border p-3 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <b>{invoice.invoice_number}</b>
+                      <Badge variant="secondary">{invoice.status}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Total TTC : {Number(invoice.total || 0).toFixed(2)} € · Accord client :{" "}
+                      {formatDate(invoice.client_accepted_at)}
+                    </div>
+                    {ticketInvoiceItems
+                      .filter((item: any) => item.invoice_id === invoice.id)
+                      .map((item: any) => (
+                        <div key={item.id} className="mt-1 text-xs">
+                          {item.quantity} × {item.description} ·{" "}
+                          {item.source_type === "site_stock" ? "stock site" : "facturé"}
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            <form onSubmit={createOnsiteInvoice} className="space-y-3 border-t pt-3">
+              <div className="grid gap-2 md:grid-cols-4">
+                <Select name="source_type" defaultValue="technician_stock">
+                  <SelectTrigger>
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="technician_stock">Stock technicien · facturer</SelectItem>
+                    <SelectItem value="site_stock">Stock site · ne pas facturer</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select name="part_id" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pièce disponible" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {replacementStockChoices.map((choice: any) => (
+                      <SelectItem
+                        key={`${choice.location.id}-${choice.part.id}`}
+                        value={choice.part.id}
+                      >
+                        {choice.part.name} · {choice.location.name} ({choice.available})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select name="storage_location_id" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Stock" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {replacementStockChoices.map((choice: any) => (
+                      <SelectItem
+                        key={`${choice.location.id}-${choice.part.id}-loc`}
+                        value={choice.location.id}
+                      >
+                        {choice.location.name} · {choice.part.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input name="quantity" type="number" min="1" step="1" defaultValue="1" />
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input
+                  name="unit_price"
+                  type="number"
+                  step="0.01"
+                  placeholder="Prix unitaire HT si facturé"
+                />
+                <label className="flex items-center gap-2 text-sm">
+                  <input name="client_accepted" type="checkbox" required /> Accord client obtenu
+                  avant remplacement/facturation
+                </label>
+              </div>
+              <Button size="sm" disabled={replacementStockChoices.length === 0}>
+                Créer facture / tracer stock
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
