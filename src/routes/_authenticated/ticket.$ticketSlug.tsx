@@ -177,12 +177,12 @@ function TicketDetail() {
   const componentTypes = Array.isArray(installationType?.component_types)
     ? installationType.component_types
     : [];
-  const availablePartTypes = [
+  const availablePartTypes: string[] = [
     ...new Set(
       (componentTypes.length
         ? componentTypes.map((name: unknown) => String(name))
         : partCategories.map((category: any) => String(category.name))
-      ).filter(Boolean),
+      ).filter(Boolean) as string[],
     ),
   ];
 
