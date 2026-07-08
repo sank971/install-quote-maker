@@ -19,7 +19,7 @@ import { useList, useOne } from "@/lib/db-hooks";
 import { currentUserId } from "@/lib/ticket-workflow";
 import { supabase } from "@/integrations/supabase/client";
 
-export const Route = createFileRoute("/_authenticated/storage-locations/$locationId")({
+export const Route = createFileRoute("/_authenticated/stock-tickets/$locationId")({
   component: StorageLocationTicketsPage,
 });
 
@@ -156,7 +156,7 @@ function StorageLocationTicketsPage() {
           <Button variant="outline" asChild>
             <Link to="/storage-locations">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour aux lieux
+              Retour aux stocks
             </Link>
           </Button>
         }
