@@ -47,6 +47,7 @@ export type TableName =
   | "storage_locations"
   | "storage_location_stocks"
   | "stock_movements"
+  | "stock_tickets"
   | "part_family_fields"
   | "calculation_formulas"
   | "business_rules"
