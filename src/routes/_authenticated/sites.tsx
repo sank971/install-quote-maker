@@ -137,6 +137,8 @@ function SitesList() {
       client_id: edit.client_id,
       name: fd.get("name"),
       address: fd.get("address") || null,
+      latitude: fd.get("latitude") ? Number(fd.get("latitude")) : null,
+      longitude: fd.get("longitude") ? Number(fd.get("longitude")) : null,
       email: fd.get("email") || null,
       contact_name: fd.get("contact_name") || null,
       contact_phone: fd.get("contact_phone") || null,
@@ -198,6 +200,11 @@ function SitesList() {
                         <div className="truncate text-xs text-muted-foreground">
                           {client?.name} · {s.address || "—"}
                         </div>
+                        {s.latitude && s.longitude && (
+                          <div className="truncate text-xs text-muted-foreground">
+                            GPS : {Number(s.latitude).toFixed(5)}, {Number(s.longitude).toFixed(5)}
+                          </div>
+                        )}
                         {(s.email || s.contact_name) && (
                           <div className="truncate text-xs text-muted-foreground">
                             {[s.contact_name, s.contact_phone, s.email].filter(Boolean).join(" · ")}
@@ -254,6 +261,28 @@ function SitesList() {
             <div>
               <Label>Email du site</Label>
               <Input name="email" type="email" defaultValue={edit?.email} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Latitude</Label>
+                <Input
+                  name="latitude"
+                  type="number"
+                  step="0.000001"
+                  defaultValue={edit?.latitude}
+                  placeholder="48.856614"
+                />
+              </div>
+              <div>
+                <Label>Longitude</Label>
+                <Input
+                  name="longitude"
+                  type="number"
+                  step="0.000001"
+                  defaultValue={edit?.longitude}
+                  placeholder="2.352222"
+                />
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>

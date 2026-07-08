@@ -30,6 +30,8 @@ export type TableName =
   | "app_settings"
   | "suppliers"
   | "supplier_parts"
+  | "subcontractors"
+  | "subcontractor_installation_types"
   | "contracts"
   | "interventions"
   | "quotes"
