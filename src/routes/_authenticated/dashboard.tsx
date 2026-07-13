@@ -34,6 +34,7 @@ import {
   Coins,
   FileCheck,
   FileText,
+  Package,
   Percent,
   Settings2,
   TrendingUp,
@@ -48,7 +49,11 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 const fmtEur = (n: number) =>
-  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
+  new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n || 0);
 const fmtPct = (n: number) => `${(n || 0).toFixed(1)} %`;
 
 function Dashboard() {
@@ -155,7 +160,10 @@ function Dashboard() {
         <Alert className="mb-6 border-amber-300 bg-amber-50 text-amber-900">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            <span className="font-semibold">{alerts.length} alerte{alerts.length > 1 ? "s" : ""}</span> — consultez l'onglet Alertes.
+            <span className="font-semibold">
+              {alerts.length} alerte{alerts.length > 1 ? "s" : ""}
+            </span>{" "}
+            — consultez l'onglet Alertes.
           </AlertDescription>
         </Alert>
       )}
@@ -174,17 +182,58 @@ function Dashboard() {
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard icon={Coins} label="CA total" value={fmtEur(kpis.revenue)} hint="Devis acceptés" />
-            <KpiCard icon={TrendingUp} label="Marge brute" value={fmtEur(kpis.grossMargin)} tone={kpis.grossMargin >= 0 ? "positive" : "negative"} />
-            <KpiCard icon={TrendingUp} label="Marge nette estimée" value={fmtEur(kpis.netMargin)} tone={kpis.netMargin >= 0 ? "positive" : "negative"} hint="CA − coûts réels" />
-            <KpiCard icon={Percent} label="Taux de marge" value={fmtPct(kpis.marginPct)} tone={kpis.marginPct >= settings.minimum_margin_pct ? "positive" : "warning"} />
+            <KpiCard
+              icon={Coins}
+              label="CA total"
+              value={fmtEur(kpis.revenue)}
+              hint="Devis acceptés"
+            />
+            <KpiCard
+              icon={TrendingUp}
+              label="Marge brute"
+              value={fmtEur(kpis.grossMargin)}
+              tone={kpis.grossMargin >= 0 ? "positive" : "negative"}
+            />
+            <KpiCard
+              icon={TrendingUp}
+              label="Marge nette estimée"
+              value={fmtEur(kpis.netMargin)}
+              tone={kpis.netMargin >= 0 ? "positive" : "negative"}
+              hint="CA − coûts réels"
+            />
+            <KpiCard
+              icon={Percent}
+              label="Taux de marge"
+              value={fmtPct(kpis.marginPct)}
+              tone={kpis.marginPct >= settings.minimum_margin_pct ? "positive" : "warning"}
+            />
             <KpiCard icon={Wrench} label="Interventions" value={kpis.interventionCount} />
             <KpiCard icon={FileText} label="Devis créés" value={kpis.quoteCount} />
-            <KpiCard icon={FileCheck} label="Taux acceptation" value={fmtPct(kpis.acceptanceRate)} hint={fmtEur(kpis.acceptedAmount) + " acceptés"} />
+            <KpiCard
+              icon={FileCheck}
+              label="Taux acceptation"
+              value={fmtPct(kpis.acceptanceRate)}
+              hint={fmtEur(kpis.acceptedAmount) + " acceptés"}
+            />
             <KpiCard icon={Truck} label="Achats pièces" value={fmtEur(kpis.partOrdersAmount)} />
-            <KpiCard icon={TrendingDown} label="Coût déplacements" value={fmtEur(kpis.travelCost)} tone="warning" />
-            <KpiCard icon={TrendingDown} label="Coût techniciens" value={fmtEur(kpis.laborCost)} tone="warning" />
-            <KpiCard icon={TrendingDown} label="Coût envois pièces" value={fmtEur(kpis.shippingCost)} tone="warning" />
+            <KpiCard
+              icon={TrendingDown}
+              label="Coût déplacements"
+              value={fmtEur(kpis.travelCost)}
+              tone="warning"
+            />
+            <KpiCard
+              icon={TrendingDown}
+              label="Coût techniciens"
+              value={fmtEur(kpis.laborCost)}
+              tone="warning"
+            />
+            <KpiCard
+              icon={TrendingDown}
+              label="Coût envois pièces"
+              value={fmtEur(kpis.shippingCost)}
+              tone="warning"
+            />
             <KpiCard icon={Building2} label="Contrats actifs" value={kpis.activeContracts} />
           </div>
 
@@ -194,7 +243,12 @@ function Dashboard() {
               items={clientRows
                 .filter((r) => r.revenue > 0)
                 .slice(0, 10)
-                .map((r) => ({ label: r.label, value: fmtEur(r.netMargin), meta: fmtPct(r.marginPct), status: r.status }))}
+                .map((r) => ({
+                  label: r.label,
+                  value: fmtEur(r.netMargin),
+                  meta: fmtPct(r.marginPct),
+                  status: r.status,
+                }))}
             />
             <RankingList
               title="Clients les moins rentables"
@@ -202,7 +256,12 @@ function Dashboard() {
                 .filter((r) => r.cost > 0)
                 .sort((a, b) => a.netMargin - b.netMargin)
                 .slice(0, 10)
-                .map((r) => ({ label: r.label, value: fmtEur(r.netMargin), meta: fmtPct(r.marginPct), status: r.status }))}
+                .map((r) => ({
+                  label: r.label,
+                  value: fmtEur(r.netMargin),
+                  meta: fmtPct(r.marginPct),
+                  status: r.status,
+                }))}
             />
           </div>
         </TabsContent>
@@ -229,7 +288,16 @@ function Dashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="parts">
+        <TabsContent value="parts" className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              icon={Package}
+              label="Total pièces en base"
+              value={rawData.parts.length}
+              hint="Références enregistrées"
+            />
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Pièces — commandes & marges</CardTitle>
@@ -258,7 +326,11 @@ function Dashboard() {
                       <td className="p-3 text-right">{p.orders}</td>
                       <td className="p-3 text-right">{fmtEur(p.revenue)}</td>
                       <td className="p-3 text-right">{fmtEur(p.cost)}</td>
-                      <td className={`p-3 text-right font-medium ${p.margin >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fmtEur(p.margin)}</td>
+                      <td
+                        className={`p-3 text-right font-medium ${p.margin >= 0 ? "text-emerald-700" : "text-red-700"}`}
+                      >
+                        {fmtEur(p.margin)}
+                      </td>
                       <td className="p-3 text-right">{fmtPct(p.marginPct)}</td>
                     </tr>
                   ))}
@@ -314,13 +386,28 @@ function Dashboard() {
 
         <TabsContent value="fleet" className="space-y-4">
           <div className="grid gap-4 lg:grid-cols-3">
-            <RankingList title="Par type d'installation" items={fleet.byType.map((r) => ({ label: r.label, value: String(r.count) }))} />
-            <RankingList title="Par marque" items={fleet.byBrand.map((r) => ({ label: r.label, value: String(r.count) }))} />
-            <RankingList title="Par site" items={fleet.bySite.map((r) => ({ label: r.label, value: String(r.count) }))} />
+            <RankingList
+              title="Par type d'installation"
+              items={fleet.byType.map((r) => ({ label: r.label, value: String(r.count) }))}
+            />
+            <RankingList
+              title="Par marque"
+              items={fleet.byBrand.map((r) => ({ label: r.label, value: String(r.count) }))}
+            />
+            <RankingList
+              title="Par site"
+              items={fleet.bySite.map((r) => ({ label: r.label, value: String(r.count) }))}
+            />
           </div>
           <RankingList
             title="Sites générant le plus d'interventions"
-            items={siteRows.slice(0, 10).map((r) => ({ label: r.label, sublabel: r.sublabel, value: `${r.interventionCount} interv.`, meta: fmtEur(r.netMargin), status: r.status }))}
+            items={siteRows.slice(0, 10).map((r) => ({
+              label: r.label,
+              sublabel: r.sublabel,
+              value: `${r.interventionCount} interv.`,
+              meta: fmtEur(r.netMargin),
+              status: r.status,
+            }))}
           />
         </TabsContent>
 
@@ -353,7 +440,8 @@ function Dashboard() {
                   {technicians.length === 0 && (
                     <tr>
                       <td colSpan={5} className="p-6 text-center text-sm text-muted-foreground">
-                        Aucune intervention n'a de technicien affecté. Renseignez le champ sur les interventions pour voir les coûts par technicien.
+                        Aucune intervention n'a de technicien affecté. Renseignez le champ sur les
+                        interventions pour voir les coûts par technicien.
                       </td>
                     </tr>
                   )}
@@ -370,11 +458,23 @@ function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-2">
               {alerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune alerte détectée sur la période. 🎉</p>
+                <p className="text-sm text-muted-foreground">
+                  Aucune alerte détectée sur la période. 🎉
+                </p>
               ) : (
                 alerts.map((a, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2">
-                    <Badge variant="outline" className={a.level === "red" ? "bg-red-500/15 text-red-700 border-red-500/30" : "bg-amber-500/15 text-amber-700 border-amber-500/30"}>
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2"
+                  >
+                    <Badge
+                      variant="outline"
+                      className={
+                        a.level === "red"
+                          ? "bg-red-500/15 text-red-700 border-red-500/30"
+                          : "bg-amber-500/15 text-amber-700 border-amber-500/30"
+                      }
+                    >
                       {a.level === "red" ? "Critique" : "Attention"}
                     </Badge>
                     <span className="text-sm">{a.message}</span>
@@ -391,7 +491,9 @@ function Dashboard() {
 
 function ProfitTable({ rows, label }: { rows: any[]; label: string }) {
   if (rows.length === 0) {
-    return <p className="p-6 text-center text-sm text-muted-foreground">Aucune donnée sur la période.</p>;
+    return (
+      <p className="p-6 text-center text-sm text-muted-foreground">Aucune donnée sur la période.</p>
+    );
   }
   return (
     <div className="overflow-x-auto">
@@ -417,10 +519,17 @@ function ProfitTable({ rows, label }: { rows: any[]; label: string }) {
               </td>
               <td className="p-3 text-right">{fmtEur(r.revenue)}</td>
               <td className="p-3 text-right">{fmtEur(r.cost)}</td>
-              <td className={`p-3 text-right font-medium ${r.netMargin >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fmtEur(r.netMargin)}</td>
+              <td
+                className={`p-3 text-right font-medium ${r.netMargin >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              >
+                {fmtEur(r.netMargin)}
+              </td>
               <td className="p-3 text-right">{fmtPct(r.marginPct)}</td>
               <td className="p-3 text-right">{r.interventionCount}</td>
-              <td className="p-3 text-right">{r.quoteCount}{r.acceptedQuotes > 0 && ` (${r.acceptedQuotes}✓)`}</td>
+              <td className="p-3 text-right">
+                {r.quoteCount}
+                {r.acceptedQuotes > 0 && ` (${r.acceptedQuotes}✓)`}
+              </td>
               <td className="p-3">
                 <Badge
                   variant="outline"
@@ -432,7 +541,11 @@ function ProfitTable({ rows, label }: { rows: any[]; label: string }) {
                         : "bg-red-500/15 text-red-700 border-red-500/30"
                   }
                 >
-                  {r.status === "green" ? "Rentable" : r.status === "amber" ? "Limite" : "Déficitaire"}
+                  {r.status === "green"
+                    ? "Rentable"
+                    : r.status === "amber"
+                      ? "Limite"
+                      : "Déficitaire"}
                 </Badge>
               </td>
             </tr>
