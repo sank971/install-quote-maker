@@ -294,6 +294,11 @@ function PartsPage() {
   const qc = useQueryClient();
 
   const [q, setQ] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [compatOpen, setCompatOpen] = useState<any>(null);
@@ -973,13 +978,51 @@ function PartsPage() {
     toast.success("Augmentation annuelle appliquée aux prix fixes");
   };
 
-  const filtered = parts.filter((p) =>
-    [p.name, p.reference, p.category]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(q.toLowerCase()),
+  const hasActiveFilters = Boolean(
+    q || categoryFilter || brandFilter || supplierFilter || typeFilter || statusFilter,
   );
+
+  const resetFilters = () => {
+    setQ("");
+    setCategoryFilter("");
+    setBrandFilter("");
+    setSupplierFilter("");
+    setTypeFilter("");
+    setStatusFilter("");
+  };
+
+  const filtered = parts.filter((p) => {
+    const search = q.trim().toLowerCase();
+    const matchesSearch =
+      !search ||
+      [p.name, p.reference, p.category].filter(Boolean).join(" ").toLowerCase().includes(search);
+    const matchesCategory = !categoryFilter || p.category === categoryFilter;
+    const matchesBrand = !brandFilter || p.brand_id === brandFilter;
+    const matchesSupplier =
+      !supplierFilter ||
+      supplierParts.some(
+        (supplierPart: any) =>
+          supplierPart.part_id === p.id && supplierPart.supplier_id === supplierFilter,
+      );
+    const matchesType =
+      !typeFilter ||
+      typeCompat.some((compat: any) => compat.part_id === p.id && compat.type_id === typeFilter);
+    const matchesStatus =
+      !statusFilter ||
+      (statusFilter === "part" && !p.is_kit && !p.is_obsolete) ||
+      (statusFilter === "kit" && p.is_kit) ||
+      (statusFilter === "obsolete" && p.is_obsolete) ||
+      (statusFilter === "oversized" && p.is_oversized);
+
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesBrand &&
+      matchesSupplier &&
+      matchesType &&
+      matchesStatus
+    );
+  });
 
   const openNew = (isKit = false) => {
     setEdit({ is_kit: isKit, sale_price: 0 });
@@ -1239,15 +1282,94 @@ function PartsPage() {
           </div>
         }
       />
-      <div className="mb-4 relative max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Rechercher..."
-          className="pl-9"
-        />
-      </div>
+      <Card className="mb-4 p-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="relative md:col-span-2 xl:col-span-2">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Rechercher une pièce, une référence..."
+              className="pl-9"
+            />
+          </div>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par type de pièce"
+          >
+            <option value="">Tous les types de pièces</option>
+            {partCategories.map((category: any) => (
+              <option key={category.id} value={category.name}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par marque"
+          >
+            <option value="">Toutes les marques</option>
+            {brands.map((brand: any) => (
+              <option key={brand.id} value={brand.id}>
+                {brand.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={supplierFilter}
+            onChange={(e) => setSupplierFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par fournisseur"
+          >
+            <option value="">Tous les fournisseurs</option>
+            {suppliers.map((supplier: any) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par type d'installation compatible"
+          >
+            <option value="">Tous les types compatibles</option>
+            {types.map((type: any) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par statut"
+          >
+            <option value="">Tous les statuts</option>
+            <option value="part">Pièces actives</option>
+            <option value="kit">Kits</option>
+            <option value="obsolete">Obsolètes</option>
+            <option value="oversized">Hors gabarit</option>
+          </select>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <span>
+            {filtered.length} résultat{filtered.length > 1 ? "s" : ""} sur {parts.length} pièce
+            {parts.length > 1 ? "s" : ""}
+          </span>
+          {hasActiveFilters && (
+            <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+              Réinitialiser les filtres
+            </Button>
+          )}
+        </div>
+      </Card>
 
       {filtered.length === 0 ? (
         <EmptyState
