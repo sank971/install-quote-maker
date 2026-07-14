@@ -296,6 +296,8 @@ function PartsPage() {
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
+  const [doorBrandFilter, setDoorBrandFilter] = useState("");
+  const [doorModelFilter, setDoorModelFilter] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -979,17 +981,40 @@ function PartsPage() {
   };
 
   const hasActiveFilters = Boolean(
-    q || categoryFilter || brandFilter || supplierFilter || typeFilter || statusFilter,
+    q ||
+    categoryFilter ||
+    brandFilter ||
+    doorBrandFilter ||
+    doorModelFilter ||
+    supplierFilter ||
+    typeFilter ||
+    statusFilter,
   );
 
   const resetFilters = () => {
     setQ("");
     setCategoryFilter("");
     setBrandFilter("");
+    setDoorBrandFilter("");
+    setDoorModelFilter("");
     setSupplierFilter("");
     setTypeFilter("");
     setStatusFilter("");
   };
+
+  const doorModelOptions = useMemo(
+    () =>
+      models
+        .filter((model: any) => !doorBrandFilter || model.brand_id === doorBrandFilter)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [doorBrandFilter, models],
+  );
+
+  useEffect(() => {
+    if (doorModelFilter && !doorModelOptions.some((model: any) => model.id === doorModelFilter)) {
+      setDoorModelFilter("");
+    }
+  }, [doorModelFilter, doorModelOptions]);
 
   const filtered = parts.filter((p) => {
     const search = q.trim().toLowerCase();
@@ -998,6 +1023,16 @@ function PartsPage() {
       [p.name, p.reference, p.category].filter(Boolean).join(" ").toLowerCase().includes(search);
     const matchesCategory = !categoryFilter || p.category === categoryFilter;
     const matchesBrand = !brandFilter || p.brand_id === brandFilter;
+    const compatibleModelRows = modelCompat.filter((compat: any) => compat.part_id === p.id);
+    const matchesDoorBrand =
+      !doorBrandFilter ||
+      compatibleModelRows.some((compat: any) => {
+        const model = models.find((candidate: any) => candidate.id === compat.model_id);
+        return model?.brand_id === doorBrandFilter;
+      });
+    const matchesDoorModel =
+      !doorModelFilter ||
+      compatibleModelRows.some((compat: any) => compat.model_id === doorModelFilter);
     const matchesSupplier =
       !supplierFilter ||
       supplierParts.some(
@@ -1018,6 +1053,8 @@ function PartsPage() {
       matchesSearch &&
       matchesCategory &&
       matchesBrand &&
+      matchesDoorBrand &&
+      matchesDoorModel &&
       matchesSupplier &&
       matchesType &&
       matchesStatus
@@ -1283,7 +1320,7 @@ function PartsPage() {
         }
       />
       <Card className="mb-4 p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
           <div className="relative md:col-span-2 xl:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1318,6 +1355,35 @@ function PartsPage() {
                 {brand.name}
               </option>
             ))}
+          </select>
+          <select
+            value={doorBrandFilter}
+            onChange={(e) => setDoorBrandFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par marque de porte compatible"
+          >
+            <option value="">Toutes les marques de porte</option>
+            {brands.map((brand: any) => (
+              <option key={brand.id} value={brand.id}>
+                {brand.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={doorModelFilter}
+            onChange={(e) => setDoorModelFilter(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            aria-label="Filtrer par modèle de porte compatible"
+          >
+            <option value="">Tous les modèles de porte</option>
+            {doorModelOptions.map((model: any) => {
+              const modelBrand = brands.find((brand: any) => brand.id === model.brand_id);
+              return (
+                <option key={model.id} value={model.id}>
+                  {[modelBrand?.name, model.name].filter(Boolean).join(" - ")}
+                </option>
+              );
+            })}
           </select>
           <select
             value={supplierFilter}
