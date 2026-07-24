@@ -130,6 +130,30 @@ function Dashboard() {
     () => buildAlerts(clientRows, contractRows, siteRows, partsRanking, suppliersRanking, settings),
     [clientRows, contractRows, siteRows, partsRanking, suppliersRanking, settings],
   );
+  const timeSeries = useMemo(() => buildTimeSeries(data, settings, bucket), [data, settings, bucket]);
+  const clientChart = useMemo(
+    () =>
+      clientRows
+        .filter((r) => r.revenue > 0 || r.cost > 0)
+        .slice(0, 10)
+        .map((r) => ({ label: r.label, revenue: r.revenue, cost: r.cost, margin: r.netMargin })),
+    [clientRows],
+  );
+  const contractChart = useMemo(
+    () =>
+      contractRows
+        .slice(0, 10)
+        .map((r) => ({ label: r.label, margin: r.netMargin })),
+    [contractRows],
+  );
+  const costBreakdown = useMemo(
+    () => [
+      { label: "Achats pièces", value: kpis.purchasesCost },
+      { label: "Déplacements", value: kpis.travelCost },
+      { label: "Main-d'œuvre", value: kpis.laborCost },
+      { label: "Envois", value: kpis.shippingCost },
+    ],
+    [kpis],
 
   return (
     <div>
