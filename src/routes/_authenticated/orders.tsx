@@ -49,6 +49,16 @@ const orderStatusColors: Record<string, string> = {
   annulee: "bg-gray-200 text-gray-800",
 };
 
+const stockStatusLabels: Record<string, string> = {
+  brouillon: "Brouillon",
+  en_attente: "En attente",
+  en_preparation: "En préparation",
+  en_transit: "En transit",
+  livre: "Livré / à valider",
+  termine: "Terminé",
+  annule: "Annulé",
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("fr-FR").format(new Date(value));
