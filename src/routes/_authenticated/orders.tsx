@@ -284,12 +284,13 @@ function OrdersPage() {
         </Select>
       </div>
 
-      {enrichedOrders.length === 0 ? (
+      {enrichedOrders.length === 0 && enrichedStockTickets.length === 0 ? (
         <EmptyState
           title="Aucune commande à afficher"
-          description="Les commandes de pièces créées depuis les tickets apparaîtront ici."
+          description="Les commandes de pièces créées depuis les tickets ou depuis les stocks apparaîtront ici."
         />
       ) : (
+
         <div className="grid gap-4">
           {enrichedOrders.map((orderData: any) => (
             <Card key={orderData.order.id}>
