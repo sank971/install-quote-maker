@@ -64,11 +64,14 @@ function OrdersPage() {
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: interventions = [] } = useList<any>("interventions");
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
+  const { data: stockTickets = [] } = useList<any>("stock_tickets", { orderBy: "created_at" });
+  const { data: storageLocations = [] } = useList<any>("storage_locations", { orderBy: "name", ascending: true });
+  const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
 
   const invalidate = () =>
-    ["part_orders", "interventions", "tickets", "history_events", "quote_tickets"].forEach(
+    ["part_orders", "interventions", "tickets", "history_events", "quote_tickets", "stock_tickets"].forEach(
       (table) => qc.invalidateQueries({ queryKey: [table] }),
     );
 
@@ -87,7 +90,7 @@ function OrdersPage() {
             intervention.type === "reparation" &&
             !["echec", "annulee"].includes(intervention.status),
         );
-        return { order, ticket, site, installation, supplier, items, hasRepair };
+        return { kind: "part_order" as const, order, ticket, site, installation, supplier, items, hasRepair };
       })
       .filter(({ order, ticket, site, installation, supplier, items }: any) => {
         const matchesStatus =
@@ -121,6 +124,43 @@ function OrdersPage() {
     suppliers,
     tickets,
   ]);
+
+  const enrichedStockTickets = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return stockTickets
+      .filter((t: any) => t.type === "commande_fournisseur")
+      .map((ticket: any) => {
+        const destination = storageLocations.find((l: any) => l.id === ticket.destination_location_id);
+        const site = sites.find((s: any) => s.id === destination?.site_id) ?? null;
+        const supplier = suppliers.find((s: any) => s.id === ticket.supplier_id);
+        const part = parts.find((p: any) => p.id === ticket.part_id);
+        return { kind: "stock_ticket" as const, ticket, destination, site, supplier, part };
+      })
+      .filter(({ ticket, destination, site, supplier, part }: any) => {
+        const isOpen = !["termine", "annule"].includes(ticket.status);
+        const matchesStatus =
+          statusFilter === "all" ||
+          statusFilter === "active" ? isOpen : true;
+        if (statusFilter !== "all" && statusFilter !== "active") {
+          // ignore stock tickets when filtering on a part_orders-specific status
+          return false;
+        }
+        const haystack = [
+          ticket.ticket_number,
+          ticket.status,
+          destination?.name,
+          site?.name,
+          supplier?.name,
+          part?.name,
+          part?.reference,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return matchesStatus && (!query || haystack.includes(query));
+      });
+  }, [stockTickets, storageLocations, sites, suppliers, parts, searchQuery, statusFilter]);
+
 
   const updateOrderStatus = async (orderData: any, status: string) => {
     const updates: Record<string, any> = { status };
