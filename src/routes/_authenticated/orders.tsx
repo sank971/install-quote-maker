@@ -381,8 +381,75 @@ function OrdersPage() {
               </CardContent>
             </Card>
           ))}
+
+          {enrichedStockTickets.map((row: any) => (
+            <Card key={`stock-${row.ticket.id}`} className="border-dashed">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">Ticket stock</Badge>
+                      <CardTitle className="text-base">{row.ticket.ticket_number}</CardTitle>
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      Créé le {formatDate(row.ticket.created_at)} · Fournisseur :{" "}
+                      {row.supplier?.name ?? "—"}
+                    </div>
+                  </div>
+                  <Badge variant="secondary">{stockStatusLabels[row.ticket.status] ?? row.ticket.status}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 text-sm md:grid-cols-3">
+                  <div>
+                    <div className="text-muted-foreground">Site</div>
+                    <div className="font-medium">{row.site?.name ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Lieu de stockage</div>
+                    <div className="font-medium">{row.destination?.name ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Pièce</div>
+                    <div className="font-medium">
+                      {row.part?.name ?? "—"} × {row.ticket.quantity}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <Select
+                    value={row.ticket.status}
+                    onValueChange={(status) => updateStockTicketStatus(row.ticket, status)}
+                  >
+                    <SelectTrigger className="md:w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(stockStatusLabels).map(([status, label]) => (
+                        <SelectItem key={status} value={status}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {row.destination?.id && (
+                    <Button variant="outline" asChild>
+                      <Link
+                        to="/stock-tickets/$locationId"
+                        params={{ locationId: row.destination.id }}
+                      >
+                        <PackageCheck className="mr-2 h-4 w-4" />
+                        Ouvrir dans les stocks
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
+
     </>
   );
 }
