@@ -533,9 +533,23 @@ export type Database = {
           average_shipping_cost: number
           cost_per_km: number
           created_at: string
+          default_admin_after_minutes: number
+          default_admin_before_minutes: number
+          default_onsite_minutes: number
+          default_part_packaging_cost: number
+          default_part_preparation_cost: number
+          default_part_storage_cost: number
+          default_technicians_count: number
+          default_travel_minutes: number
           fuel_price: number
           id: string
           minimum_margin_pct: number
+          overhead_agency_amount: number
+          overhead_direct_cost_pct: number
+          overhead_fixed_amount: number
+          overhead_hourly_amount: number
+          overhead_mode: string
+          overhead_revenue_pct: number
           owner_id: string
           technician_hourly_cost: number
           updated_at: string
@@ -548,9 +562,23 @@ export type Database = {
           average_shipping_cost?: number
           cost_per_km?: number
           created_at?: string
+          default_admin_after_minutes?: number
+          default_admin_before_minutes?: number
+          default_onsite_minutes?: number
+          default_part_packaging_cost?: number
+          default_part_preparation_cost?: number
+          default_part_storage_cost?: number
+          default_technicians_count?: number
+          default_travel_minutes?: number
           fuel_price?: number
           id?: string
           minimum_margin_pct?: number
+          overhead_agency_amount?: number
+          overhead_direct_cost_pct?: number
+          overhead_fixed_amount?: number
+          overhead_hourly_amount?: number
+          overhead_mode?: string
+          overhead_revenue_pct?: number
           owner_id: string
           technician_hourly_cost?: number
           updated_at?: string
@@ -563,9 +591,23 @@ export type Database = {
           average_shipping_cost?: number
           cost_per_km?: number
           created_at?: string
+          default_admin_after_minutes?: number
+          default_admin_before_minutes?: number
+          default_onsite_minutes?: number
+          default_part_packaging_cost?: number
+          default_part_preparation_cost?: number
+          default_part_storage_cost?: number
+          default_technicians_count?: number
+          default_travel_minutes?: number
           fuel_price?: number
           id?: string
           minimum_margin_pct?: number
+          overhead_agency_amount?: number
+          overhead_direct_cost_pct?: number
+          overhead_fixed_amount?: number
+          overhead_hourly_amount?: number
+          overhead_mode?: string
+          overhead_revenue_pct?: number
           owner_id?: string
           technician_hourly_cost?: number
           updated_at?: string
@@ -1073,6 +1115,127 @@ export type Database = {
           },
         ]
       }
+      intervention_equipments: {
+        Row: {
+          created_at: string
+          daily_cost: number
+          delivery_cost: number
+          deposit_amount: number
+          equipment_type: string
+          estimated_maintenance_cost: number
+          external_rental_cost: number
+          fixed_usage_cost: number
+          hourly_cost: number
+          id: string
+          intervention_id: string
+          owner_id: string
+          usage_days: number
+          usage_hours: number
+        }
+        Insert: {
+          created_at?: string
+          daily_cost?: number
+          delivery_cost?: number
+          deposit_amount?: number
+          equipment_type: string
+          estimated_maintenance_cost?: number
+          external_rental_cost?: number
+          fixed_usage_cost?: number
+          hourly_cost?: number
+          id?: string
+          intervention_id: string
+          owner_id: string
+          usage_days?: number
+          usage_hours?: number
+        }
+        Update: {
+          created_at?: string
+          daily_cost?: number
+          delivery_cost?: number
+          deposit_amount?: number
+          equipment_type?: string
+          estimated_maintenance_cost?: number
+          external_rental_cost?: number
+          fixed_usage_cost?: number
+          hourly_cost?: number
+          id?: string
+          intervention_id?: string
+          owner_id?: string
+          usage_days?: number
+          usage_hours?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "intervention_equipments_intervention_id_fkey"
+            columns: ["intervention_id"]
+            isOneToOne: false
+            referencedRelation: "interventions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      intervention_parts_costs: {
+        Row: {
+          created_at: string
+          designation: string
+          from_internal_stock: boolean
+          id: string
+          intervention_id: string
+          owner_id: string
+          packaging_cost: number
+          part_id: string | null
+          preparation_cost: number
+          purchase_price: number
+          quantity: number
+          sale_price: number
+          storage_cost: number
+          supplier: string | null
+          weighted_average_cost: number | null
+        }
+        Insert: {
+          created_at?: string
+          designation: string
+          from_internal_stock?: boolean
+          id?: string
+          intervention_id: string
+          owner_id: string
+          packaging_cost?: number
+          part_id?: string | null
+          preparation_cost?: number
+          purchase_price?: number
+          quantity?: number
+          sale_price?: number
+          storage_cost?: number
+          supplier?: string | null
+          weighted_average_cost?: number | null
+        }
+        Update: {
+          created_at?: string
+          designation?: string
+          from_internal_stock?: boolean
+          id?: string
+          intervention_id?: string
+          owner_id?: string
+          packaging_cost?: number
+          part_id?: string | null
+          preparation_cost?: number
+          purchase_price?: number
+          quantity?: number
+          sale_price?: number
+          storage_cost?: number
+          supplier?: string | null
+          weighted_average_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "intervention_parts_costs_intervention_id_fkey"
+            columns: ["intervention_id"]
+            isOneToOne: false
+            referencedRelation: "interventions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       intervention_reports: {
         Row: {
           actions_realisees: string | null
@@ -1174,9 +1337,198 @@ export type Database = {
           },
         ]
       }
+      intervention_shipments: {
+        Row: {
+          carrier: string | null
+          created_at: string
+          destination_type: string | null
+          id: string
+          intervention_id: string
+          owner_id: string
+          packaging_cost: number
+          preparation_cost: number
+          return_fees: number
+          shipping_cost: number
+          transport_insurance: number
+        }
+        Insert: {
+          carrier?: string | null
+          created_at?: string
+          destination_type?: string | null
+          id?: string
+          intervention_id: string
+          owner_id: string
+          packaging_cost?: number
+          preparation_cost?: number
+          return_fees?: number
+          shipping_cost?: number
+          transport_insurance?: number
+        }
+        Update: {
+          carrier?: string | null
+          created_at?: string
+          destination_type?: string | null
+          id?: string
+          intervention_id?: string
+          owner_id?: string
+          packaging_cost?: number
+          preparation_cost?: number
+          return_fees?: number
+          shipping_cost?: number
+          transport_insurance?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "intervention_shipments_intervention_id_fkey"
+            columns: ["intervention_id"]
+            isOneToOne: false
+            referencedRelation: "interventions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      intervention_subcontractors: {
+        Row: {
+          billed_amount: number
+          created_at: string
+          extra_fees: number
+          id: string
+          intervention_id: string
+          invoice_url: string | null
+          material_fees: number
+          owner_id: string
+          service_type: string | null
+          subcontractor_name: string
+          travel_fees: number
+        }
+        Insert: {
+          billed_amount?: number
+          created_at?: string
+          extra_fees?: number
+          id?: string
+          intervention_id: string
+          invoice_url?: string | null
+          material_fees?: number
+          owner_id: string
+          service_type?: string | null
+          subcontractor_name: string
+          travel_fees?: number
+        }
+        Update: {
+          billed_amount?: number
+          created_at?: string
+          extra_fees?: number
+          id?: string
+          intervention_id?: string
+          invoice_url?: string | null
+          material_fees?: number
+          owner_id?: string
+          service_type?: string | null
+          subcontractor_name?: string
+          travel_fees?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "intervention_subcontractors_intervention_id_fkey"
+            columns: ["intervention_id"]
+            isOneToOne: false
+            referencedRelation: "interventions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      intervention_technician_times: {
+        Row: {
+          created_at: string
+          hourly_cost: number | null
+          id: string
+          intervention_id: string
+          onsite_minutes: number
+          owner_id: string
+          technician_id: string | null
+          technician_name: string | null
+          travel_minutes: number
+        }
+        Insert: {
+          created_at?: string
+          hourly_cost?: number | null
+          id?: string
+          intervention_id: string
+          onsite_minutes?: number
+          owner_id: string
+          technician_id?: string | null
+          technician_name?: string | null
+          travel_minutes?: number
+        }
+        Update: {
+          created_at?: string
+          hourly_cost?: number | null
+          id?: string
+          intervention_id?: string
+          onsite_minutes?: number
+          owner_id?: string
+          technician_id?: string | null
+          technician_name?: string | null
+          travel_minutes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "intervention_technician_times_intervention_id_fkey"
+            columns: ["intervention_id"]
+            isOneToOne: false
+            referencedRelation: "interventions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      intervention_type_admin_settings: {
+        Row: {
+          admin_after_minutes: number
+          admin_before_minutes: number
+          admin_hourly_cost: number
+          closing_minutes: number
+          id: string
+          intervention_type: string
+          invoicing_minutes: number
+          owner_id: string
+          part_order_minutes: number
+          planning_minutes: number
+          quote_minutes: number
+        }
+        Insert: {
+          admin_after_minutes?: number
+          admin_before_minutes?: number
+          admin_hourly_cost?: number
+          closing_minutes?: number
+          id?: string
+          intervention_type: string
+          invoicing_minutes?: number
+          owner_id: string
+          part_order_minutes?: number
+          planning_minutes?: number
+          quote_minutes?: number
+        }
+        Update: {
+          admin_after_minutes?: number
+          admin_before_minutes?: number
+          admin_hourly_cost?: number
+          closing_minutes?: number
+          id?: string
+          intervention_type?: string
+          invoicing_minutes?: number
+          owner_id?: string
+          part_order_minutes?: number
+          planning_minutes?: number
+          quote_minutes?: number
+        }
+        Relationships: []
+      }
       interventions: {
         Row: {
           admin_minutes: number | null
+          billed_revenue: number
+          calculation_status: string
+          calculation_warnings: string[]
           completed_at: string | null
           created_at: string
           date: string
@@ -1187,24 +1539,49 @@ export type Database = {
           fuel_cost: number | null
           id: string
           installation_id: string
+          manual_admin_cost: number | null
+          manual_equipment_cost: number | null
+          manual_labor_cost: number | null
+          manual_overhead_cost: number | null
+          manual_parts_cost: number | null
+          manual_shipping_cost: number | null
+          manual_subcontractor_cost: number | null
+          manual_travel_labor_cost: number | null
+          manual_vehicle_cost: number | null
           onsite_minutes: number | null
+          outbound_distance_km: number | null
+          outbound_travel_minutes: number | null
           owner_id: string
+          primary_technician_id: string | null
+          return_distance_km: number | null
+          return_travel_minutes: number | null
+          route_client_address: string | null
+          route_next_address: string | null
+          route_source_address: string | null
+          route_stock_address: string | null
           scheduled_at: string | null
+          secondary_technician_ids: string[]
           site_id: string | null
           start_address: string | null
           started_at: string | null
           status: string
           subcontractor_cost: number | null
+          technician_count: number
           technician_id: string | null
           ticket_id: string | null
           title: string
           toll_parking_cost: number | null
           travel_minutes: number | null
+          travel_mode: string
           type: string
           updated_at: string
+          vehicle_id: string | null
         }
         Insert: {
           admin_minutes?: number | null
+          billed_revenue?: number
+          calculation_status?: string
+          calculation_warnings?: string[]
           completed_at?: string | null
           created_at?: string
           date?: string
@@ -1215,24 +1592,49 @@ export type Database = {
           fuel_cost?: number | null
           id?: string
           installation_id: string
+          manual_admin_cost?: number | null
+          manual_equipment_cost?: number | null
+          manual_labor_cost?: number | null
+          manual_overhead_cost?: number | null
+          manual_parts_cost?: number | null
+          manual_shipping_cost?: number | null
+          manual_subcontractor_cost?: number | null
+          manual_travel_labor_cost?: number | null
+          manual_vehicle_cost?: number | null
           onsite_minutes?: number | null
+          outbound_distance_km?: number | null
+          outbound_travel_minutes?: number | null
           owner_id: string
+          primary_technician_id?: string | null
+          return_distance_km?: number | null
+          return_travel_minutes?: number | null
+          route_client_address?: string | null
+          route_next_address?: string | null
+          route_source_address?: string | null
+          route_stock_address?: string | null
           scheduled_at?: string | null
+          secondary_technician_ids?: string[]
           site_id?: string | null
           start_address?: string | null
           started_at?: string | null
           status?: string
           subcontractor_cost?: number | null
+          technician_count?: number
           technician_id?: string | null
           ticket_id?: string | null
           title: string
           toll_parking_cost?: number | null
           travel_minutes?: number | null
+          travel_mode?: string
           type?: string
           updated_at?: string
+          vehicle_id?: string | null
         }
         Update: {
           admin_minutes?: number | null
+          billed_revenue?: number
+          calculation_status?: string
+          calculation_warnings?: string[]
           completed_at?: string | null
           created_at?: string
           date?: string
@@ -1243,21 +1645,43 @@ export type Database = {
           fuel_cost?: number | null
           id?: string
           installation_id?: string
+          manual_admin_cost?: number | null
+          manual_equipment_cost?: number | null
+          manual_labor_cost?: number | null
+          manual_overhead_cost?: number | null
+          manual_parts_cost?: number | null
+          manual_shipping_cost?: number | null
+          manual_subcontractor_cost?: number | null
+          manual_travel_labor_cost?: number | null
+          manual_vehicle_cost?: number | null
           onsite_minutes?: number | null
+          outbound_distance_km?: number | null
+          outbound_travel_minutes?: number | null
           owner_id?: string
+          primary_technician_id?: string | null
+          return_distance_km?: number | null
+          return_travel_minutes?: number | null
+          route_client_address?: string | null
+          route_next_address?: string | null
+          route_source_address?: string | null
+          route_stock_address?: string | null
           scheduled_at?: string | null
+          secondary_technician_ids?: string[]
           site_id?: string | null
           start_address?: string | null
           started_at?: string | null
           status?: string
           subcontractor_cost?: number | null
+          technician_count?: number
           technician_id?: string | null
           ticket_id?: string | null
           title?: string
           toll_parking_cost?: number | null
           travel_minutes?: number | null
+          travel_mode?: string
           type?: string
           updated_at?: string
+          vehicle_id?: string | null
         }
         Relationships: [
           {
@@ -1279,6 +1703,13 @@ export type Database = {
             columns: ["ticket_id"]
             isOneToOne: false
             referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interventions_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
             referencedColumns: ["id"]
           },
         ]
@@ -2973,6 +3404,69 @@ export type Database = {
         }
         Relationships: []
       }
+      technician_cost_profiles: {
+        Row: {
+          address: string | null
+          annual_equipment_clothing_cost: number
+          annual_training_cost: number
+          average_bonus_cost: number
+          average_meal_cost: number
+          calculated_hourly_cost: number | null
+          created_at: string
+          employer_charges_pct: number
+          id: string
+          manual_hourly_cost: number | null
+          monthly_employer_cost: number
+          monthly_gross_salary: number
+          monthly_worked_hours: number
+          owner_id: string
+          real_hourly_cost: number | null
+          technician_id: string | null
+          technician_name: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          annual_equipment_clothing_cost?: number
+          annual_training_cost?: number
+          average_bonus_cost?: number
+          average_meal_cost?: number
+          calculated_hourly_cost?: number | null
+          created_at?: string
+          employer_charges_pct?: number
+          id?: string
+          manual_hourly_cost?: number | null
+          monthly_employer_cost?: number
+          monthly_gross_salary?: number
+          monthly_worked_hours?: number
+          owner_id: string
+          real_hourly_cost?: number | null
+          technician_id?: string | null
+          technician_name: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          annual_equipment_clothing_cost?: number
+          annual_training_cost?: number
+          average_bonus_cost?: number
+          average_meal_cost?: number
+          calculated_hourly_cost?: number | null
+          created_at?: string
+          employer_charges_pct?: number
+          id?: string
+          manual_hourly_cost?: number | null
+          monthly_employer_cost?: number
+          monthly_gross_salary?: number
+          monthly_worked_hours?: number
+          owner_id?: string
+          real_hourly_cost?: number | null
+          technician_id?: string | null
+          technician_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ticket_group_tickets: {
         Row: {
           created_at: string
@@ -3148,6 +3642,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      vehicles: {
+        Row: {
+          amortization_months: number
+          annual_fuel_cost: number
+          annual_insurance: number
+          annual_maintenance: number
+          annual_other_costs: number
+          annual_parking: number
+          annual_repairs: number
+          annual_technical_inspection: number
+          annual_tires: number
+          annual_tolls: number
+          annual_washing: number
+          assigned_technician_id: string | null
+          average_consumption_l_100km: number
+          average_fuel_price: number
+          calculated_annual_cost: number | null
+          calculated_cost_per_km: number | null
+          created_at: string
+          estimated_annual_mileage: number
+          id: string
+          manual_cost_per_km: number | null
+          monthly_rental_cost: number
+          name: string
+          owner_id: string
+          purchase_cost: number
+          registration: string | null
+          updated_at: string
+          vehicle_type: string | null
+        }
+        Insert: {
+          amortization_months?: number
+          annual_fuel_cost?: number
+          annual_insurance?: number
+          annual_maintenance?: number
+          annual_other_costs?: number
+          annual_parking?: number
+          annual_repairs?: number
+          annual_technical_inspection?: number
+          annual_tires?: number
+          annual_tolls?: number
+          annual_washing?: number
+          assigned_technician_id?: string | null
+          average_consumption_l_100km?: number
+          average_fuel_price?: number
+          calculated_annual_cost?: number | null
+          calculated_cost_per_km?: number | null
+          created_at?: string
+          estimated_annual_mileage?: number
+          id?: string
+          manual_cost_per_km?: number | null
+          monthly_rental_cost?: number
+          name: string
+          owner_id: string
+          purchase_cost?: number
+          registration?: string | null
+          updated_at?: string
+          vehicle_type?: string | null
+        }
+        Update: {
+          amortization_months?: number
+          annual_fuel_cost?: number
+          annual_insurance?: number
+          annual_maintenance?: number
+          annual_other_costs?: number
+          annual_parking?: number
+          annual_repairs?: number
+          annual_technical_inspection?: number
+          annual_tires?: number
+          annual_tolls?: number
+          annual_washing?: number
+          assigned_technician_id?: string | null
+          average_consumption_l_100km?: number
+          average_fuel_price?: number
+          calculated_annual_cost?: number | null
+          calculated_cost_per_km?: number | null
+          created_at?: string
+          estimated_annual_mileage?: number
+          id?: string
+          manual_cost_per_km?: number | null
+          monthly_rental_cost?: number
+          name?: string
+          owner_id?: string
+          purchase_cost?: number
+          registration?: string | null
+          updated_at?: string
+          vehicle_type?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
