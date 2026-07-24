@@ -67,6 +67,7 @@ const fmtPct = (n: number) => `${(n || 0).toFixed(1)} %`;
 
 function Dashboard() {
   const [filters, setFilters] = useState<Filters>({ period: "month" });
+  const [bucket, setBucket] = useState<TimeBucket>("month");
 
   const clients = useList<any>("clients");
   const sites = useList<any>("sites");
