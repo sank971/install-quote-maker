@@ -49,6 +49,16 @@ const orderStatusColors: Record<string, string> = {
   annulee: "bg-gray-200 text-gray-800",
 };
 
+const stockStatusLabels: Record<string, string> = {
+  brouillon: "Brouillon",
+  en_attente: "En attente",
+  en_preparation: "En préparation",
+  en_transit: "En transit",
+  livre: "Livré / à valider",
+  termine: "Terminé",
+  annule: "Annulé",
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("fr-FR").format(new Date(value));
@@ -64,11 +74,14 @@ function OrdersPage() {
   const { data: suppliers = [] } = useList<any>("suppliers");
   const { data: interventions = [] } = useList<any>("interventions");
   const { data: quoteTickets = [] } = useList<any>("quote_tickets");
+  const { data: stockTickets = [] } = useList<any>("stock_tickets", { orderBy: "created_at" });
+  const { data: storageLocations = [] } = useList<any>("storage_locations", { orderBy: "name", ascending: true });
+  const { data: parts = [] } = useList<any>("parts", { orderBy: "name", ascending: true });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
 
   const invalidate = () =>
-    ["part_orders", "interventions", "tickets", "history_events", "quote_tickets"].forEach(
+    ["part_orders", "interventions", "tickets", "history_events", "quote_tickets", "stock_tickets"].forEach(
       (table) => qc.invalidateQueries({ queryKey: [table] }),
     );
 
@@ -87,7 +100,7 @@ function OrdersPage() {
             intervention.type === "reparation" &&
             !["echec", "annulee"].includes(intervention.status),
         );
-        return { order, ticket, site, installation, supplier, items, hasRepair };
+        return { kind: "part_order" as const, order, ticket, site, installation, supplier, items, hasRepair };
       })
       .filter(({ order, ticket, site, installation, supplier, items }: any) => {
         const matchesStatus =
@@ -121,6 +134,43 @@ function OrdersPage() {
     suppliers,
     tickets,
   ]);
+
+  const enrichedStockTickets = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return stockTickets
+      .filter((t: any) => t.type === "commande_fournisseur")
+      .map((ticket: any) => {
+        const destination = storageLocations.find((l: any) => l.id === ticket.destination_location_id);
+        const site = sites.find((s: any) => s.id === destination?.site_id) ?? null;
+        const supplier = suppliers.find((s: any) => s.id === ticket.supplier_id);
+        const part = parts.find((p: any) => p.id === ticket.part_id);
+        return { kind: "stock_ticket" as const, ticket, destination, site, supplier, part };
+      })
+      .filter(({ ticket, destination, site, supplier, part }: any) => {
+        const isOpen = !["termine", "annule"].includes(ticket.status);
+        const matchesStatus =
+          statusFilter === "all" ||
+          statusFilter === "active" ? isOpen : true;
+        if (statusFilter !== "all" && statusFilter !== "active") {
+          // ignore stock tickets when filtering on a part_orders-specific status
+          return false;
+        }
+        const haystack = [
+          ticket.ticket_number,
+          ticket.status,
+          destination?.name,
+          site?.name,
+          supplier?.name,
+          part?.name,
+          part?.reference,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return matchesStatus && (!query || haystack.includes(query));
+      });
+  }, [stockTickets, storageLocations, sites, suppliers, parts, searchQuery, statusFilter]);
+
 
   const updateOrderStatus = async (orderData: any, status: string) => {
     const updates: Record<string, any> = { status };
@@ -211,6 +261,29 @@ function OrdersPage() {
     toast.success("Intervention créée, vous pouvez continuer le process");
   };
 
+  const updateStockTicketStatus = async (ticket: any, status: string) => {
+    try {
+      if (status === "termine") {
+        const actor = await currentUserId();
+        const { error } = await (supabase.rpc as any)("complete_stock_ticket", {
+          p_ticket_id: ticket.id,
+          p_actor: actor,
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await (supabase.from("stock_tickets" as any) as any)
+          .update({ status })
+          .eq("id", ticket.id);
+        if (error) throw error;
+      }
+      invalidate();
+      toast.success("Ticket stock mis à jour");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+
   return (
     <>
       <PageHeader
@@ -244,12 +317,13 @@ function OrdersPage() {
         </Select>
       </div>
 
-      {enrichedOrders.length === 0 ? (
+      {enrichedOrders.length === 0 && enrichedStockTickets.length === 0 ? (
         <EmptyState
           title="Aucune commande à afficher"
-          description="Les commandes de pièces créées depuis les tickets apparaîtront ici."
+          description="Les commandes de pièces créées depuis les tickets ou depuis les stocks apparaîtront ici."
         />
       ) : (
+
         <div className="grid gap-4">
           {enrichedOrders.map((orderData: any) => (
             <Card key={orderData.order.id}>
@@ -340,8 +414,75 @@ function OrdersPage() {
               </CardContent>
             </Card>
           ))}
+
+          {enrichedStockTickets.map((row: any) => (
+            <Card key={`stock-${row.ticket.id}`} className="border-dashed">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">Ticket stock</Badge>
+                      <CardTitle className="text-base">{row.ticket.ticket_number}</CardTitle>
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      Créé le {formatDate(row.ticket.created_at)} · Fournisseur :{" "}
+                      {row.supplier?.name ?? "—"}
+                    </div>
+                  </div>
+                  <Badge variant="secondary">{stockStatusLabels[row.ticket.status] ?? row.ticket.status}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 text-sm md:grid-cols-3">
+                  <div>
+                    <div className="text-muted-foreground">Site</div>
+                    <div className="font-medium">{row.site?.name ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Lieu de stockage</div>
+                    <div className="font-medium">{row.destination?.name ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Pièce</div>
+                    <div className="font-medium">
+                      {row.part?.name ?? "—"} × {row.ticket.quantity}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <Select
+                    value={row.ticket.status}
+                    onValueChange={(status) => updateStockTicketStatus(row.ticket, status)}
+                  >
+                    <SelectTrigger className="md:w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(stockStatusLabels).map(([status, label]) => (
+                        <SelectItem key={status} value={status}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {row.destination?.id && (
+                    <Button variant="outline" asChild>
+                      <Link
+                        to="/stock-tickets/$locationId"
+                        params={{ locationId: row.destination.id }}
+                      >
+                        <PackageCheck className="mr-2 h-4 w-4" />
+                        Ouvrir dans les stocks
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
+
     </>
   );
 }
