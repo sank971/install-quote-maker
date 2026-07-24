@@ -354,9 +354,9 @@ function SiteDetail() {
                     ) : (
                       locationStocks.map((stock: any) => {
                         const part = parts.find((item: any) => item.id === stock.part_id);
-                        const available =
-                          Number(stock.quantity_available || 0) -
-                          Number(stock.quantity_reserved || 0);
+                        const totalInStock = Number(stock.quantity_available ?? 0);
+                        const reserved = Number(stock.quantity_reserved ?? 0);
+                        const available = totalInStock - reserved;
                         return (
                           <div
                             key={stock.id}
@@ -364,7 +364,7 @@ function SiteDetail() {
                           >
                             <span>{part?.name ?? "Pièce"}</span>
                             <span className="text-right">
-                              {available} dispo · {stock.quantity_reserved} réservé
+                              {totalInStock} en stock · {available} disponible · {reserved} réservé
                             </span>
                           </div>
                         );
