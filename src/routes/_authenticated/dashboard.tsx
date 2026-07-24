@@ -81,16 +81,11 @@ function Dashboard() {
     const row = (costSettingsQuery.data ?? [])[0];
     if (!row) return DEFAULT_COST_SETTINGS;
     return {
-      cost_per_km: Number(row.cost_per_km),
-      fuel_price: Number(row.fuel_price),
-      vehicle_consumption: Number(row.vehicle_consumption),
-      vehicle_cost_per_km: Number(row.vehicle_cost_per_km),
-      technician_hourly_cost: Number(row.technician_hourly_cost),
-      admin_hourly_cost: Number(row.admin_hourly_cost),
-      average_shipping_cost: Number(row.average_shipping_cost),
-      minimum_margin_pct: Number(row.minimum_margin_pct),
-      agency_address: row.agency_address,
-    };
+      ...DEFAULT_COST_SETTINGS,
+      ...Object.fromEntries(
+        Object.entries(row).filter(([, v]) => v !== null && v !== undefined),
+      ),
+    } as CostSettings;
   }, [costSettingsQuery.data]);
 
   const rawData: Datasets = {
