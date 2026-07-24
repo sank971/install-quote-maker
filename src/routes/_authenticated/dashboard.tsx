@@ -154,6 +154,8 @@ function Dashboard() {
       { label: "Envois", value: kpis.shippingCost },
     ],
     [kpis],
+  );
+
 
   return (
     <div>
