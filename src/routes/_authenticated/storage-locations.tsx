@@ -529,9 +529,9 @@ function StorageLocationsPage() {
                     ) : (
                       locStocks.map((stock) => {
                         const part = parts.find((p) => p.id === stock.part_id);
-                        const real =
-                          Number(stock.quantity_available || 0) -
-                          Number(stock.quantity_reserved || 0);
+                        const totalInStock = Number(stock.quantity_available ?? 0);
+                        const reserved = Number(stock.quantity_reserved ?? 0);
+                        const real = totalInStock - reserved;
                         return (
                           <div
                             key={stock.id}
@@ -543,7 +543,7 @@ function StorageLocationsPage() {
                           >
                             <span>{part?.name ?? "Pièce"}</span>
                             <span>
-                              {real} dispo ({stock.quantity_reserved} réservé · min.{" "}
+                              {totalInStock} en stock · {real} dispo ({reserved} réservé · min.{" "}
                               {stock.quantity_minimum ?? 0})
                             </span>
                           </div>

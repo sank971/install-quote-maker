@@ -856,13 +856,12 @@ function TicketDetail() {
     const locationId = String(fd.get("storage_location_id") || "");
     const location = storageLocations.find((loc: any) => loc.id === locationId);
     if (!part || !location) return toast.error("Sélectionnez une pièce disponible en stock");
-    const available = storageStocks
-      .filter((stock: any) => stock.part_id === partId && stock.storage_location_id === locationId)
-      .reduce(
-        (sum: number, stock: any) =>
-          sum + Number(stock.quantity_available || 0) - Number(stock.quantity_reserved || 0),
-        0,
-      );
+    const stock = storageStocks.find(
+      (item: any) => item.part_id === partId && item.storage_location_id === locationId,
+    );
+    const totalInStock = Number(stock?.quantity_available ?? 0);
+    const reserved = Number(stock?.quantity_reserved ?? 0);
+    const available = totalInStock - reserved;
     if (qty <= 0 || qty > available)
       return toast.error(`Stock insuffisant (${available} disponible)`);
 
@@ -904,9 +903,11 @@ function TicketDetail() {
       });
       if (itemError) throw itemError;
       const { error: stockError } = await (supabase.from("storage_location_stocks" as any) as any)
-        .update({ quantity_available: available - qty })
-        .eq("storage_location_id", location.id)
-        .eq("part_id", part.id);
+        // quantity_available is the physical total. Do not write the already
+        // reservation-adjusted availability here, otherwise reservations are
+        // subtracted a second time and site stock can incorrectly reach zero.
+        .update({ quantity_available: totalInStock - qty })
+        .eq("id", stock?.id);
       if (stockError) throw stockError;
       await (supabase.from("stock_movements" as any) as any).insert({
         owner_id,
