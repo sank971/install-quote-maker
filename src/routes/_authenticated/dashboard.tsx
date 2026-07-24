@@ -18,6 +18,7 @@ import {
   aggregateBySite,
   applyFilters,
   buildAlerts,
+  buildTimeSeries,
   computeGlobalKpis,
   computeTechnicians,
   fleetBreakdown,
@@ -26,7 +27,15 @@ import {
   type CostSettings,
   type Datasets,
   type Filters,
+  type TimeBucket,
 } from "@/lib/analytics";
+import {
+  TimeSeriesChart,
+  EntityBarChart,
+  MarginBarChart,
+  CostBreakdownChart,
+} from "@/components/dashboard/charts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertTriangle,
   BarChart3,
@@ -58,6 +67,7 @@ const fmtPct = (n: number) => `${(n || 0).toFixed(1)} %`;
 
 function Dashboard() {
   const [filters, setFilters] = useState<Filters>({ period: "month" });
+  const [bucket, setBucket] = useState<TimeBucket>("month");
 
   const clients = useList<any>("clients");
   const sites = useList<any>("sites");
@@ -81,16 +91,11 @@ function Dashboard() {
     const row = (costSettingsQuery.data ?? [])[0];
     if (!row) return DEFAULT_COST_SETTINGS;
     return {
-      cost_per_km: Number(row.cost_per_km),
-      fuel_price: Number(row.fuel_price),
-      vehicle_consumption: Number(row.vehicle_consumption),
-      vehicle_cost_per_km: Number(row.vehicle_cost_per_km),
-      technician_hourly_cost: Number(row.technician_hourly_cost),
-      admin_hourly_cost: Number(row.admin_hourly_cost),
-      average_shipping_cost: Number(row.average_shipping_cost),
-      minimum_margin_pct: Number(row.minimum_margin_pct),
-      agency_address: row.agency_address,
-    };
+      ...DEFAULT_COST_SETTINGS,
+      ...Object.fromEntries(
+        Object.entries(row).filter(([, v]) => v !== null && v !== undefined),
+      ),
+    } as CostSettings;
   }, [costSettingsQuery.data]);
 
   const rawData: Datasets = {
@@ -125,6 +130,32 @@ function Dashboard() {
     () => buildAlerts(clientRows, contractRows, siteRows, partsRanking, suppliersRanking, settings),
     [clientRows, contractRows, siteRows, partsRanking, suppliersRanking, settings],
   );
+  const timeSeries = useMemo(() => buildTimeSeries(data, settings, bucket), [data, settings, bucket]);
+  const clientChart = useMemo(
+    () =>
+      clientRows
+        .filter((r) => r.revenue > 0 || r.cost > 0)
+        .slice(0, 10)
+        .map((r) => ({ label: r.label, revenue: r.revenue, cost: r.cost, margin: r.netMargin })),
+    [clientRows],
+  );
+  const contractChart = useMemo(
+    () =>
+      contractRows
+        .slice(0, 10)
+        .map((r) => ({ label: r.label, margin: r.netMargin })),
+    [contractRows],
+  );
+  const costBreakdown = useMemo(
+    () => [
+      { label: "Achats pièces", value: kpis.purchasesCost },
+      { label: "Déplacements", value: kpis.travelCost },
+      { label: "Main-d'œuvre", value: kpis.laborCost },
+      { label: "Envois", value: kpis.shippingCost },
+    ],
+    [kpis],
+  );
+
 
   return (
     <div>
@@ -236,6 +267,41 @@ function Dashboard() {
             />
             <KpiCard icon={Building2} label="Contrats actifs" value={kpis.activeContracts} />
           </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-muted-foreground">Évolution CA, coûts & marge</h3>
+            <Select value={bucket} onValueChange={(v) => setBucket(v as TimeBucket)}>
+              <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Par jour</SelectItem>
+                <SelectItem value="week">Par semaine</SelectItem>
+                <SelectItem value="month">Par mois</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <TimeSeriesChart
+            title="Chiffre d'affaires, coûts et marge dans le temps"
+            data={timeSeries}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <EntityBarChart
+              title="CA vs coûts — Top 10 clients"
+              data={clientChart}
+            />
+            <CostBreakdownChart title="Répartition des coûts" data={costBreakdown} />
+          </div>
+
+          {contractChart.length > 0 && (
+            <MarginBarChart
+              title="Marge nette par contrat (top 10)"
+              data={contractChart}
+            />
+          )}
+
+
 
           <div className="grid gap-4 lg:grid-cols-2">
             <RankingList
