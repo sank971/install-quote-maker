@@ -81,7 +81,7 @@ export function useList<T = any>(
     queryKey: options?.key ?? [table, options?.filter?.toString(), options?.orderBy],
     enabled: options?.enabled ?? true,
     queryFn: async () => {
-      let q: any = supabase.from(table).select("*");
+      let q: any = (supabase as any).from(table).select("*");
       if (options?.filter) q = options.filter(q);
       q = q.order(options?.orderBy ?? "created_at", { ascending: options?.ascending ?? false });
       const { data, error } = await q;
@@ -96,7 +96,7 @@ export function useOne<T = any>(table: TableName, id: string | undefined) {
     queryKey: [table, id],
     enabled: !!id,
     queryFn: async () => {
-      const { data, error } = await (supabase.from(table) as any)
+      const { data, error } = await ((supabase as any).from(table) as any)
         .select("*")
         .eq("id", id!)
         .maybeSingle();
@@ -117,8 +117,8 @@ export function useOneByRouteParam<T = any>(
     queryFn: async () => {
       const value = decodeURIComponent(param!);
       const numberValues = Array.from(new Set([value, value.replace("-", "/")]));
-      const idQuery = (supabase.from(table) as any).select("*").eq("id", value).maybeSingle();
-      const numberQuery = (supabase.from(table) as any)
+      const idQuery = ((supabase as any).from(table) as any).select("*").eq("id", value).maybeSingle();
+      const numberQuery = ((supabase as any).from(table) as any)
         .select("*")
         .in(numberColumn, numberValues)
         .maybeSingle();
@@ -143,7 +143,7 @@ export function useUpsert(table: TableName, invalidate: QueryKey[] = [[table]]) 
     mutationFn: async (row: any) => {
       const owner_id = await getOwnerId();
       const payload = { ...row, owner_id };
-      const client = supabase.from(table) as any;
+      const client = (supabase as any).from(table) as any;
       if (row.id) {
         const { data, error } = await client.update(payload).eq("id", row.id).select().single();
         if (error) throw error;
@@ -165,7 +165,7 @@ export function useRemove(table: TableName, invalidate: QueryKey[] = [[table]]) 
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase.from(table) as any).delete().eq("id", id);
+      const { error } = await ((supabase as any).from(table) as any).delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
