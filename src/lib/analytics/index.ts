@@ -833,3 +833,69 @@ export function buildAlerts(
   });
   return alerts;
 }
+
+// ----- Time series -----
+
+export type TimeBucket = "day" | "week" | "month";
+
+function bucketKey(d: Date, bucket: TimeBucket): { key: string; label: string; sort: number } {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  if (bucket === "day") {
+    const key = `${y}-${String(m + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { key, label: `${String(d.getDate()).padStart(2, "0")}/${String(m + 1).padStart(2, "0")}`, sort: d.getTime() };
+  }
+  if (bucket === "week") {
+    const tmp = new Date(d);
+    const day = (tmp.getDay() + 6) % 7;
+    tmp.setDate(tmp.getDate() - day);
+    tmp.setHours(0, 0, 0, 0);
+    return {
+      key: tmp.toISOString().slice(0, 10),
+      label: `S ${String(tmp.getDate()).padStart(2, "0")}/${String(tmp.getMonth() + 1).padStart(2, "0")}`,
+      sort: tmp.getTime(),
+    };
+  }
+  const monthNames = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  return { key: `${y}-${String(m + 1).padStart(2, "0")}`, label: `${monthNames[m]} ${String(y).slice(2)}`, sort: new Date(y, m, 1).getTime() };
+}
+
+export function buildTimeSeries(data: Datasets, settings: CostSettings, bucket: TimeBucket) {
+  const map = new Map<string, { key: string; label: string; sort: number; revenue: number; cost: number }>();
+  const ensure = (d: Date) => {
+    const b = bucketKey(d, bucket);
+    let row = map.get(b.key);
+    if (!row) {
+      row = { key: b.key, label: b.label, sort: b.sort, revenue: 0, cost: 0 };
+      map.set(b.key, row);
+    }
+    return row;
+  };
+  data.quotes.forEach((q) => {
+    if (!acceptedStatuses.has(q.status)) return;
+    const dateStr = q.issued_at ?? q.created_at;
+    if (!dateStr) return;
+    const items = data.quoteItems.filter((it) => it.quote_id === q.id);
+    const rev = computeQuoteRevenue(q, items);
+    const row = ensure(new Date(dateStr));
+    row.revenue += rev.total;
+    row.cost += rev.partsCost;
+  });
+  data.interventions.forEach((i) => {
+    const dateStr = i.created_at;
+    if (!dateStr) return;
+    const row = ensure(new Date(dateStr));
+    row.cost += computeInterventionCost(i, settings).total;
+  });
+  data.partOrders.forEach((po) => {
+    const dateStr = po.created_at;
+    if (!dateStr) return;
+    const items = data.partOrderItems.filter((it) => it.part_order_id === po.id);
+    const row = ensure(new Date(dateStr));
+    row.cost += computePartOrderCost(po, items, settings).total;
+  });
+  return [...map.values()]
+    .sort((a, b) => a.sort - b.sort)
+    .map((r) => ({ label: r.label, revenue: r.revenue, cost: r.cost, margin: r.revenue - r.cost }));
+}
+
