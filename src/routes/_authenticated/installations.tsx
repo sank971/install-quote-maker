@@ -23,10 +23,13 @@ import {
   Package,
   AlertCircle,
   Calculator,
+  Download,
+  Upload,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { downloadCsv, importCsvFile, pick } from "@/lib/csv";
 
 type CustomField = { key: string; label: string; type: "text" | "number" | "date" | "checkbox" };
 
@@ -160,6 +163,153 @@ function InstallationsList() {
   // Requirements state
   const [requirementsOpen, setRequirementsOpen] = useState<any>(null);
   const [requirementsForm, setRequirementsForm] = useState<any>({});
+
+  const exportInstallations = () =>
+    downloadCsv(
+      "installations.csv",
+      installs.map((installation: any) => {
+        const site = sites.find((item: any) => item.id === installation.site_id);
+        const client = clients.find((item: any) => item.id === site?.client_id);
+        const type = types.find((item: any) => item.id === installation.type_id);
+        const brand = brands.find((item: any) => item.id === installation.brand_id);
+        const model = models.find((item: any) => item.id === installation.model_id);
+        const contract = contracts.find((item: any) => item.id === installation.contract_id);
+        return {
+          numero_installation: installation.installation_number,
+          nom_installation: installation.name,
+          numero_site: site?.site_number,
+          nom_site: site?.name,
+          numero_client: client?.client_number,
+          nom_client: client?.name,
+          type: type?.name,
+          marque: brand?.name,
+          modele: model?.name,
+          numero_serie: installation.serial_number,
+          annee: installation.year,
+          localisation: installation.location,
+          contrat: contract?.name,
+          caracteristiques: Object.keys(installation.characteristics ?? {}).length
+            ? JSON.stringify(installation.characteristics)
+            : "",
+          notes: installation.notes,
+        };
+      }),
+      [
+        "numero_installation",
+        "nom_installation",
+        "numero_site",
+        "nom_site",
+        "numero_client",
+        "nom_client",
+        "type",
+        "marque",
+        "modele",
+        "numero_serie",
+        "annee",
+        "localisation",
+        "contrat",
+        "caracteristiques",
+        "notes",
+      ],
+    );
+
+  const importInstallations = () =>
+    importCsvFile(async (rows) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const owner_id = userData.user?.id;
+      if (!owner_id) return toast.error("Non authentifié");
+
+      let imported = 0;
+      let skipped = 0;
+      for (const row of rows) {
+        const name = pick(row, "nom_installation", "installation_name", "nom");
+        const siteNumber = pick(row, "numero_site", "site_number");
+        const siteName = pick(row, "nom_site", "site_name");
+        const clientNumber = pick(row, "numero_client", "client_number");
+        const clientName = pick(row, "nom_client", "client_name");
+        const site = sites.find((item: any) => {
+          const client = clients.find((candidate: any) => candidate.id === item.client_id);
+          return (
+            (siteNumber && item.site_number === siteNumber) ||
+            (siteName &&
+              normalizeText(item.name) === normalizeText(siteName) &&
+              (!clientNumber || client?.client_number === clientNumber) &&
+              (!clientName || normalizeText(client?.name) === normalizeText(clientName)))
+          );
+        });
+        if (!name || !site) {
+          skipped += 1;
+          continue;
+        }
+
+        const typeName = pick(row, "type", "type_installation", "installation_type");
+        const brandName = pick(row, "marque", "brand");
+        const modelName = pick(row, "modele", "model");
+        const type = types.find(
+          (item: any) => normalizeText(item.name) === normalizeText(typeName),
+        );
+        const brand = brands.find(
+          (item: any) => normalizeText(item.name) === normalizeText(brandName),
+        );
+        const model = models.find(
+          (item: any) =>
+            normalizeText(item.name) === normalizeText(modelName) &&
+            (!brand || item.brand_id === brand.id),
+        );
+        const contractName = pick(row, "contrat", "contract");
+        const contract = contracts.find(
+          (item: any) => normalizeText(item.name) === normalizeText(contractName),
+        );
+        const characteristicsText = pick(row, "caracteristiques", "characteristics");
+        let characteristics: Record<string, unknown> = {};
+        if (characteristicsText) {
+          try {
+            const parsed = JSON.parse(characteristicsText);
+            characteristics =
+              parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+          } catch {
+            toast.error(`Caractéristiques invalides pour ${name}`);
+            skipped += 1;
+            continue;
+          }
+        }
+        const yearText = pick(row, "annee", "année", "year");
+        const year = yearText ? Number(yearText) : null;
+        const payload = {
+          owner_id,
+          site_id: site.id,
+          name,
+          type_id: type?.id ?? null,
+          brand_id: brand?.id ?? null,
+          model_id: model?.id ?? null,
+          serial_number: pick(row, "numero_serie", "numéro_série", "serial_number") || null,
+          year: Number.isInteger(year) ? year : null,
+          location: pick(row, "localisation", "location") || null,
+          contract_id: contract?.id ?? null,
+          characteristics,
+          notes: pick(row, "notes") || null,
+        };
+        const installationNumber = pick(row, "numero_installation", "installation_number");
+        const existing = installs.find(
+          (item: any) =>
+            (installationNumber && item.installation_number === installationNumber) ||
+            (item.site_id === site.id && normalizeText(item.name) === normalizeText(name)),
+        );
+        const { error } = existing
+          ? await (supabase.from("installations") as any).update(payload).eq("id", existing.id)
+          : await (supabase.from("installations") as any).insert(payload);
+        if (error) {
+          toast.error(`Impossible d'importer ${name}: ${error.message}`);
+          skipped += 1;
+        } else {
+          imported += 1;
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["installations"] });
+      toast.success(
+        `${imported} installation${imported > 1 ? "s" : ""} importée${imported > 1 ? "s" : ""}${skipped ? `, ${skipped} ignorée${skipped > 1 ? "s" : ""}` : ""}`,
+      );
+    });
 
   const normalizeName = normalizeText;
 
@@ -759,10 +909,20 @@ function InstallationsList() {
         title="Installations"
         description="Portes, portails et fermetures suivies"
         actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouvelle installation
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportInstallations}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporter CSV
+            </Button>
+            <Button variant="outline" onClick={importInstallations}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importer CSV
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouvelle installation
+            </Button>
+          </div>
         }
       />
       <div className="mb-4 relative max-w-md">
