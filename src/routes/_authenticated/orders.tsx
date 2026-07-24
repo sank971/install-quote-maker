@@ -261,6 +261,29 @@ function OrdersPage() {
     toast.success("Intervention créée, vous pouvez continuer le process");
   };
 
+  const updateStockTicketStatus = async (ticket: any, status: string) => {
+    try {
+      if (status === "termine") {
+        const actor = await currentUserId();
+        const { error } = await (supabase.rpc as any)("complete_stock_ticket", {
+          p_ticket_id: ticket.id,
+          p_actor: actor,
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await (supabase.from("stock_tickets" as any) as any)
+          .update({ status })
+          .eq("id", ticket.id);
+        if (error) throw error;
+      }
+      invalidate();
+      toast.success("Ticket stock mis à jour");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+
   return (
     <>
       <PageHeader
