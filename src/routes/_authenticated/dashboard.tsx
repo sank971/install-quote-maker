@@ -18,6 +18,7 @@ import {
   aggregateBySite,
   applyFilters,
   buildAlerts,
+  buildTimeSeries,
   computeGlobalKpis,
   computeTechnicians,
   fleetBreakdown,
@@ -26,7 +27,15 @@ import {
   type CostSettings,
   type Datasets,
   type Filters,
+  type TimeBucket,
 } from "@/lib/analytics";
+import {
+  TimeSeriesChart,
+  EntityBarChart,
+  MarginBarChart,
+  CostBreakdownChart,
+} from "@/components/dashboard/charts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertTriangle,
   BarChart3,
