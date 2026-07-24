@@ -3564,7 +3564,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
-          installation_id: string
+          installation_id: string | null
           owner_id: string
           priority: string
           site_id: string
@@ -3582,7 +3582,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          installation_id: string
+          installation_id?: string | null
           owner_id: string
           priority?: string
           site_id: string
@@ -3600,7 +3600,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          installation_id?: string
+          installation_id?: string | null
           owner_id?: string
           priority?: string
           site_id?: string
