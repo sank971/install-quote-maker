@@ -268,6 +268,41 @@ function Dashboard() {
             <KpiCard icon={Building2} label="Contrats actifs" value={kpis.activeContracts} />
           </div>
 
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-muted-foreground">Évolution CA, coûts & marge</h3>
+            <Select value={bucket} onValueChange={(v) => setBucket(v as TimeBucket)}>
+              <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Par jour</SelectItem>
+                <SelectItem value="week">Par semaine</SelectItem>
+                <SelectItem value="month">Par mois</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <TimeSeriesChart
+            title="Chiffre d'affaires, coûts et marge dans le temps"
+            data={timeSeries}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <EntityBarChart
+              title="CA vs coûts — Top 10 clients"
+              data={clientChart}
+            />
+            <CostBreakdownChart title="Répartition des coûts" data={costBreakdown} />
+          </div>
+
+          {contractChart.length > 0 && (
+            <MarginBarChart
+              title="Marge nette par contrat (top 10)"
+              data={contractChart}
+            />
+          )}
+
+
+
           <div className="grid gap-4 lg:grid-cols-2">
             <RankingList
               title="Top clients rentables"
