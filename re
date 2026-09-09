@@ -1,0 +1,1 @@
+https://install-quote-maker.lovable.app/api/webhooks/tickets/e2e9feb7fff345f3832ecac308ca61b93d2c667b04ba4b479236e2eeee14582b
