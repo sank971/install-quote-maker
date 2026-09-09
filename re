@@ -1,3 +1,8 @@
+POST https://snxunodxgbeldliiqlab.supabase.co/rest/v1/rpc/receive_ticket_quote
+apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNueHVub2R4Z2JlbGRsaWlxbGFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTA3OTEsImV4cCI6MjA5NTk2Njc5MX0.FwqbKKCn3PYSsa2eFw0Jt_1EVjS8EAFNWJjEOIZEMQs
+Content-Type: application/json
+X-Webhook-Secret: <secret partagé ci-dessus>
+
 https://install-quote-maker.lovable.app/api/webhooks/tickets/e2e9feb7fff345f3832ecac308ca61b93d2c667b04ba4b479236e2eeee14582b
 test : https://install-quote-maker.lovable.app/api/webhooks/e2e9feb7fff345f3832ecac308ca61b93d2c667b04ba4b479236e2eeee14582b
 
